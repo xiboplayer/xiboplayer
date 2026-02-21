@@ -310,7 +310,7 @@ describe('XmrWrapper', () => {
         mockConfig.data.xmrPubKey = 'old-pub-key';
         mockConfig.data.xmrPrivKey = 'old-priv-key';
 
-        xmrInstance.simulateCommand('rekey');
+        xmrInstance.simulateCommand('rekeyAction');
         await vi.runAllTimersAsync();
 
         // Should clear old keys before regenerating
@@ -326,7 +326,7 @@ describe('XmrWrapper', () => {
         mockConfig.ensureXmrKeyPair.mockRejectedValue(new Error('Key generation failed'));
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-        xmrInstance.simulateCommand('rekey');
+        xmrInstance.simulateCommand('rekeyAction');
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(

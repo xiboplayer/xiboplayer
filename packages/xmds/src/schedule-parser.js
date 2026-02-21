@@ -16,12 +16,13 @@
  */
 function parseCriteria(parentEl) {
   const criteria = [];
-  for (const criteriaEl of parentEl.querySelectorAll(':scope > criteria')) {
+  for (const child of parentEl.children) {
+    if (child.tagName !== 'criteria') continue;
     criteria.push({
-      metric: criteriaEl.getAttribute('metric') || '',
-      condition: criteriaEl.getAttribute('condition') || '',
-      type: criteriaEl.getAttribute('type') || 'string',
-      value: criteriaEl.textContent || ''
+      metric: child.getAttribute('metric') || '',
+      condition: child.getAttribute('condition') || '',
+      type: child.getAttribute('type') || 'string',
+      value: child.textContent || ''
     });
   }
   return criteria;
@@ -39,6 +40,8 @@ export function parseScheduleResponse(xml) {
 
   const schedule = {
     default: null,
+    defaultDependants: [],
+    dependants: [], // Global dependants that gate ALL layouts
     layouts: [],
     campaigns: [],
     overlays: [],
@@ -46,6 +49,21 @@ export function parseScheduleResponse(xml) {
     commands: [],
     dataConnectors: []
   };
+
+  // Parse global dependants (root-level <dependants> — must be cached before any layout plays)
+  const scheduleEl = doc.querySelector('schedule');
+  if (scheduleEl) {
+    const globalDeps = Array.from(scheduleEl.children).filter(
+      el => el.tagName === 'dependants'
+    );
+    for (const depContainer of globalDeps) {
+      // Skip if this is nested inside <default>, <layout>, etc.
+      if (depContainer.parentElement !== scheduleEl) continue;
+      for (const fileEl of depContainer.querySelectorAll('file')) {
+        if (fileEl.textContent) schedule.dependants.push(fileEl.textContent);
+      }
+    }
+  }
 
   const defaultEl = doc.querySelector('default');
   if (defaultEl) {
@@ -65,9 +83,15 @@ export function parseScheduleResponse(xml) {
       fromdt: campaignEl.getAttribute('fromdt'),
       todt: campaignEl.getAttribute('todt'),
       scheduleid: campaignEl.getAttribute('scheduleid'),
+      maxPlaysPerHour: parseInt(campaignEl.getAttribute('maxPlaysPerHour') || '0'),
+      shareOfVoice: parseInt(campaignEl.getAttribute('shareOfVoice') || '0'),
+      isGeoAware: campaignEl.getAttribute('isGeoAware') === '1',
+      geoLocation: campaignEl.getAttribute('geoLocation') || '',
+      syncEvent: campaignEl.getAttribute('syncEvent') === '1',
       recurrenceType: campaignEl.getAttribute('recurrenceType') || null,
       recurrenceRepeatsOn: campaignEl.getAttribute('recurrenceRepeatsOn') || null,
       recurrenceRange: campaignEl.getAttribute('recurrenceRange') || null,
+      criteria: parseCriteria(campaignEl),
       layouts: []
     };
 

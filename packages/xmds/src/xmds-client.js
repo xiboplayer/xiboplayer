@@ -154,7 +154,7 @@ export class XmdsClient {
       clientCode: this.config.clientCode || '1',
       operatingSystem: os,
       macAddress: this.config.macAddress || 'n/a',
-      xmrChannel: this.config.xmrChannel,
+      xmrChannel: this.config.xmrChannel || '',
       xmrPubKey: this.config.xmrPubKey || '',
       licenceResult: 'licensed'
     });
@@ -183,9 +183,20 @@ export class XmdsClient {
 
     const settings = {};
     const tags = [];
+    const commands = [];
     for (const child of display.children) {
       const name = child.tagName.toLowerCase();
-      if (name === 'commands' || name === 'file') continue;
+      if (name === 'file') continue;
+      if (name === 'commands') {
+        // Parse <commands><command code="xyz" commandString="args"/></commands>
+        for (const cmdEl of child.querySelectorAll('command')) {
+          commands.push({
+            commandCode: cmdEl.getAttribute('code') || cmdEl.getAttribute('commandCode') || '',
+            commandString: cmdEl.getAttribute('commandString') || ''
+          });
+        }
+        continue;
+      }
       if (name === 'tags') {
         // Parse <tags><tag>value</tag>...</tags> into array
         for (const tagEl of child.querySelectorAll('tag')) {
@@ -199,6 +210,15 @@ export class XmdsClient {
     const checkRf = display.getAttribute('checkRf') || '';
     const checkSchedule = display.getAttribute('checkSchedule') || '';
 
+    // Extract display-level attributes from CMS (server time, status, version info)
+    const displayAttrs = {
+      date: display.getAttribute('date') || null,
+      timezone: display.getAttribute('timezone') || null,
+      status: display.getAttribute('status') || null,
+      localDate: display.getAttribute('localDate') || null,
+      version_instructions: display.getAttribute('version_instructions') || null,
+    };
+
     // Extract sync group config if present (multi-display sync coordination)
     const syncGroupVal = settings.syncGroup || null;
     const syncConfig = syncGroupVal ? {
@@ -209,7 +229,7 @@ export class XmdsClient {
       isLead: syncGroupVal === 'lead',
     } : null;
 
-    return { code, message, settings, tags, checkRf, checkSchedule, syncConfig };
+    return { code, message, settings, tags, commands, displayAttrs, checkRf, checkSchedule, syncConfig };
   }
 
   /**
