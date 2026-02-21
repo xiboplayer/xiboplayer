@@ -2,7 +2,7 @@
 
 ## Current Status: PRODUCTION READY
 
-**Feature Parity:** ~92% vs upstream Xibo players
+**Feature Parity:** ~98% vs upstream Xibo players
 **Last Updated:** 2026-02-21
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
 
@@ -18,10 +18,10 @@
 - SubmitLog - CMS log submission with fault reporting
 - SubmitStats - Proof-of-play with aggregation
 - SubmitScreenShot - Periodic + on-demand screenshot capture
-- BlackList - Media blacklisting via SOAP
+- BlackList - Media blacklisting via SOAP and REST
 - GetFile - Chunked parallel download
 - ReportFaults - Fault tracking with deduplication
-- GetWeather - Not yet implemented ([#73](https://github.com/xibo-players/xiboplayer/issues/73))
+- GetWeather - Weather data for schedule criteria evaluation
 
 ### Dual Transport (PWA Exclusive)
 - SOAP/XML transport (XmdsClient) - All CMS versions
@@ -40,7 +40,7 @@
 
 ### Schedule Management
 - Priority-based layout selection
-- Dayparting with ISO day-of-week and midnight crossing
+- Dayparting with ISO day-of-week and midnight crossing (Week/Day/Month recurrence)
 - maxPlaysPerHour with even distribution
 - Campaign scheduling (first-class objects)
 - Interrupt/share-of-voice interleaving
@@ -48,7 +48,7 @@
 - Action events, command events, data connector events
 - Default layout fallback
 - Geo-fencing enforcement (haversine distance filtering)
-- Criteria enforcement (evaluateCriteria with 5 metrics + custom display properties)
+- Criteria enforcement (evaluateCriteria with 5 metrics + weather + custom display properties)
 - Browser Geolocation API fallback (when CMS has no coordinates)
 
 ### XMR Push Messaging (13 Handlers)
@@ -110,28 +110,12 @@
 - Android - WebView wrapper
 - webOS - Cordova wrapper
 
-## Known Gaps (15 tracked issues)
+## Known Gaps (1 remaining of 15 tracked)
 
-### Critical ([#70](https://github.com/xibo-players/xiboplayer/issues/70), [#71](https://github.com/xibo-players/xiboplayer/issues/71), [#72](https://github.com/xibo-players/xiboplayer/issues/72))
-- HTTP 429 Retry-After header handling
-- Periodic fault reporting agent
-- Unsafe layout blacklisting
+14 of 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already done, 1 closed as not needed.
 
-### Moderate ([#73](https://github.com/xibo-players/xiboplayer/issues/73)–[#79](https://github.com/xibo-players/xiboplayer/issues/79))
-- Weather criteria integration
-- Image scaling options (scaletype)
-- BlackList via REST transport
-- NotifyStatus additional fields
-- Widget engagement tracking
-- Layout interleaving (weighted SoV)
-- PWA scheduled commands + webhooks + event stats
-
-### Minor ([#80](https://github.com/xibo-players/xiboplayer/issues/80)–[#84](https://github.com/xibo-players/xiboplayer/issues/84))
-- Recurrence pattern evaluation
-- Download window enforcement
-- Stats BroadcastChannel transport
-- Default transition type
-- Adspace exchange / SSP
+### Remaining
+- [#84](https://github.com/xibo-players/xiboplayer/issues/84) Adspace exchange / SSP ad rotation (stub `isSspEnabled` flag exists, no ad logic)
 
 ### Not Applicable (Browser Sandbox)
 - Shell commands (use HTTP commands instead)
@@ -140,7 +124,7 @@
 ## Test Suite
 
 ```
-Tests:  1144 passed | 7 skipped (1151 total)
+Tests:  1179 passed | 7 skipped (1186 total)
 Files:  31 test files (all passed)
 Time:   ~9s
 ```
