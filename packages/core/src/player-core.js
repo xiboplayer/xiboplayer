@@ -351,7 +351,8 @@ export class PlayerCore extends EventEmitter {
       // Register display
       log.debug('Collection step: registerDisplay');
       const regResult = await this.xmds.registerDisplay();
-      log.info('Display registered:', regResult);
+      log.info(`Display registered: ${regResult.code}${regResult.tags?.length ? `, tags: ${regResult.tags.join(', ')}` : ''}`);
+      log.debug('Register result:', JSON.stringify(regResult));
 
       // Cache settings for offline use
       this._offlineSave('settings', regResult);
