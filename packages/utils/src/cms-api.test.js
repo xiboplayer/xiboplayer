@@ -1017,6 +1017,302 @@ describe('CmsApiClient', () => {
     });
   });
 
+  // ── DayPart CRUD (#24) ──
+
+  describe('DayPart CRUD', () => {
+    beforeEach(() => stubAuth());
+
+    it('listDayParts() should GET and return array', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ dayPartId: 1, name: 'Business Hours' }]));
+
+      const parts = await api.listDayParts();
+
+      expect(parts).toHaveLength(1);
+      expect(parts[0].name).toBe('Business Hours');
+    });
+
+    it('createDayPart() should POST', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ dayPartId: 2 }));
+
+      const result = await api.createDayPart({ name: 'Evening', startTime: '18:00', endTime: '22:00' });
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('name')).toBe('Evening');
+      expect(result.dayPartId).toBe(2);
+    });
+
+    it('editDayPart() should PUT to /daypart/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ dayPartId: 2 }));
+
+      await api.editDayPart(2, { name: 'Updated Evening' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/daypart/2');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deleteDayPart() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteDayPart(2);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/daypart/2');
+      expect(opts.method).toBe('DELETE');
+    });
+  });
+
+  // ── Library Extensions (#33) ──
+
+  describe('Library Extensions', () => {
+    beforeEach(() => stubAuth());
+
+    it('uploadMediaUrl() should POST with url and name', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ mediaId: 60 }));
+
+      const result = await api.uploadMediaUrl('https://example.com/image.jpg', 'Test Image');
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.body.get('url')).toBe('https://example.com/image.jpg');
+      expect(opts.body.get('name')).toBe('Test Image');
+      expect(result.mediaId).toBe(60);
+    });
+
+    it('copyMedia() should POST to /library/copy/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ mediaId: 61 }));
+
+      const result = await api.copyMedia(50);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/library/copy/50');
+      expect(opts.method).toBe('POST');
+      expect(result.mediaId).toBe(61);
+    });
+
+    it('downloadMedia() should GET raw response', async () => {
+      const mockResponse = { ok: true, status: 200, text: () => Promise.resolve('binary data') };
+      mockFetch.mockResolvedValue(mockResponse);
+
+      const response = await api.downloadMedia(50);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain('/library/download/50');
+      expect(response).toBe(mockResponse);
+    });
+
+    it('downloadMedia() should throw on error', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: () => Promise.resolve('Not found')
+      });
+
+      await expect(api.downloadMedia(999)).rejects.toThrow('404');
+    });
+
+    it('editMedia() should PUT to /library/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ mediaId: 50 }));
+
+      await api.editMedia(50, { name: 'Renamed' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/library/50');
+      expect(opts.method).toBe('PUT');
+      expect(opts.body.get('name')).toBe('Renamed');
+    });
+
+    it('getMediaUsage() should GET /library/usage/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ layouts: [1, 2] }));
+
+      const result = await api.getMediaUsage(50);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/library/usage/50');
+      expect(result.layouts).toEqual([1, 2]);
+    });
+
+    it('tidyLibrary() should POST to /library/tidy', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.tidyLibrary();
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/library/tidy');
+      expect(opts.method).toBe('POST');
+    });
+  });
+
+  // ── Playlist CRUD (#35) ──
+
+  describe('Playlist CRUD', () => {
+    beforeEach(() => stubAuth());
+
+    it('listPlaylists() should GET and return array', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ playlistId: 1, name: 'Default' }]));
+
+      const playlists = await api.listPlaylists();
+
+      expect(playlists).toHaveLength(1);
+    });
+
+    it('createPlaylist() should POST with name', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ playlistId: 10 }));
+
+      const result = await api.createPlaylist('My Playlist');
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.body.get('name')).toBe('My Playlist');
+      expect(result.playlistId).toBe(10);
+    });
+
+    it('getPlaylist() should GET /playlist/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ playlistId: 10, name: 'My Playlist' }));
+
+      const result = await api.getPlaylist(10);
+
+      expect(result.name).toBe('My Playlist');
+    });
+
+    it('editPlaylist() should PUT', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ playlistId: 10 }));
+
+      await api.editPlaylist(10, { name: 'Renamed' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/playlist/10');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deletePlaylist() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deletePlaylist(10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/playlist/10');
+      expect(opts.method).toBe('DELETE');
+    });
+
+    it('reorderPlaylist() should POST widgets[] array params', async () => {
+      mockFetch.mockResolvedValue({ ok: true, status: 200, headers: new Headers({}) });
+
+      await api.reorderPlaylist(10, [3, 1, 2]);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toContain('/playlist/order/10');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.getAll('widgets[]')).toEqual(['3', '1', '2']);
+    });
+
+    it('reorderPlaylist() should throw on error', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 422,
+        text: () => Promise.resolve('Invalid order')
+      });
+
+      await expect(api.reorderPlaylist(10, [1])).rejects.toThrow('422');
+    });
+
+    it('copyPlaylist() should POST to /playlist/copy/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ playlistId: 11 }));
+
+      const result = await api.copyPlaylist(10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/playlist/copy/10');
+      expect(opts.method).toBe('POST');
+      expect(result.playlistId).toBe(11);
+    });
+  });
+
+  // ── Widget Extras (#37) ──
+
+  describe('Widget Extras', () => {
+    beforeEach(() => stubAuth());
+
+    it('setWidgetTransition() should PUT type and config', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ widgetId: 77 }));
+
+      await api.setWidgetTransition(77, 'fade', { duration: 1000 });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/playlist/widget/transition/77');
+      expect(opts.method).toBe('PUT');
+      expect(opts.body.get('type')).toBe('fade');
+      expect(opts.body.get('duration')).toBe('1000');
+    });
+
+    it('setWidgetAudio() should PUT to /playlist/widget/{id}/audio', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ widgetId: 77 }));
+
+      await api.setWidgetAudio(77, { mediaId: 50, volume: 80 });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/playlist/widget/77/audio');
+      expect(opts.method).toBe('PUT');
+      expect(opts.body.get('mediaId')).toBe('50');
+    });
+
+    it('removeWidgetAudio() should DELETE /playlist/widget/{id}/audio', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.removeWidgetAudio(77);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/playlist/widget/77/audio');
+      expect(opts.method).toBe('DELETE');
+    });
+
+    it('setWidgetExpiry() should PUT to /playlist/widget/{id}/expiry', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ widgetId: 77 }));
+
+      await api.setWidgetExpiry(77, { fromDt: '2026-01-01', toDt: '2026-12-31' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/playlist/widget/77/expiry');
+      expect(opts.method).toBe('PUT');
+      expect(opts.body.get('fromDt')).toBe('2026-01-01');
+    });
+  });
+
+  // ── Template Save / Manage (#39) ──
+
+  describe('Template Save / Manage', () => {
+    beforeEach(() => stubAuth());
+
+    it('saveAsTemplate() should POST to /template/{layoutId}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ templateId: 5 }));
+
+      const result = await api.saveAsTemplate(10, { name: 'My Template', includeWidgets: 1 });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/template/10');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('name')).toBe('My Template');
+      expect(result.templateId).toBe(5);
+    });
+
+    it('getTemplate() should GET /template/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ templateId: 5, layout: 'My Template' }));
+
+      const result = await api.getTemplate(5);
+
+      expect(result.layout).toBe('My Template');
+    });
+
+    it('deleteTemplate() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteTemplate(5);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/template/5');
+      expect(opts.method).toBe('DELETE');
+    });
+  });
+
   // ── Token Auto-Refresh Integration ──
 
   describe('Token auto-refresh', () => {

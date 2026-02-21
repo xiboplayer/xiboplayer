@@ -940,6 +940,269 @@ export class CmsApiClient {
   async purgeDisplay(displayId) {
     await this.post(`/display/purge/${displayId}`);
   }
+
+  // ── DayPart CRUD (#24) ─────────────────────────────────────────────
+
+  /**
+   * List day parts
+   * @param {Object} [filters] - Filters (dayPartId, name)
+   * @returns {Promise<Array>}
+   */
+  async listDayParts(filters = {}) {
+    const data = await this.get('/daypart', filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Create a day part
+   * @param {Object} params - { name, description, startTime, endTime, exceptionDays, ... }
+   * @returns {Promise<Object>}
+   */
+  async createDayPart(params) {
+    return this.post('/daypart', params);
+  }
+
+  /**
+   * Edit a day part
+   * @param {number} dayPartId
+   * @param {Object} params - Properties to update
+   * @returns {Promise<Object>}
+   */
+  async editDayPart(dayPartId, params) {
+    return this.put(`/daypart/${dayPartId}`, params);
+  }
+
+  /**
+   * Delete a day part
+   * @param {number} dayPartId
+   * @returns {Promise<void>}
+   */
+  async deleteDayPart(dayPartId) {
+    await this.del(`/daypart/${dayPartId}`);
+  }
+
+  // ── Library Extensions (#33) ───────────────────────────────────────
+
+  /**
+   * Upload media from a URL
+   * @param {string} url - Remote URL to download
+   * @param {string} name - Name for the media item
+   * @returns {Promise<Object>}
+   */
+  async uploadMediaUrl(url, name) {
+    return this.post('/library', { url, name, type: 'uri' });
+  }
+
+  /**
+   * Copy a media item
+   * @param {number} mediaId
+   * @returns {Promise<Object>} Copied media
+   */
+  async copyMedia(mediaId) {
+    return this.post(`/library/copy/${mediaId}`);
+  }
+
+  /**
+   * Download a media file (returns raw response for streaming)
+   * @param {number} mediaId
+   * @returns {Promise<Response>} Raw fetch response
+   */
+  async downloadMedia(mediaId) {
+    await this.ensureToken();
+    const url = `${this.baseUrl}/api/library/download/${mediaId}`;
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${this.accessToken}` }
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new CmsApiError('GET', `/library/download/${mediaId}`, response.status, text);
+    }
+    return response;
+  }
+
+  /**
+   * Edit media properties
+   * @param {number} mediaId
+   * @param {Object} params - Properties to update (name, duration, retired, etc.)
+   * @returns {Promise<Object>}
+   */
+  async editMedia(mediaId, params) {
+    return this.put(`/library/${mediaId}`, params);
+  }
+
+  /**
+   * Get media usage (which layouts/playlists reference this media)
+   * @param {number} mediaId
+   * @returns {Promise<Object>}
+   */
+  async getMediaUsage(mediaId) {
+    return this.get(`/library/usage/${mediaId}`);
+  }
+
+  /**
+   * Tidy the library (remove unused/old revisions)
+   * @returns {Promise<void>}
+   */
+  async tidyLibrary() {
+    await this.post('/library/tidy');
+  }
+
+  // ── Playlist CRUD (#35) ────────────────────────────────────────────
+
+  /**
+   * List playlists
+   * @param {Object} [filters] - Filters (playlistId, name, etc.)
+   * @returns {Promise<Array>}
+   */
+  async listPlaylists(filters = {}) {
+    const data = await this.get('/playlist', filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Create a playlist
+   * @param {string} name
+   * @returns {Promise<Object>}
+   */
+  async createPlaylist(name) {
+    return this.post('/playlist', { name });
+  }
+
+  /**
+   * Get a single playlist by ID
+   * @param {number} playlistId
+   * @returns {Promise<Object>}
+   */
+  async getPlaylist(playlistId) {
+    return this.get(`/playlist/${playlistId}`);
+  }
+
+  /**
+   * Edit playlist properties
+   * @param {number} playlistId
+   * @param {Object} params - Properties to update
+   * @returns {Promise<Object>}
+   */
+  async editPlaylist(playlistId, params) {
+    return this.put(`/playlist/${playlistId}`, params);
+  }
+
+  /**
+   * Delete a playlist
+   * @param {number} playlistId
+   * @returns {Promise<void>}
+   */
+  async deletePlaylist(playlistId) {
+    await this.del(`/playlist/${playlistId}`);
+  }
+
+  /**
+   * Reorder widgets in a playlist
+   * @param {number} playlistId
+   * @param {number[]} widgetIds - Ordered widget IDs
+   * @returns {Promise<void>}
+   */
+  async reorderPlaylist(playlistId, widgetIds) {
+    await this.ensureToken();
+    const url = `${this.baseUrl}/api/playlist/order/${playlistId}`;
+    const urlParams = new URLSearchParams();
+    for (const id of widgetIds) {
+      urlParams.append('widgets[]', String(id));
+    }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: urlParams
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new CmsApiError('POST', `/playlist/order/${playlistId}`, response.status, text);
+    }
+  }
+
+  /**
+   * Copy a playlist
+   * @param {number} playlistId
+   * @returns {Promise<Object>} Copied playlist
+   */
+  async copyPlaylist(playlistId) {
+    return this.post(`/playlist/copy/${playlistId}`);
+  }
+
+  // ── Widget Extras (#37) ────────────────────────────────────────────
+
+  /**
+   * Set transition for a widget
+   * @param {number} widgetId
+   * @param {string} type - Transition type (e.g. 'fly', 'fade')
+   * @param {Object} [config] - Transition config (duration, direction)
+   * @returns {Promise<Object>}
+   */
+  async setWidgetTransition(widgetId, type, config = {}) {
+    return this.put(`/playlist/widget/transition/${widgetId}`, { type, ...config });
+  }
+
+  /**
+   * Set audio for a widget
+   * @param {number} widgetId
+   * @param {Object} params - { mediaId, volume, loop }
+   * @returns {Promise<Object>}
+   */
+  async setWidgetAudio(widgetId, params) {
+    return this.put(`/playlist/widget/${widgetId}/audio`, params);
+  }
+
+  /**
+   * Remove audio from a widget
+   * @param {number} widgetId
+   * @returns {Promise<void>}
+   */
+  async removeWidgetAudio(widgetId) {
+    await this.del(`/playlist/widget/${widgetId}/audio`);
+  }
+
+  /**
+   * Set expiry dates for a widget
+   * @param {number} widgetId
+   * @param {Object} params - { fromDt, toDt, deleteOnExpiry }
+   * @returns {Promise<Object>}
+   */
+  async setWidgetExpiry(widgetId, params) {
+    return this.put(`/playlist/widget/${widgetId}/expiry`, params);
+  }
+
+  // ── Template Save / Manage (#39) ───────────────────────────────────
+
+  /**
+   * Save a layout as a template
+   * @param {number} layoutId
+   * @param {Object} params - { name, description, includeWidgets }
+   * @returns {Promise<Object>}
+   */
+  async saveAsTemplate(layoutId, params) {
+    return this.post(`/template/${layoutId}`, params);
+  }
+
+  /**
+   * Get a single template by ID
+   * @param {number} templateId
+   * @returns {Promise<Object>}
+   */
+  async getTemplate(templateId) {
+    return this.get(`/template/${templateId}`);
+  }
+
+  /**
+   * Delete a template
+   * @param {number} templateId
+   * @returns {Promise<void>}
+   */
+  async deleteTemplate(templateId) {
+    await this.del(`/template/${templateId}`);
+  }
 }
 
 /**
