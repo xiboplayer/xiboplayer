@@ -395,6 +395,10 @@ export class RendererLite {
       regions: []
     };
 
+    if (layout.schemaVersion > 1) {
+      this.log.debug(`XLF schema version: ${layout.schemaVersion}`);
+    }
+
     if (layoutDurationAttr) {
       this.log.info(`Layout duration from XLF: ${layout.duration}s`);
     } else {
@@ -415,6 +419,9 @@ export class RendererLite {
         enableStat: regionEl.getAttribute('enableStat') !== '0',
         actions: this.parseActions(regionEl),
         exitTransition: null,
+        transitionType: null, // Region-level default widget transition type
+        transitionDuration: null,
+        transitionDirection: null,
         loop: true, // Default: cycle widgets. Spec: loop=0 means single media stays visible
         isDrawer,
         widgets: []
@@ -439,6 +446,16 @@ export class RendererLite {
         const loopEl = regionOptionsEl.querySelector('loop');
         if (loopEl) {
           region.loop = loopEl.textContent !== '0';
+        }
+
+        // Region-level default transition for widgets (applied if widget has no own transition)
+        const transType = regionOptionsEl.querySelector('transitionType');
+        if (transType && transType.textContent) {
+          region.transitionType = transType.textContent;
+          const transDuration = regionOptionsEl.querySelector('transitionDuration');
+          const transDirection = regionOptionsEl.querySelector('transitionDirection');
+          region.transitionDuration = parseInt((transDuration && transDuration.textContent) || '1000');
+          region.transitionDirection = (transDirection && transDirection.textContent) || 'N';
         }
       }
 
@@ -1211,6 +1228,11 @@ export class RendererLite {
         return await this.renderWebpage(widget, region);
       case 'localvideo':
         return await this.renderVideo(widget, region);
+      case 'powerpoint':
+      case 'flash':
+        // Legacy Windows-only types — show placeholder instead of failing silently
+        this.log.warn(`Widget type '${widget.type}' is not supported on web players (widget ${widget.id})`);
+        return this._renderUnsupportedPlaceholder(widget, region);
       default:
         // Generic widget (clock, calendar, weather, etc.)
         return await this.renderGenericWidget(widget, region);
@@ -2223,6 +2245,24 @@ export class RendererLite {
     }
 
     return iframe;
+  }
+
+  /**
+   * Render a placeholder for unsupported widget types (powerpoint, flash)
+   */
+  _renderUnsupportedPlaceholder(widget, region) {
+    const div = document.createElement('div');
+    div.className = 'renderer-lite-widget';
+    div.style.width = '100%';
+    div.style.height = '100%';
+    div.style.display = 'flex';
+    div.style.alignItems = 'center';
+    div.style.justifyContent = 'center';
+    div.style.backgroundColor = '#111';
+    div.style.color = '#666';
+    div.style.fontSize = '14px';
+    div.textContent = `Unsupported: ${widget.type}`;
+    return div;
   }
 
   // ── Layout Preload Pool ─────────────────────────────────────────────
