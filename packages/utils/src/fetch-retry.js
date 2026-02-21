@@ -10,6 +10,37 @@ import { createLogger } from './logger.js';
 
 const log = createLogger('FetchRetry');
 
+const DEFAULT_429_DELAY_MS = 30000;
+const MAX_429_DELAY_MS = 120000;
+
+/**
+ * Parse a Retry-After header value into milliseconds.
+ * Supports both delta-seconds ("120") and HTTP-date ("Fri, 21 Feb 2026 12:00:00 GMT").
+ * Returns a sensible default if the header is missing or unparseable.
+ * The returned delay is NOT capped by maxDelayMs — the server's rate-limit
+ * instruction takes priority over our backoff ceiling.
+ * @param {string|null} headerValue
+ * @returns {number} delay in milliseconds (clamped to MAX_429_DELAY_MS)
+ */
+function parseRetryAfter(headerValue) {
+  if (!headerValue) return DEFAULT_429_DELAY_MS;
+
+  // Try delta-seconds first (most common)
+  const seconds = Number(headerValue);
+  if (!isNaN(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, MAX_429_DELAY_MS);
+  }
+
+  // Try HTTP-date format (RFC 7231 §7.1.3)
+  const date = new Date(headerValue);
+  if (!isNaN(date.getTime())) {
+    const delayMs = date.getTime() - Date.now();
+    return Math.min(Math.max(delayMs, 0), MAX_429_DELAY_MS);
+  }
+
+  return DEFAULT_429_DELAY_MS;
+}
+
 /**
  * Fetch with automatic retry on failure
  * @param {string|URL} url - URL to fetch
@@ -31,10 +62,8 @@ export async function fetchWithRetry(url, options = {}, retryOptions = {}) {
 
       // HTTP 429 Too Many Requests — respect Retry-After header
       if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After');
-        const delaySec = retryAfter ? parseInt(retryAfter, 10) : 30;
-        const delayMs = Math.min((isNaN(delaySec) ? 30 : delaySec) * 1000, maxDelayMs);
-        log.debug(`429 Rate limited, waiting ${delayMs}ms (Retry-After: ${retryAfter})`);
+        const delayMs = parseRetryAfter(response.headers.get('Retry-After'));
+        log.debug(`429 Rate limited, waiting ${delayMs}ms (Retry-After: ${response.headers.get('Retry-After')})`);
         lastResponse = response;
         lastError = new Error(`HTTP 429: Too Many Requests`);
         lastError.status = 429;

@@ -135,4 +135,80 @@ describe('fetchWithRetry', () => {
     expect(response.status).toBe(429);
     expect(mockFetch).toHaveBeenCalledTimes(2); // 1 original + 1 retry
   });
+
+  it('should parse Retry-After as HTTP-date', async () => {
+    // Set a date 2 seconds in the future
+    const futureDate = new Date(Date.now() + 2000).toUTCString();
+    const headers429 = { get: (name) => name === 'Retry-After' ? futureDate : null };
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 429, statusText: 'Too Many Requests', headers: headers429 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 2, baseDelayMs: 100 });
+
+    // Advance past the ~2s date-based delay
+    await vi.advanceTimersByTimeAsync(3000);
+
+    const response = await promise;
+    expect(response.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('should not cap 429 delay at maxDelayMs', async () => {
+    // Server asks for 5s, but maxDelayMs is only 1s — 429 should still wait 5s
+    const headers429 = { get: (name) => name === 'Retry-After' ? '5' : null };
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 429, statusText: 'Too Many Requests', headers: headers429 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 2, baseDelayMs: 100, maxDelayMs: 1000 });
+
+    // 1s is not enough — should still be waiting
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // 5s total should be enough
+    await vi.advanceTimersByTimeAsync(4500);
+
+    const response = await promise;
+    expect(response.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('should use default 30s delay when Retry-After header is missing on 429', async () => {
+    const headers429 = { get: () => null };
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 429, statusText: 'Too Many Requests', headers: headers429 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 2, baseDelayMs: 100 });
+
+    // 10s is not enough — default is 30s
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // 30s total should be enough
+    await vi.advanceTimersByTimeAsync(21000);
+
+    const response = await promise;
+    expect(response.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('should handle Retry-After date in the past as immediate retry', async () => {
+    const pastDate = new Date(Date.now() - 5000).toUTCString();
+    const headers429 = { get: (name) => name === 'Retry-After' ? pastDate : null };
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 429, statusText: 'Too Many Requests', headers: headers429 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 2, baseDelayMs: 100 });
+
+    // Past date means delay=0, should retry immediately
+    await vi.advanceTimersByTimeAsync(100);
+
+    const response = await promise;
+    expect(response.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });
