@@ -232,9 +232,9 @@ export class XmrWrapper {
       }
     });
 
-    // CMS command: Rekey (RSA key pair rotation)
-    this.xmr.on('rekey', async () => {
-      log.info('Received rekey command - rotating RSA key pair');
+    // CMS command: Rekey (RSA key pair rotation) — spec event name is 'rekeyAction'
+    this.xmr.on('rekeyAction', async () => {
+      log.info('Received rekeyAction command - rotating RSA key pair');
       try {
         this.config.data.xmrPubKey = '';
         this.config.data.xmrPrivKey = '';

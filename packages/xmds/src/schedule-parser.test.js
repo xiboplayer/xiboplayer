@@ -201,4 +201,49 @@ describe('parseScheduleResponse', () => {
     const result = parseScheduleResponse(xml);
     expect(result.dataConnectors).toEqual([]);
   });
+
+  it('should parse global dependants from schedule root', () => {
+    const xml = `<schedule>
+      <default file="0"/>
+      <dependants><file>global-font.woff2</file><file>shared-bg.jpg</file></dependants>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    expect(result.dependants).toEqual(['global-font.woff2', 'shared-bg.jpg']);
+  });
+
+  it('should default global dependants to empty array', () => {
+    const xml = '<schedule><default file="0"/></schedule>';
+    const result = parseScheduleResponse(xml);
+    expect(result.dependants).toEqual([]);
+  });
+
+  it('should parse campaign-level geo/sync/shareOfVoice attributes', () => {
+    const xml = `<schedule>
+      <campaign id="c1" priority="5" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                scheduleid="30" shareOfVoice="50" isGeoAware="1"
+                geoLocation="51.5,-0.1" syncEvent="1">
+        <layout file="500.xlf"/>
+      </campaign>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    const campaign = result.campaigns[0];
+    expect(campaign.shareOfVoice).toBe(50);
+    expect(campaign.isGeoAware).toBe(true);
+    expect(campaign.geoLocation).toBe('51.5,-0.1');
+    expect(campaign.syncEvent).toBe(true);
+  });
+
+  it('should parse criteria on campaigns', () => {
+    const xml = `<schedule>
+      <campaign id="c1" priority="5" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                scheduleid="30">
+        <criteria metric="temperature" condition="gt" type="number">25</criteria>
+        <layout file="500.xlf"/>
+      </campaign>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    expect(result.campaigns[0].criteria).toHaveLength(1);
+    expect(result.campaigns[0].criteria[0].metric).toBe('temperature');
+    expect(result.campaigns[0].criteria[0].value).toBe('25');
+  });
 });

@@ -160,10 +160,12 @@ const Transitions = {
     const direction = transitionConfig.direction || 'N';
 
     switch (type) {
+      case 'fade':
       case 'fadein':
         return isIn ? this.fadeIn(element, duration) : null;
       case 'fadeout':
         return isIn ? null : this.fadeOut(element, duration);
+      case 'fly':
       case 'flyin':
         return isIn ? this.flyIn(element, duration, direction, regionWidth, regionHeight) : null;
       case 'flyout':
@@ -710,6 +712,16 @@ export class RendererLite {
     const allKeyboardActions = [];
     let touchActionCount = 0;
 
+    // Layout-level actions (attached to the main container)
+    for (const action of (layout.actions || [])) {
+      if (action.triggerType === 'touch') {
+        this.attachTouchAction(this.container, action, null, null);
+        touchActionCount++;
+      } else if (action.triggerType?.startsWith('keyboard:')) {
+        allKeyboardActions.push(action);
+      }
+    }
+
     for (const regionConfig of layout.regions) {
       const region = this.regions.get(regionConfig.id);
       if (!region) continue;
@@ -1173,6 +1185,11 @@ export class RendererLite {
    * @returns {Promise<HTMLElement>} Widget DOM element
    */
   async createWidgetElement(widget, region) {
+    // render="html" forces GetResource iframe regardless of native type
+    if (widget.render === 'html') {
+      return await this.renderGenericWidget(widget, region);
+    }
+
     switch (widget.type) {
       case 'image':
         return await this.renderImage(widget, region);
@@ -1187,6 +1204,8 @@ export class RendererLite {
         return await this.renderPdf(widget, region);
       case 'webpage':
         return await this.renderWebpage(widget, region);
+      case 'localvideo':
+        return await this.renderVideo(widget, region);
       default:
         // Generic widget (clock, calendar, weather, etc.)
         return await this.renderGenericWidget(widget, region);
@@ -1446,6 +1465,10 @@ export class RendererLite {
         audio.src = audioSrc;
       }
 
+      // Append to DOM to prevent garbage collection in some browsers
+      audio.style.display = 'none';
+      this.container.appendChild(audio);
+
       // Handle autoplay restrictions gracefully (play() may return undefined in some envs)
       const playPromise = audio.play();
       if (playPromise && playPromise.catch) playPromise.catch(() => {});
@@ -1471,6 +1494,7 @@ export class RendererLite {
       audio.pause();
       audio.removeAttribute('src');
       audio.load(); // Release resources
+      if (audio.parentNode) audio.parentNode.removeChild(audio); // Remove from DOM
     }
 
     this.audioOverlays.delete(widgetId);
@@ -1639,37 +1663,44 @@ export class RendererLite {
 
       const duration = widget.duration * 1000;
       region.timer = setTimeout(() => {
-        // Emit widgetAction if widget has a webhook URL configured
-        if (widget.webhookUrl) {
-          this.emit('widgetAction', {
-            type: 'durationEnd',
-            widgetId: widget.id,
-            layoutId: this.currentLayoutId,
-            regionId,
-            url: widget.webhookUrl
-          });
-        }
-
-        hideFn(regionId, widgetIndex);
-
-        const nextIndex = (region.currentIndex + 1) % region.widgets.length;
-        if (nextIndex === 0 && !region.complete) {
-          region.complete = true;
-          onCycleComplete?.();
-        }
-
-        // Non-looping region (loop=0): stop after one full cycle
-        if (nextIndex === 0 && region.config?.loop === false) {
-          // Show the last widget again and keep it visible
-          showFn(regionId, region.widgets.length - 1);
-          return;
-        }
-
-        region.currentIndex = nextIndex;
-        playNext();
+        this._handleWidgetCycleEnd(widget, region, regionId, widgetIndex, showFn, hideFn, onCycleComplete, playNext);
       }, duration);
     };
 
+    playNext();
+  }
+
+  /**
+   * Handle widget cycle end — shared logic for timer-based and event-based cycling
+   */
+  _handleWidgetCycleEnd(widget, region, regionId, widgetIndex, showFn, hideFn, onCycleComplete, playNext) {
+    // Emit widgetAction if widget has a webhook URL configured
+    if (widget.webhookUrl) {
+      this.emit('widgetAction', {
+        type: 'durationEnd',
+        widgetId: widget.id,
+        layoutId: this.currentLayoutId,
+        regionId,
+        url: widget.webhookUrl
+      });
+    }
+
+    hideFn(regionId, widgetIndex);
+
+    const nextIndex = (region.currentIndex + 1) % region.widgets.length;
+    if (nextIndex === 0 && !region.complete) {
+      region.complete = true;
+      onCycleComplete?.();
+    }
+
+    // Non-looping region (loop=0): stop after one full cycle
+    if (nextIndex === 0 && region.config?.loop === false) {
+      // Show the last widget again and keep it visible
+      showFn(regionId, region.widgets.length - 1);
+      return;
+    }
+
+    region.currentIndex = nextIndex;
     playNext();
   }
 

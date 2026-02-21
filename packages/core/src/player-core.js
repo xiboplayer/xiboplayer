@@ -1196,10 +1196,15 @@ export class PlayerCore extends EventEmitter {
 
     try {
       // Build inventory XML: <files><file type="media" id="1" complete="1" md5="abc" lastChecked="123"/></files>
+      // complete: use file.complete if set by caller (cache layer), default to "1"
       const now = Math.floor(Date.now() / 1000);
       const fileEntries = files
         .filter(f => ['media', 'layout', 'resource', 'dependency', 'widget'].includes(f.type))
-        .map(f => `<file type="${f.type}" id="${f.id}" complete="1" md5="${f.md5 || ''}" lastChecked="${now}"/>`)
+        .map(f => {
+          const complete = f.complete !== undefined ? (f.complete ? '1' : '0') : '1';
+          const fileType = f.fileType ? ` fileType="${f.fileType}"` : '';
+          return `<file type="${f.type}" id="${f.id}" complete="${complete}" md5="${f.md5 || ''}" lastChecked="${now}"${fileType}/>`;
+        })
         .join('');
       const inventoryXml = `<files>${fileEntries}</files>`;
 

@@ -171,8 +171,19 @@ export class RestClient {
 
     const settings = {};
     let tags = [];
+    let commands = [];
     for (const [key, value] of Object.entries(display)) {
-      if (key === '@attributes' || key === 'commands' || key === 'file') continue;
+      if (key === '@attributes' || key === 'file') continue;
+      if (key === 'commands') {
+        // Parse commands: array of {code/commandCode, commandString} objects
+        if (Array.isArray(value)) {
+          commands = value.map(c => ({
+            commandCode: c.code || c.commandCode || '',
+            commandString: c.commandString || ''
+          }));
+        }
+        continue;
+      }
       if (key === 'tags') {
         // Parse tags: array of strings, or array of {tag: "value"} objects
         if (Array.isArray(value)) {
@@ -186,6 +197,15 @@ export class RestClient {
     const checkRf = attrs.checkRf || '';
     const checkSchedule = attrs.checkSchedule || '';
 
+    // Extract display-level attributes from CMS (server time, status, version info)
+    const displayAttrs = {
+      date: attrs.date || display.date || null,
+      timezone: attrs.timezone || display.timezone || null,
+      status: attrs.status || display.status || null,
+      localDate: attrs.localDate || display.localDate || null,
+      version_instructions: attrs.version_instructions || display.version_instructions || null,
+    };
+
     // Extract sync group config if present (multi-display sync coordination)
     // syncGroup: "lead" if this display is leader, or leader's LAN IP if follower
     const syncConfig = display.syncGroup ? {
@@ -196,7 +216,7 @@ export class RestClient {
       isLead: String(display.syncGroup) === 'lead',
     } : null;
 
-    return { code, message, settings, tags, checkRf, checkSchedule, syncConfig };
+    return { code, message, settings, tags, commands, displayAttrs, checkRf, checkSchedule, syncConfig };
   }
 
   /**

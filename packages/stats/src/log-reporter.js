@@ -171,7 +171,7 @@ export class LogReporter {
 
     this._reportedFaults.set(code, Date.now());
 
-    await this.log('error', reason, 'PLAYER', {
+    await this.log('error', reason, 'event', {
       alertType: 'Player Fault',
       eventType: code
     });

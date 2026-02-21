@@ -195,9 +195,10 @@ export class StatsCollector {
    * @param {number} mediaId - Media ID from CMS
    * @param {number} layoutId - Parent layout ID
    * @param {number} scheduleId - Schedule ID
+   * @param {string|number} [widgetId] - Widget ID (for non-library widgets with no mediaId)
    * @returns {Promise<void>}
    */
-  async startWidget(mediaId, layoutId, scheduleId) {
+  async startWidget(mediaId, layoutId, scheduleId, widgetId) {
     if (!this.db) {
       log.warn('Stats database not initialized');
       return;
@@ -219,6 +220,7 @@ export class StatsCollector {
     const stat = {
       type: 'media',
       mediaId,
+      widgetId: widgetId || null,
       layoutId,
       scheduleId,
       start: new Date(),
