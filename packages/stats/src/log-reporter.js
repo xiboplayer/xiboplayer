@@ -180,6 +180,46 @@ export class LogReporter {
   }
 
   /**
+   * Get unsubmitted fault entries for dedicated fault submission.
+   * Returns log entries that have alertType='Player Fault' and submitted=0.
+   * These are the high-priority entries that should be submitted faster
+   * than the normal log collection cycle.
+   *
+   * @param {number} [limit=10] - Maximum faults to return per batch
+   * @returns {Promise<Array>} Array of fault log objects
+   */
+  async getFaultsForSubmission(limit = 10) {
+    if (!this.db) return [];
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([LOGS_STORE], 'readonly');
+      const store = transaction.objectStore(LOGS_STORE);
+      const index = store.index('submitted');
+
+      const request = index.openCursor(IDBKeyRange.only(0));
+      const faults = [];
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+
+        if (cursor && faults.length < limit) {
+          if (cursor.value.alertType === 'Player Fault') {
+            faults.push(cursor.value);
+          }
+          cursor.continue();
+        } else {
+          resolve(faults);
+        }
+      };
+
+      request.onerror = () => {
+        log.error('Failed to retrieve faults:', request.error);
+        reject(new Error(`Failed to retrieve faults: ${request.error}`));
+      };
+    });
+  }
+
+  /**
    * Log an error message
    *
    * Shorthand for log('error', message, category)
@@ -532,6 +572,33 @@ export function formatLogs(logs) {
   });
 
   return `<logs>\n${logElements.join('\n')}\n</logs>`;
+}
+
+/**
+ * Format fault log entries as JSON for XMDS ReportFaults submission.
+ *
+ * Converts fault log objects (from getFaultsForSubmission) into the JSON
+ * string format expected by xmds.reportFaults().
+ *
+ * @param {Array} faults - Array of fault log objects from getFaultsForSubmission()
+ * @returns {string} JSON string for XMDS ReportFaults
+ *
+ * @example
+ * const faults = await reporter.getFaultsForSubmission();
+ * if (faults.length > 0) {
+ *   const json = formatFaults(faults);
+ *   await xmds.reportFaults(json);
+ * }
+ */
+export function formatFaults(faults) {
+  if (!faults || faults.length === 0) return '[]';
+
+  return JSON.stringify(faults.map(f => ({
+    code: f.eventType || 'UNKNOWN',
+    reason: f.message || '',
+    date: formatDateTime(f.timestamp),
+    layoutId: f.scheduleId || 0
+  })));
 }
 
 /**

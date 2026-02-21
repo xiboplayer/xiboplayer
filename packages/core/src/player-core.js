@@ -115,6 +115,10 @@ export class PlayerCore extends EventEmitter {
     // Display commands from RegisterDisplay (used by XMR commandAction)
     this.displayCommands = null;
 
+    // Fault reporting agent (independent timer, faster than collection cycle)
+    this._faultReportingInterval = null;
+    this._faultReportingSeconds = 60; // Default: check for faults every 60s
+
     // Schedule cycle state (round-robin through multiple layouts)
     this._currentLayoutIndex = 0;
 
@@ -522,9 +526,17 @@ export class PlayerCore extends EventEmitter {
       // Submit logs to CMS (always, regardless of stats setting)
       this.emit('submit-logs-request');
 
+      // Submit faults immediately (higher priority than logs)
+      this.emit('submit-faults-request');
+
       // Setup collection interval on first run
       if (!this.collectionInterval && regResult.settings) {
         this.setupCollectionInterval(regResult.settings);
+      }
+
+      // Start fault reporting agent (independent of collection cycle)
+      if (!this._faultReportingInterval) {
+        this._startFaultReportingAgent();
       }
 
       this.emit('collection-complete');
@@ -623,6 +635,21 @@ export class PlayerCore extends EventEmitter {
       this._setCollectionTimer(newIntervalSeconds);
       this.emit('collection-interval-updated', newIntervalSeconds);
     }
+  }
+
+  /**
+   * Start the fault reporting agent.
+   * Runs on an independent timer (default 60s) to submit faults faster
+   * than the normal collection cycle (300s). This ensures the CMS dashboard
+   * gets fault alerts with lower latency.
+   */
+  _startFaultReportingAgent() {
+    if (this._faultReportingInterval) clearInterval(this._faultReportingInterval);
+
+    log.info(`Fault reporting agent started (interval: ${this._faultReportingSeconds}s)`);
+    this._faultReportingInterval = setInterval(() => {
+      this.emit('submit-faults-request');
+    }, this._faultReportingSeconds * 1000);
   }
 
   /** Internal: (re)create the collection setInterval timer */
@@ -1508,6 +1535,11 @@ export class PlayerCore extends EventEmitter {
     if (this.collectionInterval) {
       clearInterval(this.collectionInterval);
       this.collectionInterval = null;
+    }
+
+    if (this._faultReportingInterval) {
+      clearInterval(this._faultReportingInterval);
+      this._faultReportingInterval = null;
     }
 
     if (this.xmr) {

@@ -12,4 +12,4 @@ export { StatsCollector, formatStats } from './stats-collector.js';
  * Log reporter for CMS logging
  * @module @xiboplayer/stats/logger
  */
-export { LogReporter, formatLogs } from './log-reporter.js';
+export { LogReporter, formatLogs, formatFaults } from './log-reporter.js';

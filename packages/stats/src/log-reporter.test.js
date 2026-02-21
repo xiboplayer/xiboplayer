@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { LogReporter, formatLogs } from './log-reporter.js';
+import { LogReporter, formatLogs, formatFaults } from './log-reporter.js';
 
 describe('LogReporter', () => {
   let reporter;
@@ -286,6 +286,56 @@ describe('LogReporter', () => {
     });
   });
 
+  describe('getFaultsForSubmission', () => {
+    it('should return only fault entries (not regular logs)', async () => {
+      await reporter.info('Normal log', 'PLAYER');
+      await reporter.error('Regular error', 'PLAYER');
+      await reporter.reportFault('LAYOUT_FAIL', 'Layout failed');
+      await reporter.reportFault('MEDIA_FAIL', 'Media failed');
+
+      const faults = await reporter.getFaultsForSubmission();
+      expect(faults.length).toBe(2);
+      expect(faults.every(f => f.alertType === 'Player Fault')).toBe(true);
+    });
+
+    it('should respect limit parameter', async () => {
+      await reporter.reportFault('FAULT_1', 'Fault 1', 1);
+      await new Promise(r => setTimeout(r, 5));
+      await reporter.reportFault('FAULT_2', 'Fault 2', 1);
+      await new Promise(r => setTimeout(r, 5));
+      await reporter.reportFault('FAULT_3', 'Fault 3', 1);
+
+      const faults = await reporter.getFaultsForSubmission(2);
+      expect(faults.length).toBe(2);
+    });
+
+    it('should return empty array when no faults exist', async () => {
+      await reporter.info('Normal log', 'PLAYER');
+      await reporter.error('Regular error', 'PLAYER');
+
+      const faults = await reporter.getFaultsForSubmission();
+      expect(faults).toEqual([]);
+    });
+
+    it('should not return faults that have been cleared', async () => {
+      await reporter.reportFault('TEST_FAULT', 'Test');
+
+      const faults = await reporter.getFaultsForSubmission();
+      expect(faults.length).toBe(1);
+
+      await reporter.clearSubmittedLogs(faults);
+
+      const remaining = await reporter.getFaultsForSubmission();
+      expect(remaining).toEqual([]);
+    });
+
+    it('should return empty array when db is not initialized', async () => {
+      const r = new LogReporter();
+      const faults = await r.getFaultsForSubmission();
+      expect(faults).toEqual([]);
+    });
+  });
+
   describe('database operations', () => {
     it('should get all logs', async () => {
       await reporter.error('Error 1', 'PLAYER');
@@ -519,5 +569,52 @@ describe('formatLogs', () => {
     expect(xml).toMatch(/<message>Test<\/message>/);
     // Should have closing </log> tag (not self-closing)
     expect(xml).toContain('</log>');
+  });
+});
+
+describe('formatFaults', () => {
+  it('should format empty faults', () => {
+    expect(formatFaults([])).toBe('[]');
+    expect(formatFaults(null)).toBe('[]');
+  });
+
+  it('should format fault entries as JSON', () => {
+    const faults = [{
+      eventType: 'LAYOUT_LOAD_FAILED',
+      message: 'Failed to load layout 123',
+      timestamp: new Date('2026-02-10T12:00:00Z'),
+      scheduleId: 5
+    }];
+
+    const json = formatFaults(faults);
+    const parsed = JSON.parse(json);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].code).toBe('LAYOUT_LOAD_FAILED');
+    expect(parsed[0].reason).toBe('Failed to load layout 123');
+    expect(parsed[0].date).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(parsed[0].layoutId).toBe(5);
+  });
+
+  it('should handle missing fields with defaults', () => {
+    const faults = [{ timestamp: new Date() }];
+
+    const json = formatFaults(faults);
+    const parsed = JSON.parse(json);
+    expect(parsed[0].code).toBe('UNKNOWN');
+    expect(parsed[0].reason).toBe('');
+    expect(parsed[0].layoutId).toBe(0);
+  });
+
+  it('should format multiple faults', () => {
+    const faults = [
+      { eventType: 'FAULT_1', message: 'First', timestamp: new Date(), scheduleId: 1 },
+      { eventType: 'FAULT_2', message: 'Second', timestamp: new Date(), scheduleId: 2 }
+    ];
+
+    const json = formatFaults(faults);
+    const parsed = JSON.parse(json);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].code).toBe('FAULT_1');
+    expect(parsed[1].code).toBe('FAULT_2');
   });
 });
