@@ -1203,6 +1203,350 @@ export class CmsApiClient {
   async deleteTemplate(templateId) {
     await this.del(`/template/${templateId}`);
   }
+
+  // ── Dataset CRUD (#28) ─────────────────────────────────────────────
+
+  /**
+   * List datasets
+   * @param {Object} [filters] - Filters (dataSetId, dataSet)
+   * @returns {Promise<Array>}
+   */
+  async listDatasets(filters = {}) {
+    const data = await this.get('/dataset', filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Create a dataset
+   * @param {Object} params - { dataSet, description }
+   * @returns {Promise<Object>}
+   */
+  async createDataset(params) {
+    return this.post('/dataset', params);
+  }
+
+  /**
+   * Edit a dataset
+   * @param {number} dataSetId
+   * @param {Object} params
+   * @returns {Promise<Object>}
+   */
+  async editDataset(dataSetId, params) {
+    return this.put(`/dataset/${dataSetId}`, params);
+  }
+
+  /**
+   * Delete a dataset
+   * @param {number} dataSetId
+   * @returns {Promise<void>}
+   */
+  async deleteDataset(dataSetId) {
+    await this.del(`/dataset/${dataSetId}`);
+  }
+
+  /**
+   * List columns in a dataset
+   * @param {number} dataSetId
+   * @returns {Promise<Array>}
+   */
+  async listDatasetColumns(dataSetId) {
+    const data = await this.get(`/dataset/${dataSetId}/column`);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Create a column in a dataset
+   * @param {number} dataSetId
+   * @param {Object} params - { heading, dataTypeId, dataSetColumnTypeId, listContent, ... }
+   * @returns {Promise<Object>}
+   */
+  async createDatasetColumn(dataSetId, params) {
+    return this.post(`/dataset/${dataSetId}/column`, params);
+  }
+
+  /**
+   * Edit a dataset column
+   * @param {number} dataSetId
+   * @param {number} columnId
+   * @param {Object} params
+   * @returns {Promise<Object>}
+   */
+  async editDatasetColumn(dataSetId, columnId, params) {
+    return this.put(`/dataset/${dataSetId}/column/${columnId}`, params);
+  }
+
+  /**
+   * Delete a dataset column
+   * @param {number} dataSetId
+   * @param {number} columnId
+   * @returns {Promise<void>}
+   */
+  async deleteDatasetColumn(dataSetId, columnId) {
+    await this.del(`/dataset/${dataSetId}/column/${columnId}`);
+  }
+
+  /**
+   * List rows (data) in a dataset
+   * @param {number} dataSetId
+   * @param {Object} [filters] - Filters (page, length)
+   * @returns {Promise<Array>}
+   */
+  async listDatasetData(dataSetId, filters = {}) {
+    const data = await this.get(`/dataset/data/${dataSetId}`, filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Add a row to a dataset
+   * @param {number} dataSetId
+   * @param {Object} rowData - Column heading → value pairs
+   * @returns {Promise<Object>}
+   */
+  async addDatasetRow(dataSetId, rowData) {
+    return this.post(`/dataset/data/${dataSetId}`, rowData);
+  }
+
+  /**
+   * Edit a dataset row
+   * @param {number} dataSetId
+   * @param {number} rowId
+   * @param {Object} rowData - Column heading → value pairs
+   * @returns {Promise<Object>}
+   */
+  async editDatasetRow(dataSetId, rowId, rowData) {
+    return this.put(`/dataset/data/${dataSetId}/${rowId}`, rowData);
+  }
+
+  /**
+   * Delete a dataset row
+   * @param {number} dataSetId
+   * @param {number} rowId
+   * @returns {Promise<void>}
+   */
+  async deleteDatasetRow(dataSetId, rowId) {
+    await this.del(`/dataset/data/${dataSetId}/${rowId}`);
+  }
+
+  /**
+   * Import CSV data into a dataset
+   * @param {number} dataSetId
+   * @param {FormData} formData - Must include CSV file
+   * @returns {Promise<Object>}
+   */
+  async importDatasetCsv(dataSetId, formData) {
+    return this.requestMultipart('POST', `/dataset/import/${dataSetId}`, formData);
+  }
+
+  /**
+   * Clear all data from a dataset
+   * @param {number} dataSetId
+   * @returns {Promise<void>}
+   */
+  async clearDataset(dataSetId) {
+    await this.del(`/dataset/data/${dataSetId}`);
+  }
+
+  // ── Notification CRUD (#29) ────────────────────────────────────────
+
+  /**
+   * List notifications
+   * @param {Object} [filters] - Filters (notificationId, subject)
+   * @returns {Promise<Array>}
+   */
+  async listNotifications(filters = {}) {
+    const data = await this.get('/notification', filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Create a notification
+   * @param {Object} params - { subject, body, isEmail, isInterrupt, displayGroupIds, ... }
+   * @returns {Promise<Object>}
+   */
+  async createNotification(params) {
+    return this.post('/notification', params);
+  }
+
+  /**
+   * Edit a notification
+   * @param {number} notificationId
+   * @param {Object} params
+   * @returns {Promise<Object>}
+   */
+  async editNotification(notificationId, params) {
+    return this.put(`/notification/${notificationId}`, params);
+  }
+
+  /**
+   * Delete a notification
+   * @param {number} notificationId
+   * @returns {Promise<void>}
+   */
+  async deleteNotification(notificationId) {
+    await this.del(`/notification/${notificationId}`);
+  }
+
+  // ── Folder CRUD (#30) ─────────────────────────────────────────────
+
+  /**
+   * List folders
+   * @param {Object} [filters] - Filters (folderId, text)
+   * @returns {Promise<Array>}
+   */
+  async listFolders(filters = {}) {
+    const data = await this.get('/folder', filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Create a folder
+   * @param {Object} params - { text, parentId }
+   * @returns {Promise<Object>}
+   */
+  async createFolder(params) {
+    return this.post('/folder', params);
+  }
+
+  /**
+   * Edit a folder
+   * @param {number} folderId
+   * @param {Object} params
+   * @returns {Promise<Object>}
+   */
+  async editFolder(folderId, params) {
+    return this.put(`/folder/${folderId}`, params);
+  }
+
+  /**
+   * Delete a folder
+   * @param {number} folderId
+   * @returns {Promise<void>}
+   */
+  async deleteFolder(folderId) {
+    await this.del(`/folder/${folderId}`);
+  }
+
+  // ── Tag CRUD + Entity Tagging (#31) ────────────────────────────────
+
+  /**
+   * List tags
+   * @param {Object} [filters] - Filters (tagId, tag)
+   * @returns {Promise<Array>}
+   */
+  async listTags(filters = {}) {
+    const data = await this.get('/tag', filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Create a tag
+   * @param {Object} params - { tag }
+   * @returns {Promise<Object>}
+   */
+  async createTag(params) {
+    return this.post('/tag', params);
+  }
+
+  /**
+   * Edit a tag
+   * @param {number} tagId
+   * @param {Object} params
+   * @returns {Promise<Object>}
+   */
+  async editTag(tagId, params) {
+    return this.put(`/tag/${tagId}`, params);
+  }
+
+  /**
+   * Delete a tag
+   * @param {number} tagId
+   * @returns {Promise<void>}
+   */
+  async deleteTag(tagId) {
+    await this.del(`/tag/${tagId}`);
+  }
+
+  /**
+   * Tag an entity (layout, media, campaign, etc.)
+   * @param {string} entity - Entity type (layout, media, campaign, displaygroup, playlist)
+   * @param {number} id - Entity ID
+   * @param {string[]} tags - Tag names
+   * @returns {Promise<void>}
+   */
+  async tagEntity(entity, id, tags) {
+    await this.post(`/${entity}/${id}/tag`, { tag: tags.join(',') });
+  }
+
+  /**
+   * Remove tags from an entity
+   * @param {string} entity - Entity type
+   * @param {number} id - Entity ID
+   * @param {string[]} tags - Tag names to remove
+   * @returns {Promise<void>}
+   */
+  async untagEntity(entity, id, tags) {
+    await this.post(`/${entity}/${id}/untag`, { tag: tags.join(',') });
+  }
+
+  // ── DisplayGroup Actions (#32) ─────────────────────────────────────
+
+  /**
+   * Change the layout on a display group (immediate override)
+   * @param {number} displayGroupId
+   * @param {number} layoutId
+   * @returns {Promise<void>}
+   */
+  async dgChangeLayout(displayGroupId, layoutId) {
+    await this.post(`/displaygroup/${displayGroupId}/action/changeLayout`, { layoutId });
+  }
+
+  /**
+   * Overlay a layout on a display group
+   * @param {number} displayGroupId
+   * @param {number} layoutId
+   * @returns {Promise<void>}
+   */
+  async dgOverlayLayout(displayGroupId, layoutId) {
+    await this.post(`/displaygroup/${displayGroupId}/action/overlayLayout`, { layoutId });
+  }
+
+  /**
+   * Revert a display group to its scheduled content
+   * @param {number} displayGroupId
+   * @returns {Promise<void>}
+   */
+  async dgRevertToSchedule(displayGroupId) {
+    await this.post(`/displaygroup/${displayGroupId}/action/revertToSchedule`);
+  }
+
+  /**
+   * Trigger immediate content collection on a display group
+   * @param {number} displayGroupId
+   * @returns {Promise<void>}
+   */
+  async dgCollectNow(displayGroupId) {
+    await this.post(`/displaygroup/${displayGroupId}/action/collectNow`);
+  }
+
+  /**
+   * Send a command to a display group
+   * @param {number} displayGroupId
+   * @param {number} commandId
+   * @returns {Promise<void>}
+   */
+  async dgSendCommand(displayGroupId, commandId) {
+    await this.post(`/displaygroup/${displayGroupId}/action/command`, { commandId });
+  }
+
+  /**
+   * Edit display group properties
+   * @param {number} displayGroupId
+   * @param {Object} params - Properties to update
+   * @returns {Promise<Object>}
+   */
+  async editDisplayGroup(displayGroupId, params) {
+    return this.put(`/displaygroup/${displayGroupId}`, params);
+  }
 }
 
 /**
