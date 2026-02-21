@@ -256,7 +256,7 @@ describe('Schedule Parsing', () => {
       const xml = `
         <schedule>
           <default file="0"/>
-          <command command="collectNow" date="2026-01-01"/>
+          <command code="collectNow" date="2026-01-01"/>
         </schedule>
       `;
 
@@ -271,8 +271,8 @@ describe('Schedule Parsing', () => {
       const xml = `
         <schedule>
           <default file="0"/>
-          <command command="collectNow" date="2026-02-11"/>
-          <command command="reboot" date="2026-02-12"/>
+          <command code="collectNow" date="2026-02-11"/>
+          <command code="reboot" date="2026-02-12"/>
         </schedule>
       `;
 
@@ -498,7 +498,7 @@ describe('Schedule Parsing', () => {
           <actions>
             <action actionType="navLayout" triggerCode="tc1" layoutCode="42" fromdt="2026-01-01 00:00:00" todt="2030-12-31 23:59:59" priority="1" scheduleid="10"/>
           </actions>
-          <command command="collectNow" date="2026-02-11"/>
+          <command code="collectNow" date="2026-02-11"/>
         </schedule>
       `;
 

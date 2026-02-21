@@ -353,17 +353,18 @@ describe('RestClient - RequiredFiles', () => {
       ]
     }, { etag: '"files-v1"' }));
 
-    const files = await client.requiredFiles();
+    const result = await client.requiredFiles();
 
-    expect(files).toHaveLength(3);
-    expect(files[0]).toEqual({
+    expect(result.files).toHaveLength(3);
+    expect(result.files[0]).toEqual(expect.objectContaining({
       type: 'media', id: '42', size: 1024, md5: 'abc', download: 'http',
       path: '/media/42.jpg', code: null, layoutid: null, regionid: null, mediaid: null,
-    });
-    expect(files[1].type).toBe('layout');
-    expect(files[2].layoutid).toBe('10');
-    expect(files[2].regionid).toBe('5');
-    expect(files[2].mediaid).toBe('99');
+    }));
+    expect(result.files[1].type).toBe('layout');
+    expect(result.files[2].layoutid).toBe('10');
+    expect(result.files[2].regionid).toBe('5');
+    expect(result.files[2].mediaid).toBe('99');
+    expect(result.purge).toEqual([]);
   });
 
   it('should handle single file (not array)', async () => {
@@ -371,16 +372,16 @@ describe('RestClient - RequiredFiles', () => {
       file: { '@attributes': { type: 'media', id: '1', size: '100', md5: 'x' } }
     }));
 
-    const files = await client.requiredFiles();
-    expect(files).toHaveLength(1);
-    expect(files[0].id).toBe('1');
+    const result = await client.requiredFiles();
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0].id).toBe('1');
   });
 
   it('should handle empty file list', async () => {
     mockFetch.mockResolvedValue(jsonResponse({}));
 
-    const files = await client.requiredFiles();
-    expect(files).toHaveLength(0);
+    const result = await client.requiredFiles();
+    expect(result.files).toHaveLength(0);
   });
 
   it('should use ETag caching', async () => {
@@ -407,12 +408,12 @@ describe('RestClient - RequiredFiles', () => {
 
     const result = client._parseRequiredFilesJson(json);
 
-    expect(result[0].type).toBe('media');
-    expect(result[0].id).toBe('42');
-    expect(result[0].size).toBe(1024);
-    expect(result[0].md5).toBe('abc');
-    expect(result[0].download).toBe('http');
-    expect(result[0].path).toBe('/media/42.jpg');
+    expect(result.files[0].type).toBe('media');
+    expect(result.files[0].id).toBe('42');
+    expect(result.files[0].size).toBe(1024);
+    expect(result.files[0].md5).toBe('abc');
+    expect(result.files[0].download).toBe('http');
+    expect(result.files[0].path).toBe('/media/42.jpg');
   });
 });
 

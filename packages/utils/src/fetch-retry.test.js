@@ -105,4 +105,34 @@ describe('fetchWithRetry', () => {
     expect(response.status).toBe(500);
     expect(mockFetch).toHaveBeenCalledTimes(4);
   });
+
+  it('should retry on HTTP 429 with Retry-After header', async () => {
+    const headers429 = { get: (name) => name === 'Retry-After' ? '1' : null };
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 429, statusText: 'Too Many Requests', headers: headers429 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 2, baseDelayMs: 100 });
+
+    // Advance past the 1s Retry-After delay
+    await vi.advanceTimersByTimeAsync(1500);
+
+    const response = await promise;
+    expect(response.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('should return 429 response when retries exhausted', async () => {
+    const headers429 = { get: (name) => name === 'Retry-After' ? '1' : null };
+    mockFetch.mockResolvedValue({ ok: false, status: 429, statusText: 'Too Many Requests', headers: headers429 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 1, baseDelayMs: 100 });
+
+    // Advance past the Retry-After delay
+    await vi.advanceTimersByTimeAsync(2000);
+
+    const response = await promise;
+    expect(response.status).toBe(429);
+    expect(mockFetch).toHaveBeenCalledTimes(2); // 1 original + 1 retry
+  });
 });

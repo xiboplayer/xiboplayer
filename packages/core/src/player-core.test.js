@@ -35,10 +35,13 @@ describe('PlayerCore', () => {
           xmrCmsKey: 'xmr-key'
         }
       })),
-      requiredFiles: vi.fn(() => Promise.resolve([
-        { id: '1', type: 'media', path: 'http://test.com/file1.mp4' },
-        { id: '2', type: 'layout', path: 'http://test.com/layout.xlf' }
-      ])),
+      requiredFiles: vi.fn(() => Promise.resolve({
+        files: [
+          { id: '1', type: 'media', path: 'http://test.com/file1.mp4' },
+          { id: '2', type: 'layout', path: 'http://test.com/layout.xlf' }
+        ],
+        purge: []
+      })),
       schedule: vi.fn(() => Promise.resolve({
         default: '0',
         layouts: [{ file: '100.xlf', priority: 10 }],
@@ -817,19 +820,23 @@ describe('PlayerCore', () => {
       const spy = createSpy();
       core.on('purge-request', spy);
 
-      mockXmds.requiredFiles.mockResolvedValue([
-        { id: '1', type: 'media', path: 'http://test.com/file1.mp4' },
-        { id: '2', type: 'layout', path: 'http://test.com/layout.xlf' },
-        { id: '3', type: 'purge', path: null },
-        { id: '4', type: 'purge', path: null }
-      ]);
+      mockXmds.requiredFiles.mockResolvedValue({
+        files: [
+          { id: '1', type: 'media', path: 'http://test.com/file1.mp4' },
+          { id: '2', type: 'layout', path: 'http://test.com/layout.xlf' }
+        ],
+        purge: [
+          { id: '3', storedAs: 'file3.mp4' },
+          { id: '4', storedAs: 'file4.jpg' }
+        ]
+      });
 
       await core.collect();
 
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy).toHaveBeenCalledWith([
-        expect.objectContaining({ id: '3', type: 'purge' }),
-        expect.objectContaining({ id: '4', type: 'purge' })
+        expect.objectContaining({ id: '3', storedAs: 'file3.mp4' }),
+        expect.objectContaining({ id: '4', storedAs: 'file4.jpg' })
       ]);
     });
 
@@ -837,9 +844,10 @@ describe('PlayerCore', () => {
       const spy = createSpy();
       core.on('purge-request', spy);
 
-      mockXmds.requiredFiles.mockResolvedValue([
-        { id: '1', type: 'media', path: 'http://test.com/file1.mp4' }
-      ]);
+      mockXmds.requiredFiles.mockResolvedValue({
+        files: [{ id: '1', type: 'media', path: 'http://test.com/file1.mp4' }],
+        purge: []
+      });
 
       await core.collect();
 
@@ -850,16 +858,15 @@ describe('PlayerCore', () => {
       const downloadSpy = createSpy();
       core.on('download-request', downloadSpy);
 
-      mockXmds.requiredFiles.mockResolvedValue([
-        { id: '1', type: 'media', path: 'http://test.com/file1.mp4' },
-        { id: '2', type: 'purge', path: null }
-      ]);
+      mockXmds.requiredFiles.mockResolvedValue({
+        files: [{ id: '1', type: 'media', path: 'http://test.com/file1.mp4' }],
+        purge: [{ id: '2', storedAs: 'file2.jpg' }]
+      });
 
       await core.collect();
 
-      // download-request should only contain non-purge files
+      // download-request should only contain files, not purge items
       const payload = downloadSpy.mock.calls[0][0];
-      expect(payload.files.every(f => f.type !== 'purge')).toBe(true);
       expect(payload.files).toHaveLength(1);
       expect(payload.files[0].id).toBe('1');
     });

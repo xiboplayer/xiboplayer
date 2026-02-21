@@ -484,11 +484,15 @@ export class LogReporter {
  *
  * Converts array of log objects to XML format expected by CMS.
  *
- * XML format:
+ * XML format (spec-compliant):
  * ```xml
  * <logs>
- *   <log date="2026-02-10 12:00:00" category="PLAYER" type="error"
- *        message="Failed to load layout 123" />
+ *   <log date="2026-02-10 12:00:00" category="error">
+ *     <thread>main</thread>
+ *     <method>collect</method>
+ *     <message>Failed to load layout 123</message>
+ *     <scheduleID>0</scheduleID>
+ *   </log>
  * </logs>
  * ```
  *
@@ -509,12 +513,14 @@ export function formatLogs(logs) {
     // Format date as "YYYY-MM-DD HH:MM:SS"
     const date = formatDateTime(logEntry.timestamp);
 
-    // Build attributes
+    // Spec categories: only "error" and "audit" are valid
+    const category = (logEntry.level === 'error' || logEntry.level === 'audit')
+      ? logEntry.level : 'audit';
+
+    // Build attributes on <log> element
     const attrs = [
       `date="${escapeXml(date)}"`,
-      `category="${escapeXml(logEntry.category)}"`,
-      `type="${escapeXml(logEntry.level)}"`,
-      `message="${escapeXml(logEntry.message)}"`
+      `category="${escapeXml(category)}"`
     ];
 
     // Fault alert fields (triggers CMS dashboard alerts)
@@ -525,7 +531,13 @@ export function formatLogs(logs) {
       attrs.push(`eventType="${escapeXml(logEntry.eventType)}"`);
     }
 
-    return `  <log ${attrs.join(' ')} />`;
+    // Build child elements (spec format: thread, method, message, scheduleID)
+    const thread = escapeXml(logEntry.thread || 'main');
+    const method = escapeXml(logEntry.method || logEntry.category || 'PLAYER');
+    const message = escapeXml(logEntry.message);
+    const scheduleId = escapeXml(String(logEntry.scheduleId || '0'));
+
+    return `  <log ${attrs.join(' ')}>\n    <thread>${thread}</thread>\n    <method>${method}</method>\n    <message>${message}</message>\n    <scheduleID>${scheduleId}</scheduleID>\n  </log>`;
   });
 
   return `<logs>\n${logElements.join('\n')}\n</logs>`;

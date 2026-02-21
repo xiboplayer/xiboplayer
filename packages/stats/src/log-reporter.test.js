@@ -333,9 +333,11 @@ describe('formatLogs', () => {
     const xml = formatLogs(logs);
     expect(xml).toContain('<logs>');
     expect(xml).toContain('</logs>');
-    expect(xml).toContain('type="error"');
-    expect(xml).toContain('message="Test error"');
-    expect(xml).toContain('category="PLAYER"');
+    expect(xml).toContain('category="error"');
+    expect(xml).toContain('<message>Test error</message>');
+    expect(xml).toContain('<method>PLAYER</method>');
+    expect(xml).toContain('<thread>main</thread>');
+    expect(xml).toContain('<scheduleID>0</scheduleID>');
     expect(xml).toContain('date=');
   });
 
@@ -375,7 +377,7 @@ describe('formatLogs', () => {
     expect(xml).toContain('&apos;');
   });
 
-  it('should escape XML special characters in category', () => {
+  it('should escape XML special characters in method', () => {
     const logs = [{
       level: 'error',
       message: 'Test',
@@ -384,7 +386,8 @@ describe('formatLogs', () => {
     }];
 
     const xml = formatLogs(logs);
-    expect(xml).toContain('category="PLAYER&lt;&gt;"');
+    // category field from log entry becomes <method> child element
+    expect(xml).toContain('<method>PLAYER&lt;&gt;</method>');
   });
 
   it('should format dates correctly', () => {
@@ -400,7 +403,7 @@ describe('formatLogs', () => {
     expect(xml).toMatch(/date="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"/);
   });
 
-  it('should handle all log levels', () => {
+  it('should map log levels to spec categories (error/audit only)', () => {
     const logs = [
       { level: 'error', message: 'Error', category: 'PLAYER', timestamp: new Date() },
       { level: 'audit', message: 'Audit', category: 'PLAYER', timestamp: new Date() },
@@ -409,10 +412,12 @@ describe('formatLogs', () => {
     ];
 
     const xml = formatLogs(logs);
-    expect(xml).toContain('type="error"');
-    expect(xml).toContain('type="audit"');
-    expect(xml).toContain('type="info"');
-    expect(xml).toContain('type="debug"');
+    // Spec only allows "error" and "audit" as categories
+    expect(xml).toContain('category="error"');
+    expect(xml).toContain('category="audit"');
+    // info and debug should be mapped to "audit"
+    const auditCount = (xml.match(/category="audit"/g) || []).length;
+    expect(auditCount).toBe(3); // audit + info + debug
   });
 
   it('should include alertType and eventType in XML output for faults', () => {
@@ -480,5 +485,39 @@ describe('formatLogs', () => {
 
     const xml = formatLogs(logs);
     expect(xml).toContain(longMessage);
+  });
+
+  it('should use custom thread, method, and scheduleId when provided', () => {
+    const logs = [{
+      level: 'error',
+      message: 'Widget failed',
+      category: 'RENDERER',
+      thread: 'worker-2',
+      method: 'renderWidget',
+      scheduleId: 42,
+      timestamp: new Date('2026-02-10T12:00:00Z')
+    }];
+
+    const xml = formatLogs(logs);
+    expect(xml).toContain('<thread>worker-2</thread>');
+    expect(xml).toContain('<method>renderWidget</method>');
+    expect(xml).toContain('<scheduleID>42</scheduleID>');
+  });
+
+  it('should produce spec-compliant XML structure with child elements', () => {
+    const logs = [{
+      level: 'error',
+      message: 'Test',
+      category: 'PLAYER',
+      timestamp: new Date('2026-02-10T12:00:00Z')
+    }];
+
+    const xml = formatLogs(logs);
+    // Should NOT have message as attribute (old format)
+    expect(xml).not.toMatch(/message="/);
+    // Should have message as child element (spec format)
+    expect(xml).toMatch(/<message>Test<\/message>/);
+    // Should have closing </log> tag (not self-closing)
+    expect(xml).toContain('</log>');
   });
 });
