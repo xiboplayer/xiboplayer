@@ -60,6 +60,9 @@ export function parseScheduleResponse(xml) {
       fromdt: campaignEl.getAttribute('fromdt'),
       todt: campaignEl.getAttribute('todt'),
       scheduleid: campaignEl.getAttribute('scheduleid'),
+      recurrenceType: campaignEl.getAttribute('recurrenceType') || null,
+      recurrenceRepeatsOn: campaignEl.getAttribute('recurrenceRepeatsOn') || null,
+      recurrenceRange: campaignEl.getAttribute('recurrenceRange') || null,
       layouts: []
     };
 
@@ -103,6 +106,9 @@ export function parseScheduleResponse(xml) {
       geoLocation: layoutEl.getAttribute('geoLocation') || '',
       syncEvent: layoutEl.getAttribute('syncEvent') === '1',
       shareOfVoice: parseInt(layoutEl.getAttribute('shareOfVoice') || '0'),
+      recurrenceType: layoutEl.getAttribute('recurrenceType') || null,
+      recurrenceRepeatsOn: layoutEl.getAttribute('recurrenceRepeatsOn') || null,
+      recurrenceRange: layoutEl.getAttribute('recurrenceRange') || null,
       criteria: parseCriteria(layoutEl)
     });
   }
@@ -124,6 +130,9 @@ export function parseScheduleResponse(xml) {
         geoLocation: overlayEl.getAttribute('geoLocation') || '',
         syncEvent: overlayEl.getAttribute('syncEvent') === '1',
         maxPlaysPerHour: parseInt(overlayEl.getAttribute('maxPlaysPerHour') || '0'),
+        recurrenceType: overlayEl.getAttribute('recurrenceType') || null,
+        recurrenceRepeatsOn: overlayEl.getAttribute('recurrenceRepeatsOn') || null,
+        recurrenceRange: overlayEl.getAttribute('recurrenceRange') || null,
         criteria: parseCriteria(overlayEl)
       });
     }

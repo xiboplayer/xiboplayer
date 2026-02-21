@@ -522,15 +522,29 @@ export class RendererLite {
     const actions = this.parseActions(mediaEl);
 
     // Parse audio overlay nodes (<audio> child elements on the widget)
+    // Spec format: <audio><uri volume="" loop="" mediaId="">filename.mp3</uri></audio>
+    // Also supports flat format: <audio mediaId="" uri="" volume="" loop="">
     const audioNodes = [];
     for (const child of mediaEl.children) {
       if (child.tagName.toLowerCase() === 'audio') {
-        audioNodes.push({
-          mediaId: child.getAttribute('mediaId') || null,
-          uri: child.getAttribute('uri') || '',
-          volume: parseInt(child.getAttribute('volume') || '100'),
-          loop: child.getAttribute('loop') === '1'
-        });
+        const uriEl = child.querySelector('uri');
+        if (uriEl) {
+          // Spec format: attributes on <uri>, filename as text content
+          audioNodes.push({
+            mediaId: uriEl.getAttribute('mediaId') || null,
+            uri: uriEl.textContent || '',
+            volume: parseInt(uriEl.getAttribute('volume') || '100'),
+            loop: uriEl.getAttribute('loop') === '1'
+          });
+        } else {
+          // Flat format fallback: attributes directly on <audio>
+          audioNodes.push({
+            mediaId: child.getAttribute('mediaId') || null,
+            uri: child.getAttribute('uri') || '',
+            volume: parseInt(child.getAttribute('volume') || '100'),
+            loop: child.getAttribute('loop') === '1'
+          });
+        }
       }
     }
 

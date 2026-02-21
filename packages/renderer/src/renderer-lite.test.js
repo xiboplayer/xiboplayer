@@ -1359,6 +1359,63 @@ describe('RendererLite', () => {
       expect(widget.audioNodes[1].volume).toBe(40);
     });
 
+    it('should parse spec-format audio nodes with <uri> child element', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <audio>
+                <uri volume="80" loop="1" mediaId="50">bgmusic.mp3</uri>
+              </audio>
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.audioNodes).toHaveLength(1);
+      expect(widget.audioNodes[0]).toEqual({
+        mediaId: '50',
+        uri: 'bgmusic.mp3',
+        volume: 80,
+        loop: true
+      });
+    });
+
+    it('should handle mixed audio formats (spec + flat)', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <audio>
+                <uri volume="60" loop="0" mediaId="51">track1.mp3</uri>
+              </audio>
+              <audio mediaId="52" uri="track2.mp3" volume="40" loop="1"/>
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.audioNodes).toHaveLength(2);
+      // Spec format
+      expect(widget.audioNodes[0].uri).toBe('track1.mp3');
+      expect(widget.audioNodes[0].mediaId).toBe('51');
+      expect(widget.audioNodes[0].volume).toBe(60);
+      expect(widget.audioNodes[0].loop).toBe(false);
+      // Flat format
+      expect(widget.audioNodes[1].uri).toBe('track2.mp3');
+      expect(widget.audioNodes[1].mediaId).toBe('52');
+      expect(widget.audioNodes[1].volume).toBe(40);
+      expect(widget.audioNodes[1].loop).toBe(true);
+    });
+
     it('should have empty audioNodes when widget has no audio children', () => {
       const xlf = `
         <layout>
