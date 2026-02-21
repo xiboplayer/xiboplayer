@@ -14,23 +14,34 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 ## Features
 
 - **Full Xibo protocol support** — XMDS SOAP v3–v7, REST API, and XMR WebSocket
-- **Rich media rendering** — video (MP4/HLS), images, PDF, text/ticker, web pages, clock, calendar, weather, and all CMS widget types
+- **Rich media rendering** — video (MP4/HLS), images (scaleType, align/valign), audio (with overlay visualization), PDF, text/ticker, web pages, clock, calendar, weather, and all CMS widget types
 - **Offline-first** — Cache API + IndexedDB storage with automatic fallback to cached schedule when network is unavailable
 - **Parallel chunk downloads** — large files (100MB+) split into 50MB chunks, header+trailer first for instant MP4 playback start
 - **Layout preloading** — 2-layout pool pre-builds upcoming layouts at 75% of current duration for instant zero-gap transitions
 - **Campaign scheduling** — priority-based campaigns, weekly dayparting with midnight-crossing, geo-fencing, and criteria evaluation
+- **Schedule conflict detection** — identifies and flags overlapping schedule entries
 - **Interrupts / share of voice** — percentage-based interrupt scheduling with even interleaving across the hour
+- **Interleaved default layouts** — cycles through multiple default layouts instead of repeating one
 - **Overlay support** — multiple simultaneous overlay layouts with independent scheduling and priority
-- **Transitions** — fade and fly (8-direction compass) transitions via Web Animations API
+- **Transitions** — fade and fly (8-direction compass) transitions via Web Animations API, including region exit transitions
 - **Interactive actions** — touch/click and keyboard triggers for widget navigation, layout jumps, and command execution
+- **Scheduled commands** — timed command execution from CMS schedule entries
 - **Real-time CMS commands** — collectNow, screenshot, changeLayout, overlayLayout, revertToSchedule, purgeAll, dataUpdate via XMR WebSocket
 - **Proof of play** — per-layout and per-widget duration tracking with individual or aggregated submission
+- **Event-based stats** — widget duration events (widgetAction) and recordEvent for proof of play
+- **Log batching** — aggregated log submission aligned with upstream CMS spec
 - **Multi-display sync** — BroadcastChannel-based lead/follower synchronization for video walls
 - **Timeline prediction** — deterministic future schedule simulation for proactive content preloading
+- **Weather criteria** — weather-based schedule evaluation for conditional content display
+- **Geolocation fallback chain** — browser Geolocation API → Google API → IP-based lookup
+- **CMS tag config parsing** — display tag configuration (e.g. geoApiKey|value) from RegisterDisplay
 - **Network resilience** — exponential backoff with jitter, CRC32-based skip optimization, ETag HTTP caching
 - **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving
 - **RSA key pair generation** for XMR display registration via Web Crypto API
-- **1000+ tests** across 29 test suites
+- **Renderer state query** — isPaused() for pause/resume control from shells
+- **Drawer regions** — hidden regions revealed via navigateToWidget, auto-hidden after widget cycle
+- **Sub-playlist cycle playback** — round-robin or random widget selection per group per layout cycle
+- **1089 tests** across 30 test suites
 
 ## Packages
 
@@ -110,7 +121,8 @@ The renderer parses Xibo Layout Format (XLF) files and builds a live DOM with:
 | Widget type | Implementation |
 |-------------|---------------|
 | Video | `<video>` with native HLS (Safari) + hls.js fallback, pause-on-last-frame |
-| Image | `<img>` with objectFit contain, blob URL from cache |
+| Image | `<img>` with scaleType (center/stretch/fit), align/valign, blob URL from cache |
+| Audio | `<audio>` with gradient visualization overlay and playback icon |
 | PDF | PDF.js canvas rendering (dynamically imported) |
 | Text / Ticker | iframe with CMS-rendered HTML via GetResource |
 | Web page | bare `<iframe src="...">` |
@@ -146,7 +158,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1000+ tests across 29 suites)
+pnpm test              # run all tests (1089 tests across 30 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
