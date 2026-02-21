@@ -170,6 +170,20 @@ describe('CacheAnalyzer', () => {
       vi.unstubAllGlobals();
     });
 
+    it('should treat widget HTML as required when parent layout is required', async () => {
+      mockCache._addFile({ id: '470', type: 'layout', size: 500, cachedAt: 100 });
+      mockCache._addFile({ id: '470/213/182', type: 'widget', size: 0, cachedAt: 0 });
+      mockCache._addFile({ id: '470/215/184', type: 'widget', size: 0, cachedAt: 0 });
+      mockCache._addFile({ id: '99/10/5', type: 'widget', size: 0, cachedAt: 0 });
+
+      const report = await analyzer.analyze([{ id: '470', type: 'layout' }]);
+
+      // Layout 470 + its 2 widgets = 3 required; widget for layout 99 = orphaned
+      expect(report.files.required).toBe(3);
+      expect(report.files.orphaned).toBe(1);
+      expect(report.orphaned[0].id).toBe('99/10/5');
+    });
+
     it('should handle files with missing size or cachedAt', async () => {
       mockCache._addFile({ id: '1', type: 'media' }); // no size, no cachedAt
 

@@ -56,6 +56,14 @@ export class CacheAnalyzer {
     for (const file of cachedFiles) {
       if (requiredIds.has(String(file.id))) {
         required.push(file);
+      } else if (file.type === 'widget') {
+        // Widget HTML IDs are "layoutId/regionId/widgetId" — check parent layout
+        const parentLayoutId = String(file.id).split('/')[0];
+        if (requiredIds.has(parentLayoutId)) {
+          required.push(file);
+        } else {
+          orphaned.push(file);
+        }
       } else {
         orphaned.push(file);
       }
