@@ -50,7 +50,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Configurable client identity** — clientType/clientVersion/clientCode in RegisterDisplay
 - **Fault reporting agent** — independent 60s fault submission cycle for faster CMS alerts
 - **Layout blacklisting** — tracks consecutive render failures, auto-blacklists after 3 failures, reports to CMS via BlackList XMDS
-- **1167 tests** across 31 test suites
+- **1169 tests** across 31 test suites
 
 ## Packages
 
@@ -167,7 +167,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1167 tests across 31 suites)
+pnpm test              # run all tests (1169 tests across 31 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
