@@ -44,6 +44,10 @@ export class SyncManager {
    * @param {Function} [options.onLayoutChange] - Called when lead requests layout change
    * @param {Function} [options.onLayoutShow] - Called when lead gives show signal
    * @param {Function} [options.onVideoStart] - Called when lead gives video start signal
+   * @param {Function} [options.onStatsReport] - (Lead) Called when follower sends stats
+   * @param {Function} [options.onLogsReport] - (Lead) Called when follower sends logs
+   * @param {Function} [options.onStatsAck] - (Follower) Called when lead confirms stats submission
+   * @param {Function} [options.onLogsAck] - (Follower) Called when lead confirms logs submission
    */
   constructor(options) {
     this.displayId = options.displayId;
@@ -56,6 +60,10 @@ export class SyncManager {
     this.onLayoutChange = options.onLayoutChange || (() => {});
     this.onLayoutShow = options.onLayoutShow || (() => {});
     this.onVideoStart = options.onVideoStart || (() => {});
+    this.onStatsReport = options.onStatsReport || null;
+    this.onLogsReport = options.onLogsReport || null;
+    this.onStatsAck = options.onStatsAck || null;
+    this.onLogsAck = options.onLogsAck || null;
 
     // State
     this.channel = null;
@@ -226,6 +234,40 @@ export class SyncManager {
     });
   }
 
+  /**
+   * [Follower only] Delegate stats submission to the lead.
+   * Lead will submit on our behalf and send a stats-ack when done.
+   *
+   * @param {string} statsXml - Formatted stats XML to submit
+   */
+  reportStats(statsXml) {
+    if (this.isLead) return;
+
+    this._log.info('Delegating stats to lead');
+    this._send({
+      type: 'stats-report',
+      displayId: this.displayId,
+      statsXml,
+    });
+  }
+
+  /**
+   * [Follower only] Delegate logs submission to the lead.
+   * Lead will submit on our behalf and send a logs-ack when done.
+   *
+   * @param {string} logsXml - Formatted logs XML to submit
+   */
+  reportLogs(logsXml) {
+    if (this.isLead) return;
+
+    this._log.info('Delegating logs to lead');
+    this._send({
+      type: 'logs-report',
+      displayId: this.displayId,
+      logsXml,
+    });
+  }
+
   // ── Message handling ──────────────────────────────────────────────
 
   /** @private */
@@ -266,6 +308,38 @@ export class SyncManager {
         if (!this.isLead) {
           this._log.info( `Video start signal: ${msg.layoutId} region ${msg.regionId}`);
           this.onVideoStart(msg.layoutId, msg.regionId);
+        }
+        break;
+
+      case 'stats-report':
+        // Lead: follower is delegating stats submission
+        if (this.isLead && this.onStatsReport) {
+          const statsAck = () => this._send({ type: 'stats-ack', displayId: this.displayId, targetDisplayId: msg.displayId });
+          this.onStatsReport(msg.displayId, msg.statsXml, statsAck);
+        }
+        break;
+
+      case 'logs-report':
+        // Lead: follower is delegating logs submission
+        if (this.isLead && this.onLogsReport) {
+          const logsAck = () => this._send({ type: 'logs-ack', displayId: this.displayId, targetDisplayId: msg.displayId });
+          this.onLogsReport(msg.displayId, msg.logsXml, logsAck);
+        }
+        break;
+
+      case 'stats-ack':
+        // Follower: lead confirmed stats were submitted for us
+        if (!this.isLead && msg.targetDisplayId === this.displayId && this.onStatsAck) {
+          this._log.info('Stats acknowledged by lead');
+          this.onStatsAck(msg.targetDisplayId);
+        }
+        break;
+
+      case 'logs-ack':
+        // Follower: lead confirmed logs were submitted for us
+        if (!this.isLead && msg.targetDisplayId === this.displayId && this.onLogsAck) {
+          this._log.info('Logs acknowledged by lead');
+          this.onLogsAck(msg.targetDisplayId);
         }
         break;
 

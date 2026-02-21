@@ -373,4 +373,104 @@ describe('SyncManager', () => {
       expect(lead.followers.size).toBe(0);
     });
   });
+
+  describe('Stats/Logs Delegation', () => {
+    it('follower receives stats-ack after lead calls ack()', () => {
+      const onStatsAck = vi.fn();
+      const onStatsReport = vi.fn((_id, _xml, ack) => ack());
+
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: makeSyncConfig(true),
+        onStatsReport,
+      });
+      follower1 = new SyncManager({
+        displayId: 'pwa-f1',
+        syncConfig: makeSyncConfig(false),
+        onStatsAck,
+      });
+      lead.start();
+      follower1.start();
+
+      follower1.reportStats('<stats>test</stats>');
+
+      expect(onStatsReport).toHaveBeenCalledWith(
+        'pwa-f1',
+        '<stats>test</stats>',
+        expect.any(Function),
+      );
+      expect(onStatsAck).toHaveBeenCalledWith('pwa-f1');
+    });
+
+    it('no ack when lead does not call ack() (CMS failure)', () => {
+      const onStatsAck = vi.fn();
+      const onStatsReport = vi.fn((_id, _xml, _ack) => { /* no ack */ });
+
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: makeSyncConfig(true),
+        onStatsReport,
+      });
+      follower1 = new SyncManager({
+        displayId: 'pwa-f1',
+        syncConfig: makeSyncConfig(false),
+        onStatsAck,
+      });
+      lead.start();
+      follower1.start();
+
+      follower1.reportStats('<stats>test</stats>');
+
+      expect(onStatsReport).toHaveBeenCalled();
+      expect(onStatsAck).not.toHaveBeenCalled();
+    });
+
+    it('lead ignores stats-report from itself (self-message guard)', () => {
+      const onStatsReport = vi.fn();
+
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: makeSyncConfig(true),
+        onStatsReport,
+      });
+      lead.start();
+
+      // Simulate: lead sends a stats-report with its own displayId
+      // The _handleMessage guard should reject it (msg.displayId === this.displayId)
+      lead._send({
+        type: 'stats-report',
+        displayId: 'pwa-lead',
+        statsXml: '<stats>self</stats>',
+      });
+
+      expect(onStatsReport).not.toHaveBeenCalled();
+    });
+
+    it('logs delegation works same as stats', () => {
+      const onLogsAck = vi.fn();
+      const onLogsReport = vi.fn((_id, _xml, ack) => ack());
+
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: makeSyncConfig(true),
+        onLogsReport,
+      });
+      follower1 = new SyncManager({
+        displayId: 'pwa-f1',
+        syncConfig: makeSyncConfig(false),
+        onLogsAck,
+      });
+      lead.start();
+      follower1.start();
+
+      follower1.reportLogs('<logs>test-logs</logs>');
+
+      expect(onLogsReport).toHaveBeenCalledWith(
+        'pwa-f1',
+        '<logs>test-logs</logs>',
+        expect.any(Function),
+      );
+      expect(onLogsAck).toHaveBeenCalledWith('pwa-f1');
+    });
+  });
 });

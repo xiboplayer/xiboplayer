@@ -375,9 +375,10 @@ export class RestClient {
    * SubmitLog - submit player logs to CMS
    * POST /log → JSON acknowledgement
    */
-  async submitLog(logXml) {
+  async submitLog(logXml, hardwareKeyOverride = null) {
     // Accept array (JSON-native) or string (XML) — send under the right key
     const body = Array.isArray(logXml) ? { logs: logXml } : { logXml };
+    if (hardwareKeyOverride) body.hardwareKey = hardwareKeyOverride;
     const result = await this.restSend('POST', '/log', body);
     return result?.success === true;
   }
@@ -417,10 +418,11 @@ export class RestClient {
     return this.restGet('/weather');
   }
 
-  async submitStats(statsXml) {
+  async submitStats(statsXml, hardwareKeyOverride = null) {
     try {
       // Accept array (JSON-native) or string (XML) — send under the right key
       const body = Array.isArray(statsXml) ? { stats: statsXml } : { statXml: statsXml };
+      if (hardwareKeyOverride) body.hardwareKey = hardwareKeyOverride;
       const result = await this.restSend('POST', '/stats', body);
       const success = result?.success === true;
       log.info(`SubmitStats result: ${success}`);

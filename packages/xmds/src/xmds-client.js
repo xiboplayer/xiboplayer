@@ -382,10 +382,10 @@ export class XmdsClient {
    * @param {string} logXml - XML string containing log entries
    * @returns {Promise<boolean>} - true if logs were successfully submitted
    */
-  async submitLog(logXml) {
+  async submitLog(logXml, hardwareKeyOverride = null) {
     const xml = await this.call('SubmitLog', {
       serverKey: this.config.cmsKey,
-      hardwareKey: this.config.hardwareKey,
+      hardwareKey: hardwareKeyOverride || this.config.hardwareKey,
       logXml: logXml
     });
 
@@ -436,11 +436,11 @@ export class XmdsClient {
     });
   }
 
-  async submitStats(statsXml) {
+  async submitStats(statsXml, hardwareKeyOverride = null) {
     try {
       const xml = await this.call('SubmitStats', {
         serverKey: this.config.cmsKey,
-        hardwareKey: this.config.hardwareKey,
+        hardwareKey: hardwareKeyOverride || this.config.hardwareKey,
         statXml: statsXml
       });
 
