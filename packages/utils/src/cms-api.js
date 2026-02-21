@@ -2,7 +2,8 @@
  * CMS API Client — OAuth2-authenticated REST client for Xibo CMS
  *
  * Full CRUD client for all Xibo CMS REST API entities: displays, layouts,
- * regions, widgets, media, campaigns, schedules, display groups, resolutions.
+ * regions, widgets, media, campaigns, schedules, display groups, resolutions,
+ * commands, dayparts, playlists, datasets, notifications, folders, and tags.
  * Implements OAuth2 client_credentials flow (machine-to-machine).
  *
  * Usage:
@@ -746,6 +747,198 @@ export class CmsApiClient {
    */
   async editLayout(layoutId, params) {
     return this.request('PUT', `/layout/${layoutId}`, params);
+  }
+
+  // ── Layout Copy / Discard (#25) ────────────────────────────────────
+
+  /**
+   * Copy a layout
+   * @param {number} layoutId
+   * @param {Object} [opts] - Options (name, description, copyMediaFiles)
+   * @returns {Promise<Object>} Copied layout
+   */
+  async copyLayout(layoutId, opts = {}) {
+    return this.post(`/layout/copy/${layoutId}`, opts);
+  }
+
+  /**
+   * Discard a draft layout (revert to last published version)
+   * @param {number} layoutId
+   * @returns {Promise<void>}
+   */
+  async discardLayout(layoutId) {
+    await this.put(`/layout/discard/${layoutId}`);
+  }
+
+  // ── Campaign Edit / Unassign (#26) ─────────────────────────────────
+
+  /**
+   * Edit campaign properties
+   * @param {number} campaignId
+   * @param {Object} params - Properties to update (name, etc.)
+   * @returns {Promise<Object>} Updated campaign
+   */
+  async editCampaign(campaignId, params) {
+    return this.put(`/campaign/${campaignId}`, params);
+  }
+
+  /**
+   * Get a single campaign by ID
+   * @param {number} campaignId
+   * @returns {Promise<Object>}
+   */
+  async getCampaign(campaignId) {
+    return this.get(`/campaign/${campaignId}`);
+  }
+
+  /**
+   * Unassign a layout from a campaign
+   * @param {number} campaignId
+   * @param {number} layoutId
+   * @returns {Promise<void>}
+   */
+  async unassignLayoutFromCampaign(campaignId, layoutId) {
+    await this.post(`/campaign/layout/unassign/${campaignId}`, { layoutId });
+  }
+
+  // ── Schedule Edit (#27) ────────────────────────────────────────────
+
+  /**
+   * Edit a schedule event
+   * @param {number} eventId
+   * @param {Object} params - Properties to update (fromDt, toDt, isPriority, etc.)
+   * @returns {Promise<Object>} Updated schedule event
+   */
+  async editSchedule(eventId, params) {
+    return this.put(`/schedule/${eventId}`, params);
+  }
+
+  // ── Layout Retire / Status / Tag (#34) ─────────────────────────────
+
+  /**
+   * Retire a layout (hide from new scheduling but keep existing schedules)
+   * @param {number} layoutId
+   * @returns {Promise<void>}
+   */
+  async retireLayout(layoutId) {
+    await this.put(`/layout/retire/${layoutId}`);
+  }
+
+  /**
+   * Unretire a previously retired layout
+   * @param {number} layoutId
+   * @returns {Promise<void>}
+   */
+  async unretireLayout(layoutId) {
+    await this.put(`/layout/unretire/${layoutId}`);
+  }
+
+  /**
+   * Get layout status (build status, validity)
+   * @param {number} layoutId
+   * @returns {Promise<Object>}
+   */
+  async getLayoutStatus(layoutId) {
+    return this.get(`/layout/status/${layoutId}`);
+  }
+
+  /**
+   * Tag a layout
+   * @param {number} layoutId
+   * @param {string[]} tags - Tag names to add
+   * @returns {Promise<void>}
+   */
+  async tagLayout(layoutId, tags) {
+    await this.post(`/layout/${layoutId}/tag`, { tag: tags.join(',') });
+  }
+
+  /**
+   * Remove tags from a layout
+   * @param {number} layoutId
+   * @param {string[]} tags - Tag names to remove
+   * @returns {Promise<void>}
+   */
+  async untagLayout(layoutId, tags) {
+    await this.post(`/layout/${layoutId}/untag`, { tag: tags.join(',') });
+  }
+
+  // ── Command CRUD (#36) ─────────────────────────────────────────────
+
+  /**
+   * List commands
+   * @param {Object} [filters] - Filters (commandId, command)
+   * @returns {Promise<Array>}
+   */
+  async listCommands(filters = {}) {
+    const data = await this.get('/command', filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Create a command
+   * @param {Object} params - { command, description, code }
+   * @returns {Promise<Object>}
+   */
+  async createCommand(params) {
+    return this.post('/command', params);
+  }
+
+  /**
+   * Edit a command
+   * @param {number} commandId
+   * @param {Object} params - Properties to update
+   * @returns {Promise<Object>}
+   */
+  async editCommand(commandId, params) {
+    return this.put(`/command/${commandId}`, params);
+  }
+
+  /**
+   * Delete a command
+   * @param {number} commandId
+   * @returns {Promise<void>}
+   */
+  async deleteCommand(commandId) {
+    await this.del(`/command/${commandId}`);
+  }
+
+  // ── Display Extras (#41) ───────────────────────────────────────────
+
+  /**
+   * Delete a display
+   * @param {number} displayId
+   * @returns {Promise<void>}
+   */
+  async deleteDisplay(displayId) {
+    await this.del(`/display/${displayId}`);
+  }
+
+  /**
+   * Send Wake-on-LAN to a display
+   * @param {number} displayId
+   * @returns {Promise<void>}
+   */
+  async wolDisplay(displayId) {
+    await this.post(`/display/wol/${displayId}`);
+  }
+
+  /**
+   * Set the default layout for a display
+   * @param {number} displayId
+   * @param {number} layoutId - Layout to set as default
+   * @returns {Promise<Object>}
+   */
+  async setDefaultLayout(displayId, layoutId) {
+    return this.put(`/display/${displayId}`, { defaultLayoutId: layoutId });
+  }
+
+  /**
+   * Purge all content from a display (force re-download)
+   * @param {number} displayId
+   * @returns {Promise<void>}
+   */
+  async purgeDisplay(displayId) {
+    await this.post(`/display/purge/${displayId}`);
   }
 }
 

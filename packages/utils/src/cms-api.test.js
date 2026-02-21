@@ -782,6 +782,241 @@ describe('CmsApiClient', () => {
     });
   });
 
+  // ── Layout Copy / Discard (#25) ──
+
+  describe('Layout Copy / Discard', () => {
+    beforeEach(() => stubAuth());
+
+    it('copyLayout() should POST to /layout/copy/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ layoutId: 99 }));
+
+      const result = await api.copyLayout(10, { name: 'Copy of Layout' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/layout/copy/10');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('name')).toBe('Copy of Layout');
+      expect(result.layoutId).toBe(99);
+    });
+
+    it('discardLayout() should PUT to /layout/discard/{id}', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.discardLayout(10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/layout/discard/10');
+      expect(opts.method).toBe('PUT');
+    });
+  });
+
+  // ── Campaign Edit / Unassign (#26) ──
+
+  describe('Campaign Edit / Unassign', () => {
+    beforeEach(() => stubAuth());
+
+    it('editCampaign() should PUT to /campaign/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ campaignId: 20 }));
+
+      const result = await api.editCampaign(20, { name: 'Updated Campaign' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/campaign/20');
+      expect(opts.method).toBe('PUT');
+      expect(opts.body.get('name')).toBe('Updated Campaign');
+      expect(result.campaignId).toBe(20);
+    });
+
+    it('getCampaign() should GET /campaign/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ campaignId: 20, name: 'My Campaign' }));
+
+      const result = await api.getCampaign(20);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/campaign/20');
+      expect(result.name).toBe('My Campaign');
+    });
+
+    it('unassignLayoutFromCampaign() should POST with layoutId', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.unassignLayoutFromCampaign(20, 10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/campaign/layout/unassign/20');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('layoutId')).toBe('10');
+    });
+  });
+
+  // ── Schedule Edit (#27) ──
+
+  describe('Schedule Edit', () => {
+    beforeEach(() => stubAuth());
+
+    it('editSchedule() should PUT to /schedule/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ eventId: 99 }));
+
+      const result = await api.editSchedule(99, { isPriority: 1 });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/schedule/99');
+      expect(opts.method).toBe('PUT');
+      expect(opts.body.get('isPriority')).toBe('1');
+      expect(result.eventId).toBe(99);
+    });
+  });
+
+  // ── Layout Retire / Status / Tag (#34) ──
+
+  describe('Layout Retire / Status / Tag', () => {
+    beforeEach(() => stubAuth());
+
+    it('retireLayout() should PUT to /layout/retire/{id}', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.retireLayout(10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/layout/retire/10');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('unretireLayout() should PUT to /layout/unretire/{id}', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.unretireLayout(10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/layout/unretire/10');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('getLayoutStatus() should GET /layout/status/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ status: 3, description: 'Valid' }));
+
+      const result = await api.getLayoutStatus(10);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/layout/status/10');
+      expect(result.status).toBe(3);
+    });
+
+    it('tagLayout() should POST comma-separated tags', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.tagLayout(10, ['lobby', 'hd']);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/layout/10/tag');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('tag')).toBe('lobby,hd');
+    });
+
+    it('untagLayout() should POST comma-separated tags to untag', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.untagLayout(10, ['old']);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/layout/10/untag');
+      expect(opts.body.get('tag')).toBe('old');
+    });
+  });
+
+  // ── Command CRUD (#36) ──
+
+  describe('Command CRUD', () => {
+    beforeEach(() => stubAuth());
+
+    it('listCommands() should GET and return array', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ commandId: 1, command: 'reboot' }]));
+
+      const cmds = await api.listCommands();
+
+      expect(cmds).toHaveLength(1);
+      expect(cmds[0].command).toBe('reboot');
+    });
+
+    it('createCommand() should POST', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ commandId: 2 }));
+
+      const result = await api.createCommand({ command: 'reboot', code: 'sudo reboot' });
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('command')).toBe('reboot');
+      expect(result.commandId).toBe(2);
+    });
+
+    it('editCommand() should PUT to /command/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ commandId: 2 }));
+
+      await api.editCommand(2, { description: 'Updated' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/command/2');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deleteCommand() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteCommand(2);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/command/2');
+      expect(opts.method).toBe('DELETE');
+    });
+  });
+
+  // ── Display Extras (#41) ──
+
+  describe('Display Extras', () => {
+    beforeEach(() => stubAuth());
+
+    it('deleteDisplay() should DELETE /display/{id}', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteDisplay(42);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/display/42');
+      expect(opts.method).toBe('DELETE');
+    });
+
+    it('wolDisplay() should POST to /display/wol/{id}', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.wolDisplay(42);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/display/wol/42');
+      expect(opts.method).toBe('POST');
+    });
+
+    it('setDefaultLayout() should PUT defaultLayoutId', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ displayId: 42 }));
+
+      await api.setDefaultLayout(42, 10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/display/42');
+      expect(opts.method).toBe('PUT');
+      expect(opts.body.get('defaultLayoutId')).toBe('10');
+    });
+
+    it('purgeDisplay() should POST to /display/purge/{id}', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.purgeDisplay(42);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/display/purge/42');
+      expect(opts.method).toBe('POST');
+    });
+  });
+
   // ── Token Auto-Refresh Integration ──
 
   describe('Token auto-refresh', () => {
