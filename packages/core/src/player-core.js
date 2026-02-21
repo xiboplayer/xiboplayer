@@ -471,7 +471,14 @@ export class PlayerCore extends EventEmitter {
         }
 
         this._lastRequiredFiles = files;
-        this.emit('download-request', { layoutOrder, files });
+
+        // Download window enforcement (#81) — skip downloads outside configured window
+        if (this.displaySettings?.isInDownloadWindow && !this.displaySettings.isInDownloadWindow()) {
+          const nextWindow = this.displaySettings.getNextDownloadWindow?.();
+          log.info(`Outside download window, skipping downloads${nextWindow ? ` (next: ${nextWindow.toLocaleTimeString()})` : ''}`);
+        } else {
+          this.emit('download-request', { layoutOrder, files });
+        }
 
         // Non-blocking cache analysis (stale media detection)
         if (this.cacheAnalyzer) {

@@ -42,8 +42,8 @@ export class ScheduleManager {
   }
 
   /**
-   * Check if a schedule item is active based on recurrence rules
-   * Supports weekly dayparting (recurring schedules on specific days/times)
+   * Check if a schedule item is active based on recurrence rules.
+   * Supports Week, Day, and Month recurrence types.
    */
   isRecurringScheduleActive(item, now) {
     // If no recurrence, it's not a recurring schedule
@@ -51,23 +51,7 @@ export class ScheduleManager {
       return true; // Not a recurring schedule, use date/time checks instead
     }
 
-    // Currently only support Weekly recurrence (dayparting)
-    if (item.recurrenceType !== 'Week') {
-      return true; // Unsupported recurrence type, fallback to date/time checks
-    }
-
-    // Check if current day of week matches recurrenceRepeatsOn
-    // recurrenceRepeatsOn format: "1,2,3,4,5" (1=Monday, 7=Sunday, ISO format)
-    if (item.recurrenceRepeatsOn) {
-      const currentDayOfWeek = this.getIsoDayOfWeek(now);
-      const allowedDays = item.recurrenceRepeatsOn.split(',').map(d => parseInt(d.trim()));
-
-      if (!allowedDays.includes(currentDayOfWeek)) {
-        return false; // Today is not in the allowed days
-      }
-    }
-
-    // Check recurrence range if specified
+    // Check recurrence range first (applies to all types)
     if (item.recurrenceRange) {
       const rangeEnd = new Date(item.recurrenceRange);
       if (now > rangeEnd) {
@@ -75,7 +59,61 @@ export class ScheduleManager {
       }
     }
 
-    return true;
+    switch (item.recurrenceType) {
+      case 'Week': {
+        // Check if current day of week matches recurrenceRepeatsOn
+        // recurrenceRepeatsOn format: "1,2,3,4,5" (1=Monday, 7=Sunday, ISO format)
+        if (item.recurrenceRepeatsOn) {
+          const currentDayOfWeek = this.getIsoDayOfWeek(now);
+          const allowedDays = item.recurrenceRepeatsOn.split(',').map(d => parseInt(d.trim()));
+          if (!allowedDays.includes(currentDayOfWeek)) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      case 'Day': {
+        // Daily recurrence with optional interval (recurrenceDetail)
+        // If recurrenceDetail > 1, only active every N days from fromdt
+        const interval = item.recurrenceDetail || 1;
+        if (interval > 1 && item.fromdt) {
+          const startDate = new Date(item.fromdt);
+          const diffMs = now.getTime() - startDate.getTime();
+          const diffDays = Math.floor(diffMs / 86400000);
+          if (diffDays < 0 || diffDays % interval !== 0) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      case 'Month': {
+        // Monthly recurrence — recurrenceRepeatsOn is day-of-month (1-31)
+        if (item.recurrenceRepeatsOn) {
+          const allowedDays = item.recurrenceRepeatsOn.split(',').map(d => parseInt(d.trim()));
+          const currentDayOfMonth = now.getDate();
+          if (!allowedDays.includes(currentDayOfMonth)) {
+            return false;
+          }
+        }
+        // If recurrenceDetail > 1, only active every N months from fromdt
+        const interval = item.recurrenceDetail || 1;
+        if (interval > 1 && item.fromdt) {
+          const startDate = new Date(item.fromdt);
+          const monthsDiff = (now.getFullYear() - startDate.getFullYear()) * 12
+            + now.getMonth() - startDate.getMonth();
+          if (monthsDiff < 0 || monthsDiff % interval !== 0) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      default:
+        log.debug(`Unsupported recurrence type: ${item.recurrenceType}`);
+        return true; // Unknown type, fallback to date/time checks
+    }
   }
 
   /**
@@ -95,7 +133,7 @@ export class ScheduleManager {
     const to = item.todt ? new Date(item.todt) : null;
 
     // For recurring schedules, check time-of-day instead of full datetime
-    if (item.recurrenceType === 'Week') {
+    if (item.recurrenceType === 'Week' || item.recurrenceType === 'Day' || item.recurrenceType === 'Month') {
       // Extract time from fromdt/todt and compare with current time
       if (from && to) {
         const currentTime = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();

@@ -186,6 +186,37 @@ describe('PlayerCore', () => {
       ]));
     });
 
+    it('should skip download-request when outside download window', async () => {
+      const mockDisplaySettings = {
+        applySettings: vi.fn(() => ({ changed: [] })),
+        getCollectInterval: () => 300,
+        isInDownloadWindow: () => false,
+        getNextDownloadWindow: () => new Date(Date.now() + 3600000),
+      };
+      core.displaySettings = mockDisplaySettings;
+      const spy = createSpy();
+      core.on('download-request', spy);
+
+      await core.collect();
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should emit download-request when inside download window', async () => {
+      const mockDisplaySettings = {
+        applySettings: vi.fn(() => ({ changed: [] })),
+        getCollectInterval: () => 300,
+        isInDownloadWindow: () => true,
+      };
+      core.displaySettings = mockDisplaySettings;
+      const spy = createSpy();
+      core.on('download-request', spy);
+
+      await core.collect();
+
+      expect(spy).toHaveBeenCalled();
+    });
+
     it('should get schedule and emit schedule-received', async () => {
       const spy = createSpy();
       core.on('schedule-received', spy);

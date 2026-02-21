@@ -387,4 +387,248 @@ describe('ScheduleManager - Dayparting', () => {
       expect(layouts[0]).toBe('999');
     });
   });
+
+  describe('Daily Recurrence', () => {
+    it('should activate daily schedule during time window', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          {
+            file: '800',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Day',
+          }
+        ],
+        campaigns: []
+      });
+
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('800');
+    });
+
+    it('should not activate daily schedule outside time window', () => {
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '800',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Day',
+          }
+        ],
+        campaigns: []
+      });
+
+      const earlyMorning = new Date();
+      earlyMorning.setHours(7, 0, 0, 0);
+      mockTimeAt(earlyMorning);
+
+      const layouts = manager.getCurrentLayouts();
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('999');
+    });
+
+    it('should respect recurrenceDetail interval (every N days)', () => {
+      // Create a schedule that started 2 days ago with interval=2
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 2);
+      startDate.setHours(9, 0, 0, 0);
+
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 30);
+      endDate.setHours(17, 0, 0, 0);
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '801',
+            priority: 10,
+            fromdt: startDate.toISOString(),
+            todt: endDate.toISOString(),
+            recurrenceType: 'Day',
+            recurrenceDetail: 2,
+          }
+        ],
+        campaigns: []
+      });
+
+      // 2 days later = day 2, 2 % 2 = 0, should be active
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('801');
+    });
+
+    it('should skip days not matching interval', () => {
+      // Create a schedule that started 3 days ago with interval=2
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 3);
+      startDate.setHours(9, 0, 0, 0);
+
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 30);
+      endDate.setHours(17, 0, 0, 0);
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '802',
+            priority: 10,
+            fromdt: startDate.toISOString(),
+            todt: endDate.toISOString(),
+            recurrenceType: 'Day',
+            recurrenceDetail: 2,
+          }
+        ],
+        campaigns: []
+      });
+
+      // 3 days later = day 3, 3 % 2 = 1, should NOT be active
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('999');
+    });
+  });
+
+  describe('Monthly Recurrence', () => {
+    it('should activate on matching day of month', () => {
+      const today = new Date();
+      const dayOfMonth = today.getDate();
+
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          {
+            file: '900',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Month',
+            recurrenceRepeatsOn: dayOfMonth.toString(),
+          }
+        ],
+        campaigns: []
+      });
+
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('900');
+    });
+
+    it('should not activate on wrong day of month', () => {
+      const today = new Date();
+      // Pick a day that isn't today (and is valid 1-28)
+      const otherDay = today.getDate() === 15 ? 16 : 15;
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '901',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Month',
+            recurrenceRepeatsOn: otherDay.toString(),
+          }
+        ],
+        campaigns: []
+      });
+
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('999');
+    });
+
+    it('should support multiple days of month', () => {
+      const today = new Date();
+      const dayOfMonth = today.getDate();
+
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          {
+            file: '902',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Month',
+            recurrenceRepeatsOn: `1,${dayOfMonth},28`,
+          }
+        ],
+        campaigns: []
+      });
+
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('902');
+    });
+
+    it('should respect recurrenceDetail interval (every N months)', () => {
+      // Start date 2 months ago, interval=2 → should be active
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 2);
+      startDate.setHours(9, 0, 0, 0);
+
+      const endDate = new Date();
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      endDate.setHours(17, 0, 0, 0);
+
+      const dayOfMonth = new Date().getDate();
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '903',
+            priority: 10,
+            fromdt: startDate.toISOString(),
+            todt: endDate.toISOString(),
+            recurrenceType: 'Month',
+            recurrenceDetail: 2,
+            recurrenceRepeatsOn: dayOfMonth.toString(),
+          }
+        ],
+        campaigns: []
+      });
+
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('903');
+    });
+  });
 });

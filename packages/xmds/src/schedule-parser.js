@@ -89,6 +89,7 @@ export function parseScheduleResponse(xml) {
       geoLocation: campaignEl.getAttribute('geoLocation') || '',
       syncEvent: campaignEl.getAttribute('syncEvent') === '1',
       recurrenceType: campaignEl.getAttribute('recurrenceType') || null,
+      recurrenceDetail: parseInt(campaignEl.getAttribute('recurrenceDetail') || '0') || null,
       recurrenceRepeatsOn: campaignEl.getAttribute('recurrenceRepeatsOn') || null,
       recurrenceRange: campaignEl.getAttribute('recurrenceRange') || null,
       criteria: parseCriteria(campaignEl),
@@ -147,6 +148,7 @@ export function parseScheduleResponse(xml) {
       groupKey: layoutEl.getAttribute('groupKey') || null,
       playCount: parseInt(layoutEl.getAttribute('playCount') || '0'),
       recurrenceType: layoutEl.getAttribute('recurrenceType') || null,
+      recurrenceDetail: parseInt(layoutEl.getAttribute('recurrenceDetail') || '0') || null,
       recurrenceRepeatsOn: layoutEl.getAttribute('recurrenceRepeatsOn') || null,
       recurrenceRange: layoutEl.getAttribute('recurrenceRange') || null,
       dependants: depEls.length > 0 ? [...depEls].map(el => el.textContent) : [],
@@ -172,6 +174,7 @@ export function parseScheduleResponse(xml) {
         syncEvent: overlayEl.getAttribute('syncEvent') === '1',
         maxPlaysPerHour: parseInt(overlayEl.getAttribute('maxPlaysPerHour') || '0'),
         recurrenceType: overlayEl.getAttribute('recurrenceType') || null,
+        recurrenceDetail: parseInt(overlayEl.getAttribute('recurrenceDetail') || '0') || null,
         recurrenceRepeatsOn: overlayEl.getAttribute('recurrenceRepeatsOn') || null,
         recurrenceRange: overlayEl.getAttribute('recurrenceRange') || null,
         criteria: parseCriteria(overlayEl)
