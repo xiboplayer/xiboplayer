@@ -41,7 +41,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Renderer state query** — isPaused() for pause/resume control from shells
 - **Drawer regions** — hidden regions revealed via navigateToWidget, auto-hidden after widget cycle
 - **Sub-playlist cycle playback** — round-robin or random widget selection per group per layout cycle
-- **1089 tests** across 30 test suites
+- **1105 tests** across 30 test suites
 
 ## Packages
 
@@ -158,7 +158,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1089 tests across 30 suites)
+pnpm test              # run all tests (1105 tests across 30 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
