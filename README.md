@@ -18,7 +18,8 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Offline-first** — Cache API + IndexedDB storage with automatic fallback to cached schedule when network is unavailable
 - **Parallel chunk downloads** — large files (100MB+) split into 50MB chunks, header+trailer first for instant MP4 playback start
 - **Layout preloading** — 2-layout pool pre-builds upcoming layouts at 75% of current duration for instant zero-gap transitions
-- **Campaign scheduling** — priority-based campaigns, weekly dayparting with midnight-crossing, geo-fencing, and criteria evaluation
+- **Campaign scheduling** — priority-based campaigns, daily/weekly/monthly dayparting with midnight-crossing, geo-fencing, and criteria evaluation
+- **Download window enforcement** — respects CMS-configured download time windows to avoid bandwidth during peak hours
 - **Schedule conflict detection** — identifies and flags overlapping schedule entries
 - **Interrupts / share of voice** — percentage-based interrupt scheduling with even interleaving across the hour
 - **Interleaved default layouts** — cycles through multiple default layouts instead of repeating one
@@ -50,7 +51,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Configurable client identity** — clientType/clientVersion/clientCode in RegisterDisplay
 - **Fault reporting agent** — independent 60s fault submission cycle for faster CMS alerts
 - **Layout blacklisting** — tracks consecutive render failures, auto-blacklists after 3 failures, reports to CMS via BlackList XMDS
-- **1169 tests** across 31 test suites
+- **1179 tests** across 31 test suites
 
 ## Packages
 
@@ -167,7 +168,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1169 tests across 31 suites)
+pnpm test              # run all tests (1179 tests across 31 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
