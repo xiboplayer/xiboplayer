@@ -377,12 +377,14 @@ export class RendererLite {
 
     const layoutDurationAttr = layoutEl.getAttribute('duration');
     const layout = {
+      schemaVersion: parseInt(layoutEl.getAttribute('schemaVersion') || '1'),
       width: parseInt(layoutEl.getAttribute('width') || '1920'),
       height: parseInt(layoutEl.getAttribute('height') || '1080'),
       duration: layoutDurationAttr ? parseInt(layoutDurationAttr) : 0, // 0 = calculate from widgets
-      bgcolor: layoutEl.getAttribute('bgcolor') || '#000000',
+      bgcolor: layoutEl.getAttribute('backgroundColor') || layoutEl.getAttribute('bgcolor') || '#000000',
       background: layoutEl.getAttribute('background') || null, // Background image fileId
       enableStat: layoutEl.getAttribute('enableStat') !== '0', // absent or "1" = enabled
+      actions: this.parseActions(layoutEl),
       regions: []
     };
 
@@ -403,6 +405,7 @@ export class RendererLite {
         top: parseInt(regionEl.getAttribute('top') || '0'),
         left: parseInt(regionEl.getAttribute('left') || '0'),
         zindex: parseInt(regionEl.getAttribute('zindex') || (isDrawer ? '2000' : '0')),
+        enableStat: regionEl.getAttribute('enableStat') !== '0',
         actions: this.parseActions(regionEl),
         exitTransition: null,
         isDrawer,

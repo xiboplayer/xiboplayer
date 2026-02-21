@@ -542,7 +542,9 @@ describe('PlayerCore', () => {
     it('should notify CMS of layout status', async () => {
       await core.notifyLayoutStatus(123);
 
-      expect(mockXmds.notifyStatus).toHaveBeenCalledWith({ currentLayoutId: 123 });
+      expect(mockXmds.notifyStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ currentLayoutId: 123 })
+      );
     });
 
     it('should emit status-notified on success', async () => {
@@ -1132,9 +1134,9 @@ describe('PlayerCore', () => {
       });
     });
 
-    it('should emit failure for non-HTTP commands', async () => {
+    it('should emit execute-native-command for non-HTTP commands', async () => {
       const spy = createSpy();
-      core.on('command-result', spy);
+      core.on('execute-native-command', spy);
 
       const commands = {
         reboot: { commandString: 'shell|reboot' }
@@ -1144,8 +1146,7 @@ describe('PlayerCore', () => {
 
       expect(spy).toHaveBeenCalledWith({
         code: 'reboot',
-        success: false,
-        reason: 'Only HTTP commands supported in browser'
+        commandString: 'shell|reboot'
       });
     });
 
@@ -1320,20 +1321,25 @@ describe('PlayerCore', () => {
       expect(spy).not.toHaveBeenCalled();
     });
 
-    it('should filter out non-media/non-layout file types from XML', async () => {
+    it('should include all spec file types in inventory XML', async () => {
       const files = [
         { id: '1', type: 'media', md5: 'a' },
         { id: '2', type: 'resource', md5: 'b' },
-        { id: '3', type: 'layout', md5: 'c' }
+        { id: '3', type: 'layout', md5: 'c' },
+        { id: '4', type: 'dependency', md5: 'd' },
+        { id: '5', type: 'widget', md5: 'e' },
+        { id: '6', type: 'unknown', md5: 'f' }
       ];
 
       await core.submitMediaInventory(files);
 
       const xml = mockXmds.mediaInventory.mock.calls[0][0];
-      expect(xml).toContain('id="1"');
-      expect(xml).toContain('id="3"');
-      expect(xml).not.toContain('id="2"');
-      expect(xml).not.toContain('type="resource"');
+      expect(xml).toContain('id="1"'); // media
+      expect(xml).toContain('id="2"'); // resource
+      expect(xml).toContain('id="3"'); // layout
+      expect(xml).toContain('id="4"'); // dependency
+      expect(xml).toContain('id="5"'); // widget
+      expect(xml).not.toContain('id="6"'); // unknown types filtered out
     });
 
     it('should not throw when xmds.mediaInventory fails', async () => {

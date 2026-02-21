@@ -841,7 +841,17 @@ export class PlayerCore extends EventEmitter {
    */
   async notifyLayoutStatus(layoutId) {
     try {
-      await this.xmds.notifyStatus({ currentLayoutId: layoutId });
+      const status = {
+        currentLayoutId: layoutId,
+        deviceName: this.config?.displayName || '',
+        lastCommandSuccess: this._lastCommandSuccess ?? true
+      };
+
+      // Add geo-location if available
+      if (this.config?.latitude) status.latitude = this.config.latitude;
+      if (this.config?.longitude) status.longitude = this.config.longitude;
+
+      await this.xmds.notifyStatus(status);
       this.emit('status-notified', layoutId);
     } catch (error) {
       log.warn('Failed to notify status:', error);
@@ -1122,6 +1132,7 @@ export class PlayerCore extends EventEmitter {
 
     if (!commands || !commands[commandCode]) {
       log.warn('Unknown command code:', commandCode);
+      this._lastCommandSuccess = false;
       this.emit('command-result', { code: commandCode, success: false, reason: 'Unknown command' });
       return;
     }
@@ -1141,15 +1152,19 @@ export class PlayerCore extends EventEmitter {
           headers: { 'Content-Type': contentType }
         });
         const success = response.ok;
+        this._lastCommandSuccess = success;
         log.info(`HTTP command ${commandCode} result: ${response.status}`);
         this.emit('command-result', { code: commandCode, success, status: response.status });
       } catch (error) {
+        this._lastCommandSuccess = false;
         log.error(`HTTP command ${commandCode} failed:`, error);
         this.emit('command-result', { code: commandCode, success: false, reason: error.message });
       }
     } else {
-      log.warn('Non-HTTP commands not supported in browser:', commandCode);
-      this.emit('command-result', { code: commandCode, success: false, reason: 'Only HTTP commands supported in browser' });
+      // Emit event for platform layer (Electron/Chromium) to handle native commands
+      // (shell, RS232, Android intent, etc.)
+      log.info('Delegating non-HTTP command to platform layer:', commandCode);
+      this.emit('execute-native-command', { code: commandCode, commandString });
     }
   }
 
@@ -1183,7 +1198,7 @@ export class PlayerCore extends EventEmitter {
       // Build inventory XML: <files><file type="media" id="1" complete="1" md5="abc" lastChecked="123"/></files>
       const now = Math.floor(Date.now() / 1000);
       const fileEntries = files
-        .filter(f => f.type === 'media' || f.type === 'layout')
+        .filter(f => ['media', 'layout', 'resource', 'dependency', 'widget'].includes(f.type))
         .map(f => `<file type="${f.type}" id="${f.id}" complete="1" md5="${f.md5 || ''}" lastChecked="${now}"/>`)
         .join('');
       const inventoryXml = `<files>${fileEntries}</files>`;

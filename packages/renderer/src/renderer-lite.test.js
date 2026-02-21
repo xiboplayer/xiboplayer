@@ -2013,4 +2013,138 @@ describe('RendererLite', () => {
       expect(widget.duration).toBe(60);
     });
   });
+
+  // ── Low-Priority Spec Compliance ─────────────────────────────────
+
+  describe('Layout schemaVersion', () => {
+    it('should parse schemaVersion from layout element', () => {
+      const xlf = `
+        <layout schemaVersion="5" width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.schemaVersion).toBe(5);
+    });
+
+    it('should default schemaVersion to 1 when absent', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.schemaVersion).toBe(1);
+    });
+  });
+
+  describe('Layout backgroundColor', () => {
+    it('should prefer backgroundColor over bgcolor', () => {
+      const xlf = `
+        <layout backgroundColor="#FF0000" bgcolor="#00FF00" width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.bgcolor).toBe('#FF0000');
+    });
+
+    it('should fall back to bgcolor when backgroundColor absent', () => {
+      const xlf = `
+        <layout bgcolor="#00FF00" width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.bgcolor).toBe('#00FF00');
+    });
+  });
+
+  describe('Region enableStat', () => {
+    it('should parse enableStat on region elements', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="960" height="540" top="0" left="0" enableStat="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+          <region id="r2" width="960" height="540" top="0" left="960" enableStat="1">
+            <media id="m2" type="image" duration="10" fileId="2">
+              <options><uri>test2.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].enableStat).toBe(false);
+      expect(layout.regions[1].enableStat).toBe(true);
+    });
+
+    it('should default enableStat to true when absent', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].enableStat).toBe(true);
+    });
+  });
+
+  describe('Layout-level actions', () => {
+    it('should parse action elements at layout level', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <action actionType="navLayout" triggerType="webhook" triggerCode="showPromo"
+                  layoutCode="promo-1"/>
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.actions).toHaveLength(1);
+      expect(layout.actions[0].actionType).toBe('navLayout');
+      expect(layout.actions[0].triggerType).toBe('webhook');
+      expect(layout.actions[0].triggerCode).toBe('showPromo');
+      expect(layout.actions[0].layoutCode).toBe('promo-1');
+    });
+
+    it('should return empty actions array when no layout-level actions', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.actions).toEqual([]);
+    });
+  });
 });

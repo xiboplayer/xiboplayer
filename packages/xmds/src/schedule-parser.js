@@ -50,6 +50,11 @@ export function parseScheduleResponse(xml) {
   const defaultEl = doc.querySelector('default');
   if (defaultEl) {
     schedule.default = defaultEl.getAttribute('file');
+    // Parse dependants — files that must be cached before this layout plays
+    const defaultDeps = defaultEl.querySelectorAll('dependants > file');
+    if (defaultDeps.length > 0) {
+      schedule.defaultDependants = [...defaultDeps].map(el => el.textContent);
+    }
   }
 
   // Parse campaigns (groups of layouts with shared priority)
@@ -69,6 +74,7 @@ export function parseScheduleResponse(xml) {
     // Parse layouts within this campaign
     for (const layoutEl of campaignEl.querySelectorAll('layout')) {
       const fileId = layoutEl.getAttribute('file');
+      const depEls = layoutEl.querySelectorAll('dependants > file');
       campaign.layouts.push({
         id: String(fileId), // Normalized string ID for consistent type usage
         file: fileId,
@@ -83,6 +89,7 @@ export function parseScheduleResponse(xml) {
         geoLocation: layoutEl.getAttribute('geoLocation') || '',
         syncEvent: layoutEl.getAttribute('syncEvent') === '1',
         shareOfVoice: parseInt(layoutEl.getAttribute('shareOfVoice') || '0'),
+        dependants: depEls.length > 0 ? [...depEls].map(el => el.textContent) : [],
         criteria: parseCriteria(layoutEl)
       });
     }
@@ -93,6 +100,7 @@ export function parseScheduleResponse(xml) {
   // Parse standalone layouts (not in campaigns)
   for (const layoutEl of doc.querySelectorAll('schedule > layout')) {
     const fileId = layoutEl.getAttribute('file');
+    const depEls = layoutEl.querySelectorAll('dependants > file');
     schedule.layouts.push({
       id: String(fileId), // Normalized string ID for consistent type usage
       file: fileId,
@@ -106,9 +114,14 @@ export function parseScheduleResponse(xml) {
       geoLocation: layoutEl.getAttribute('geoLocation') || '',
       syncEvent: layoutEl.getAttribute('syncEvent') === '1',
       shareOfVoice: parseInt(layoutEl.getAttribute('shareOfVoice') || '0'),
+      duration: parseInt(layoutEl.getAttribute('duration') || '0'),
+      cyclePlayback: layoutEl.getAttribute('cyclePlayback') === '1',
+      groupKey: layoutEl.getAttribute('groupKey') || null,
+      playCount: parseInt(layoutEl.getAttribute('playCount') || '0'),
       recurrenceType: layoutEl.getAttribute('recurrenceType') || null,
       recurrenceRepeatsOn: layoutEl.getAttribute('recurrenceRepeatsOn') || null,
       recurrenceRange: layoutEl.getAttribute('recurrenceRange') || null,
+      dependants: depEls.length > 0 ? [...depEls].map(el => el.textContent) : [],
       criteria: parseCriteria(layoutEl)
     });
   }

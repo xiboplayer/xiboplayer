@@ -109,4 +109,62 @@ describe('parseScheduleResponse', () => {
     expect(layout.criteria[0].condition).toBe('equals');
     expect(layout.criteria[0].value).toBe('Monday');
   });
+
+  it('should parse dependants on default layout', () => {
+    const xml = `<schedule>
+      <default file="100.xlf">
+        <dependants><file>bg.jpg</file><file>logo.png</file></dependants>
+      </default>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    expect(result.default).toBe('100.xlf');
+    expect(result.defaultDependants).toEqual(['bg.jpg', 'logo.png']);
+  });
+
+  it('should parse dependants on standalone layouts', () => {
+    const xml = `<schedule>
+      <layout file="200.xlf" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+              scheduleid="5" priority="1">
+        <dependants><file>video.mp4</file></dependants>
+      </layout>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    expect(result.layouts[0].dependants).toEqual(['video.mp4']);
+  });
+
+  it('should parse dependants on campaign layouts', () => {
+    const xml = `<schedule>
+      <campaign id="c1" priority="5" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                scheduleid="30">
+        <layout file="300.xlf">
+          <dependants><file>font.woff2</file></dependants>
+        </layout>
+      </campaign>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    expect(result.campaigns[0].layouts[0].dependants).toEqual(['font.woff2']);
+  });
+
+  it('should return empty array when no dependants', () => {
+    const xml = `<schedule>
+      <layout file="400.xlf" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+              scheduleid="20" priority="0"/>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    expect(result.layouts[0].dependants).toEqual([]);
+  });
+
+  it('should parse duration, cyclePlayback, groupKey, playCount on standalone layouts', () => {
+    const xml = `<schedule>
+      <layout file="500.xlf" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+              scheduleid="60" priority="1" duration="120"
+              cyclePlayback="1" groupKey="group-A" playCount="3"/>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    const layout = result.layouts[0];
+    expect(layout.duration).toBe(120);
+    expect(layout.cyclePlayback).toBe(true);
+    expect(layout.groupKey).toBe('group-A');
+    expect(layout.playCount).toBe(3);
+  });
 });

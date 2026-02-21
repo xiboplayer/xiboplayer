@@ -682,9 +682,15 @@ export function formatStats(stats) {
       `layoutid="${stat.layoutId}"`,
     ];
 
-    // Add mediaId for media stats
-    if (stat.type === 'media' && stat.mediaId) {
-      attrs.push(`mediaid="${stat.mediaId}"`);
+    // Add mediaId and widgetId for media/widget stats
+    if (stat.type === 'media') {
+      if (stat.mediaId) {
+        attrs.push(`mediaid="${stat.mediaId}"`);
+      }
+      // Include widgetId for non-library widgets (native widgets have no mediaId)
+      if (stat.widgetId) {
+        attrs.push(`widgetid="${stat.widgetId}"`);
+      }
     }
 
     // Add tag and widgetId for event stats

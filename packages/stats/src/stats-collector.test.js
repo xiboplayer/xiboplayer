@@ -561,6 +561,43 @@ describe('formatStats', () => {
     expect(xml).toContain('fromdt=');
     expect(xml).toContain('todt=');
   });
+
+  it('should include widgetId for media stats with no mediaId (native widgets)', () => {
+    const stats = [{
+      type: 'media',
+      mediaId: null,
+      widgetId: 42,
+      layoutId: 123,
+      scheduleId: 456,
+      start: new Date('2026-02-10T12:00:00Z'),
+      end: new Date('2026-02-10T12:01:00Z'),
+      duration: 60,
+      count: 1
+    }];
+
+    const xml = formatStats(stats);
+    expect(xml).toContain('type="media"');
+    expect(xml).toContain('widgetid="42"');
+    expect(xml).not.toContain('mediaid=');
+  });
+
+  it('should include both mediaid and widgetid for library widgets', () => {
+    const stats = [{
+      type: 'media',
+      mediaId: 789,
+      widgetId: 42,
+      layoutId: 123,
+      scheduleId: 456,
+      start: new Date('2026-02-10T12:00:00Z'),
+      end: new Date('2026-02-10T12:01:00Z'),
+      duration: 60,
+      count: 1
+    }];
+
+    const xml = formatStats(stats);
+    expect(xml).toContain('mediaid="789"');
+    expect(xml).toContain('widgetid="42"');
+  });
 });
 
 describe('_splitAtHourBoundaries', () => {

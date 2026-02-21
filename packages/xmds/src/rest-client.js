@@ -142,9 +142,9 @@ export class RestClient {
 
     const json = await this.restSend('POST', '/register', {
       displayName: this.config.displayName,
-      clientType: 'chromeOS',
-      clientVersion: '0.1.0',
-      clientCode: 1,
+      clientType: this.config.clientType || 'chromeOS',
+      clientVersion: this.config.clientVersion || '0.1.0',
+      clientCode: this.config.clientCode || 1,
       operatingSystem: os,
       macAddress: this.config.macAddress || 'n/a',
       xmrChannel: this.config.xmrChannel,
