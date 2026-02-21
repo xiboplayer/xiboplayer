@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/sw",
-  "version": "0.3.7",
+  "version": "0.4.0",
   "description": "Service Worker toolkit for chunk streaming and offline caching",
   "type": "module",
   "main": "./src/index.js",
