@@ -199,7 +199,17 @@ export class XmdsClient {
     const checkRf = display.getAttribute('checkRf') || '';
     const checkSchedule = display.getAttribute('checkSchedule') || '';
 
-    return { code, message, settings, tags, checkRf, checkSchedule };
+    // Extract sync group config if present (multi-display sync coordination)
+    const syncGroupVal = settings.syncGroup || null;
+    const syncConfig = syncGroupVal ? {
+      syncGroup: syncGroupVal,
+      syncPublisherPort: parseInt(settings.syncPublisherPort || '9590', 10),
+      syncSwitchDelay: parseInt(settings.syncSwitchDelay || '750', 10),
+      syncVideoPauseDelay: parseInt(settings.syncVideoPauseDelay || '100', 10),
+      isLead: syncGroupVal === 'lead',
+    } : null;
+
+    return { code, message, settings, tags, checkRf, checkSchedule, syncConfig };
   }
 
   /**
