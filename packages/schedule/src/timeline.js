@@ -175,12 +175,20 @@ export function calculateTimeline(schedule, durations, options = {}) {
     const timeMs = currentTime.getTime();
     let playable;
 
+    let hiddenLayouts = null;
+
     if (hasFullApi) {
       // Full simulation: get ALL active layouts, apply rate limiting + priority
       const allLayouts = schedule.getAllLayoutsAtTime(currentTime);
       playable = allLayouts.length > 0
         ? getPlayableLayouts(allLayouts, simPlays, timeMs)
         : [];
+      // Detect hidden layouts (lower priority, not playing)
+      if (allLayouts.length > playable.length) {
+        hiddenLayouts = allLayouts
+          .filter(l => !playable.includes(l.file))
+          .map(l => ({ file: l.file, priority: l.priority }));
+      }
     } else {
       // Legacy fallback: no rate limiting simulation
       playable = schedule.getLayoutsAtTime(currentTime);
@@ -211,13 +219,17 @@ export function calculateTimeline(schedule, durations, options = {}) {
       const dur = durations.get(file) || defaultDuration;
       const endMs = currentTime.getTime() + dur * 1000;
 
-      timeline.push({
+      const entry = {
         layoutFile: file,
         startTime: new Date(currentTime),
         endTime: new Date(endMs),
         duration: dur,
         isDefault: false,
-      });
+      };
+      if (hiddenLayouts && hiddenLayouts.length > 0) {
+        entry.hidden = hiddenLayouts;
+      }
+      timeline.push(entry);
 
       // Record simulated play
       if (hasFullApi) {

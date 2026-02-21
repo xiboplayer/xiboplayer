@@ -628,4 +628,83 @@ describe('ScheduleManager - Actions and Commands', () => {
       expect(commands).toEqual([]);
     });
   });
+
+  describe('Conflict Detection', () => {
+    it('should detect no conflicts when all layouts share the same priority', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          { file: '100', priority: 5, fromdt: dateStr(-1), todt: dateStr(1) },
+          { file: '101', priority: 5, fromdt: dateStr(-1), todt: dateStr(1) },
+        ],
+        campaigns: [],
+      });
+
+      const conflicts = manager.detectConflicts({ hours: 2 });
+      expect(conflicts).toEqual([]);
+    });
+
+    it('should detect conflict when higher-priority layout hides lower-priority', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          { file: '100', priority: 5, fromdt: dateStr(-1), todt: dateStr(1) },
+          { file: '101', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+        ],
+        campaigns: [],
+      });
+
+      const conflicts = manager.detectConflicts({ hours: 2 });
+      expect(conflicts.length).toBeGreaterThan(0);
+      expect(conflicts[0].winner.file).toBe('101');
+      expect(conflicts[0].winner.priority).toBe(10);
+      expect(conflicts[0].hidden).toEqual([{ file: '100', priority: 5 }]);
+    });
+
+    it('should detect conflict between campaign and standalone layout', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          { file: '100', priority: 3, fromdt: dateStr(-1), todt: dateStr(1) },
+        ],
+        campaigns: [
+          {
+            id: '1',
+            priority: 8,
+            fromdt: dateStr(-1),
+            todt: dateStr(1),
+            layouts: [{ file: '200' }],
+          },
+        ],
+      });
+
+      const conflicts = manager.detectConflicts({ hours: 2 });
+      expect(conflicts.length).toBeGreaterThan(0);
+      expect(conflicts[0].winner.priority).toBe(8);
+      expect(conflicts[0].hidden[0].file).toBe('100');
+    });
+
+    it('should return empty array when no schedule is set', () => {
+      const conflicts = manager.detectConflicts();
+      expect(conflicts).toEqual([]);
+    });
+
+    it('should merge consecutive minutes into a single conflict window', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          { file: '100', priority: 5, fromdt: dateStr(-1), todt: dateStr(1) },
+          { file: '101', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+        ],
+        campaigns: [],
+      });
+
+      const conflicts = manager.detectConflicts({ hours: 2 });
+      // Should be 1 merged window, not 120 individual minutes
+      expect(conflicts.length).toBe(1);
+      const windowMs = conflicts[0].endTime.getTime() - conflicts[0].startTime.getTime();
+      // Window should span most of the 2-hour scan (overlap runs for ~2h)
+      expect(windowMs).toBeGreaterThan(60 * 60 * 1000); // at least 1 hour
+    });
+  });
 });

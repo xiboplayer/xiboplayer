@@ -210,6 +210,80 @@ export class ScheduleManager {
   }
 
   /**
+   * Detect schedule conflicts: time windows where multiple layouts compete
+   * and lower-priority ones are hidden.
+   *
+   * Scans the schedule in 1-minute increments over the given window.
+   * At each point, collects all time-active layouts (after criteria/geofence
+   * filtering but before priority filtering). If multiple priorities exist,
+   * the lower-priority entries are reported as hidden.
+   *
+   * @param {Object} [options]
+   * @param {Date}   [options.from]  - Start time (default: now)
+   * @param {number} [options.hours] - Hours to scan (default: 24)
+   * @returns {Array<{startTime: Date, endTime: Date, winner: {file: string, priority: number}, hidden: Array<{file: string, priority: number}>}>}
+   */
+  detectConflicts(options = {}) {
+    const from = options.from || new Date();
+    const hours = options.hours || 24;
+    const to = new Date(from.getTime() + hours * 3600000);
+    const stepMs = 60000; // 1-minute granularity
+    const conflicts = [];
+    let current = null; // Current conflict window being built
+
+    for (let t = from.getTime(); t < to.getTime(); t += stepMs) {
+      const time = new Date(t);
+      const allLayouts = this.getAllLayoutsAtTime(time);
+
+      if (allLayouts.length === 0) {
+        // No layouts → close any open conflict
+        if (current) { conflicts.push(current); current = null; }
+        continue;
+      }
+
+      const maxPriority = Math.max(...allLayouts.map(l => l.priority));
+      const hidden = allLayouts.filter(l => l.priority < maxPriority);
+
+      if (hidden.length === 0) {
+        // No conflict at this time
+        if (current) { conflicts.push(current); current = null; }
+        continue;
+      }
+
+      // Conflict exists — build or extend window
+      const winners = allLayouts.filter(l => l.priority === maxPriority);
+      const winnerKey = winners.map(w => w.file).sort().join(',');
+      const hiddenKey = hidden.map(h => `${h.file}:${h.priority}`).sort().join(',');
+
+      if (current && current._winnerKey === winnerKey && current._hiddenKey === hiddenKey) {
+        // Same conflict continues — extend window
+        current.endTime = new Date(t + stepMs);
+      } else {
+        // New or changed conflict
+        if (current) conflicts.push(current);
+        current = {
+          startTime: new Date(t),
+          endTime: new Date(t + stepMs),
+          winner: { file: winners[0].file, priority: maxPriority },
+          hidden: hidden.map(h => ({ file: h.file, priority: h.priority })),
+          _winnerKey: winnerKey,
+          _hiddenKey: hiddenKey,
+        };
+      }
+    }
+
+    if (current) conflicts.push(current);
+
+    // Clean internal keys
+    for (const c of conflicts) {
+      delete c._winnerKey;
+      delete c._hiddenKey;
+    }
+
+    return conflicts;
+  }
+
+  /**
    * Internal: evaluate schedule at a given time.
    * @param {Date} now - Time to evaluate
    * @param {Object} [options] - Options
