@@ -1313,6 +1313,387 @@ describe('CmsApiClient', () => {
     });
   });
 
+  // ── Dataset CRUD (#28) ──
+
+  describe('Dataset CRUD', () => {
+    beforeEach(() => stubAuth());
+
+    it('listDatasets() should GET and return array', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ dataSetId: 1, dataSet: 'Sales' }]));
+
+      const datasets = await api.listDatasets();
+
+      expect(datasets).toHaveLength(1);
+      expect(datasets[0].dataSet).toBe('Sales');
+    });
+
+    it('createDataset() should POST', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ dataSetId: 2 }));
+
+      const result = await api.createDataset({ dataSet: 'Inventory', description: 'Stock levels' });
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('dataSet')).toBe('Inventory');
+      expect(result.dataSetId).toBe(2);
+    });
+
+    it('editDataset() should PUT to /dataset/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ dataSetId: 2 }));
+
+      await api.editDataset(2, { description: 'Updated' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/2');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deleteDataset() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteDataset(2);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/2');
+      expect(opts.method).toBe('DELETE');
+    });
+
+    it('listDatasetColumns() should GET /dataset/{id}/column', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ dataSetColumnId: 1, heading: 'Name' }]));
+
+      const cols = await api.listDatasetColumns(2);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/2/column');
+      expect(cols).toHaveLength(1);
+    });
+
+    it('createDatasetColumn() should POST', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ dataSetColumnId: 3 }));
+
+      const result = await api.createDatasetColumn(2, { heading: 'Price', dataTypeId: 2 });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/2/column');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('heading')).toBe('Price');
+      expect(result.dataSetColumnId).toBe(3);
+    });
+
+    it('editDatasetColumn() should PUT to /dataset/{id}/column/{colId}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ dataSetColumnId: 3 }));
+
+      await api.editDatasetColumn(2, 3, { heading: 'Unit Price' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/2/column/3');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deleteDatasetColumn() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteDatasetColumn(2, 3);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/2/column/3');
+      expect(opts.method).toBe('DELETE');
+    });
+
+    it('listDatasetData() should GET /dataset/data/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ id: 1, Name: 'Widget A' }]));
+
+      const rows = await api.listDatasetData(2);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/data/2');
+      expect(rows).toHaveLength(1);
+    });
+
+    it('addDatasetRow() should POST to /dataset/data/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ id: 5 }));
+
+      const result = await api.addDatasetRow(2, { Name: 'Widget B', Price: '9.99' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/data/2');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('Name')).toBe('Widget B');
+      expect(result.id).toBe(5);
+    });
+
+    it('editDatasetRow() should PUT to /dataset/data/{id}/{rowId}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ id: 5 }));
+
+      await api.editDatasetRow(2, 5, { Price: '12.99' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/data/2/5');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deleteDatasetRow() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteDatasetRow(2, 5);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/data/2/5');
+      expect(opts.method).toBe('DELETE');
+    });
+
+    it('importDatasetCsv() should use requestMultipart', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ imported: 10 }));
+
+      const formData = new FormData();
+      formData.append('file', new Blob(['a,b\n1,2']), 'data.csv');
+
+      const result = await api.importDatasetCsv(2, formData);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toContain('/dataset/import/2');
+      expect(opts.body).toBe(formData);
+      expect(result.imported).toBe(10);
+    });
+
+    it('clearDataset() should DELETE /dataset/data/{id}', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.clearDataset(2);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/dataset/data/2');
+      expect(opts.method).toBe('DELETE');
+    });
+  });
+
+  // ── Notification CRUD (#29) ──
+
+  describe('Notification CRUD', () => {
+    beforeEach(() => stubAuth());
+
+    it('listNotifications() should GET and return array', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ notificationId: 1, subject: 'Alert' }]));
+
+      const notifs = await api.listNotifications();
+
+      expect(notifs).toHaveLength(1);
+      expect(notifs[0].subject).toBe('Alert');
+    });
+
+    it('createNotification() should POST', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ notificationId: 2 }));
+
+      const result = await api.createNotification({ subject: 'Emergency', body: 'Evacuate' });
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('subject')).toBe('Emergency');
+      expect(result.notificationId).toBe(2);
+    });
+
+    it('editNotification() should PUT', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ notificationId: 2 }));
+
+      await api.editNotification(2, { body: 'Updated' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/notification/2');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deleteNotification() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteNotification(2);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/notification/2');
+      expect(opts.method).toBe('DELETE');
+    });
+  });
+
+  // ── Folder CRUD (#30) ──
+
+  describe('Folder CRUD', () => {
+    beforeEach(() => stubAuth());
+
+    it('listFolders() should GET and return array', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ folderId: 1, text: 'Root' }]));
+
+      const folders = await api.listFolders();
+
+      expect(folders).toHaveLength(1);
+      expect(folders[0].text).toBe('Root');
+    });
+
+    it('createFolder() should POST', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ folderId: 2 }));
+
+      const result = await api.createFolder({ text: 'Marketing', parentId: 1 });
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('text')).toBe('Marketing');
+      expect(result.folderId).toBe(2);
+    });
+
+    it('editFolder() should PUT', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ folderId: 2 }));
+
+      await api.editFolder(2, { text: 'Rebranded' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/folder/2');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deleteFolder() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteFolder(2);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/folder/2');
+      expect(opts.method).toBe('DELETE');
+    });
+  });
+
+  // ── Tag CRUD + Entity Tagging (#31) ──
+
+  describe('Tag CRUD + Entity Tagging', () => {
+    beforeEach(() => stubAuth());
+
+    it('listTags() should GET and return array', async () => {
+      mockFetch.mockResolvedValue(jsonResponse([{ tagId: 1, tag: 'lobby' }]));
+
+      const tags = await api.listTags();
+
+      expect(tags).toHaveLength(1);
+      expect(tags[0].tag).toBe('lobby');
+    });
+
+    it('createTag() should POST', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ tagId: 2 }));
+
+      const result = await api.createTag({ tag: 'outdoor' });
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.body.get('tag')).toBe('outdoor');
+      expect(result.tagId).toBe(2);
+    });
+
+    it('editTag() should PUT', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ tagId: 2 }));
+
+      await api.editTag(2, { tag: 'indoor' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/tag/2');
+      expect(opts.method).toBe('PUT');
+    });
+
+    it('deleteTag() should DELETE', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.deleteTag(2);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/tag/2');
+      expect(opts.method).toBe('DELETE');
+    });
+
+    it('tagEntity() should POST comma-separated tags to /{entity}/{id}/tag', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.tagEntity('media', 50, ['outdoor', 'hd']);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/media/50/tag');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('tag')).toBe('outdoor,hd');
+    });
+
+    it('untagEntity() should POST to /{entity}/{id}/untag', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.untagEntity('campaign', 20, ['old']);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/campaign/20/untag');
+      expect(opts.body.get('tag')).toBe('old');
+    });
+  });
+
+  // ── DisplayGroup Actions (#32) ──
+
+  describe('DisplayGroup Actions', () => {
+    beforeEach(() => stubAuth());
+
+    it('dgChangeLayout() should POST layoutId to action/changeLayout', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.dgChangeLayout(5, 10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/displaygroup/5/action/changeLayout');
+      expect(opts.method).toBe('POST');
+      expect(opts.body.get('layoutId')).toBe('10');
+    });
+
+    it('dgOverlayLayout() should POST to action/overlayLayout', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.dgOverlayLayout(5, 10);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/displaygroup/5/action/overlayLayout');
+      expect(opts.body.get('layoutId')).toBe('10');
+    });
+
+    it('dgRevertToSchedule() should POST to action/revertToSchedule', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.dgRevertToSchedule(5);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/displaygroup/5/action/revertToSchedule');
+      expect(opts.method).toBe('POST');
+    });
+
+    it('dgCollectNow() should POST to action/collectNow', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.dgCollectNow(5);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/displaygroup/5/action/collectNow');
+      expect(opts.method).toBe('POST');
+    });
+
+    it('dgSendCommand() should POST commandId to action/command', async () => {
+      mockFetch.mockResolvedValue(emptyResponse());
+
+      await api.dgSendCommand(5, 2);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/displaygroup/5/action/command');
+      expect(opts.body.get('commandId')).toBe('2');
+    });
+
+    it('editDisplayGroup() should PUT to /displaygroup/{id}', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ displayGroupId: 5 }));
+
+      const result = await api.editDisplayGroup(5, { displayGroup: 'Renamed', description: 'New desc' });
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url.toString()).toContain('/displaygroup/5');
+      expect(opts.method).toBe('PUT');
+      expect(opts.body.get('displayGroup')).toBe('Renamed');
+      expect(result.displayGroupId).toBe(5);
+    });
+  });
+
   // ── Token Auto-Refresh Integration ──
 
   describe('Token auto-refresh', () => {
