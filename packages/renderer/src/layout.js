@@ -4,6 +4,9 @@
  */
 
 import { cacheWidgetHtml } from '@xiboplayer/cache';
+import { createLogger } from '@xiboplayer/utils';
+
+const log = createLogger('Layout');
 
 export class LayoutTranslator {
   constructor(xmds) {
@@ -124,9 +127,9 @@ export class LayoutTranslator {
 
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-          console.log(`[Layout] Fetching resource for ${type} widget (layout=${layoutId}, region=${regionId}, media=${id}) - attempt ${attempt}/${retries}`);
+          log.info(`Fetching resource for ${type} widget (layout=${layoutId}, region=${regionId}, media=${id}) - attempt ${attempt}/${retries}`);
           raw = await this.xmds.getResource(layoutId, regionId, id);
-          console.log(`[Layout] Got resource HTML (${raw.length} chars)`);
+          log.info(`Got resource HTML (${raw.length} chars)`);
 
           // Store widget HTML in cache and save cache key for iframe src generation
           const widgetCacheKey = await cacheWidgetHtml(layoutId, regionId, id, raw);
@@ -137,12 +140,12 @@ export class LayoutTranslator {
 
         } catch (error) {
           lastError = error;
-          console.warn(`[Layout] Failed to get resource (attempt ${attempt}/${retries}):`, error.message);
+          log.warn(`Failed to get resource (attempt ${attempt}/${retries}):`, error.message);
 
           // If not last attempt, wait before retry
           if (attempt < retries) {
             const delay = attempt * 2000; // 2s, 4s backoff
-            console.log(`[Layout] Retrying in ${delay}ms...`);
+            log.info(`Retrying in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
           }
         }
@@ -150,7 +153,7 @@ export class LayoutTranslator {
 
       // If all retries failed, try to use cached version as fallback
       if (!raw && lastError) {
-        console.warn(`[Layout] All retries failed, checking for cached widget HTML...`);
+        log.warn('All retries failed, checking for cached widget HTML...');
 
         // Try to get cached widget HTML directly from Cache API
         try {
@@ -161,14 +164,14 @@ export class LayoutTranslator {
           if (cached) {
             raw = await cached.text();
             options.widgetCacheKey = cachedKey;
-            console.log(`[Layout] Using cached widget HTML (${raw.length} chars) - CMS update pending`);
+            log.info(`Using cached widget HTML (${raw.length} chars) - CMS update pending`);
           } else {
-            console.error(`[Layout] No cached version available for widget ${id}`);
+            log.error(`No cached version available for widget ${id}`);
             // Show minimal placeholder that doesn't look like an error
             raw = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:18px;">Content updating...</div>`;
           }
         } catch (cacheError) {
-          console.error(`[Layout] Cache fallback failed:`, cacheError);
+          log.error('Cache fallback failed:', cacheError);
           raw = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:18px;">Content updating...</div>`;
         }
       }
@@ -894,7 +897,7 @@ ${mediaJS}
           startFn = iframe.startFn;
           stopFn = iframe.stopFn;
         } else {
-          console.warn(`[Layout] Unsupported media type: ${media.type}`);
+          log.warn(`Unsupported media type: ${media.type}`);
           startFn = `() => console.log('Unsupported media type: ${media.type}')`;
         }
     }

@@ -29,6 +29,8 @@
  * @property {boolean} isLead - Whether this display is the leader
  */
 
+import { createLogger } from '@xiboplayer/utils';
+
 const CHANNEL_NAME = 'xibo-sync';
 const HEARTBEAT_INTERVAL = 5000;   // Send heartbeat every 5s
 const FOLLOWER_TIMEOUT = 15000;    // Consider follower offline after 15s silence
@@ -64,8 +66,9 @@ export class SyncManager {
     this._pendingLayoutId = null;    // Layout we're waiting for readiness on
     this._started = false;
 
-    // Log prefix for clarity in multi-tab console
+    // Logger with role prefix for clarity in multi-tab console
     this._tag = this.isLead ? '[Sync:LEAD]' : '[Sync:FOLLOW]';
+    this._log = createLogger(this.isLead ? 'Sync:LEAD' : 'Sync:FOLLOW');
   }
 
   /**
@@ -76,7 +79,7 @@ export class SyncManager {
     this._started = true;
 
     if (typeof BroadcastChannel === 'undefined') {
-      console.warn(this._tag, 'BroadcastChannel not available — sync disabled');
+      this._log.warn( 'BroadcastChannel not available — sync disabled');
       return;
     }
 
@@ -92,7 +95,7 @@ export class SyncManager {
       this._cleanupTimer = setInterval(() => this._cleanupStaleFollowers(), HEARTBEAT_INTERVAL);
     }
 
-    console.log(this._tag, 'Started. DisplayId:', this.displayId);
+    this._log.info( 'Started. DisplayId:', this.displayId);
   }
 
   /**
@@ -116,7 +119,7 @@ export class SyncManager {
     }
 
     this.followers.clear();
-    console.log(this._tag, 'Stopped');
+    this._log.info( 'Stopped');
   }
 
   // ── Lead API ──────────────────────────────────────────────────────
@@ -130,7 +133,7 @@ export class SyncManager {
    */
   async requestLayoutChange(layoutId) {
     if (!this.isLead) {
-      console.warn(this._tag, 'requestLayoutChange called on follower — ignoring');
+      this._log.warn( 'requestLayoutChange called on follower — ignoring');
       return;
     }
 
@@ -145,7 +148,7 @@ export class SyncManager {
 
     const showAt = Date.now() + this.switchDelay;
 
-    console.log(this._tag, `Requesting layout change: ${layoutId} (show at ${new Date(showAt).toISOString()}, ${this.followers.size} followers)`);
+    this._log.info( `Requesting layout change: ${layoutId} (show at ${new Date(showAt).toISOString()}, ${this.followers.size} followers)`);
 
     // Broadcast layout-change to all followers
     this._send({
@@ -167,7 +170,7 @@ export class SyncManager {
     }
 
     // Send show signal
-    console.log(this._tag, `Sending layout-show: ${layoutId}`);
+    this._log.info( `Sending layout-show: ${layoutId}`);
     this._send({
       type: 'layout-show',
       layoutId,
@@ -214,7 +217,7 @@ export class SyncManager {
   reportReady(layoutId) {
     layoutId = String(layoutId);
 
-    console.log(this._tag, `Reporting ready for layout ${layoutId}`);
+    this._log.info( `Reporting ready for layout ${layoutId}`);
 
     this._send({
       type: 'layout-ready',
@@ -238,7 +241,7 @@ export class SyncManager {
       case 'layout-change':
         // Follower: lead is requesting a layout change
         if (!this.isLead) {
-          console.log(this._tag, `Layout change requested: ${msg.layoutId}`);
+          this._log.info( `Layout change requested: ${msg.layoutId}`);
           this.onLayoutChange(msg.layoutId, msg.showAt);
         }
         break;
@@ -253,7 +256,7 @@ export class SyncManager {
       case 'layout-show':
         // Follower: lead says show now
         if (!this.isLead) {
-          console.log(this._tag, `Layout show signal: ${msg.layoutId}`);
+          this._log.info( `Layout show signal: ${msg.layoutId}`);
           this.onLayoutShow(msg.layoutId);
         }
         break;
@@ -261,13 +264,13 @@ export class SyncManager {
       case 'video-start':
         // Follower: lead says start video
         if (!this.isLead) {
-          console.log(this._tag, `Video start signal: ${msg.layoutId} region ${msg.regionId}`);
+          this._log.info( `Video start signal: ${msg.layoutId} region ${msg.regionId}`);
           this.onVideoStart(msg.layoutId, msg.regionId);
         }
         break;
 
       default:
-        console.warn(this._tag, 'Unknown message type:', msg.type);
+        this._log.warn( 'Unknown message type:', msg.type);
     }
   }
 
@@ -284,7 +287,7 @@ export class SyncManager {
         readyLayoutId: null,
         role: msg.role || 'unknown',
       });
-      console.log(this._tag, `Follower joined: ${msg.displayId} (${this.followers.size} total)`);
+      this._log.info( `Follower joined: ${msg.displayId} (${this.followers.size} total)`);
     }
   }
 
@@ -304,12 +307,12 @@ export class SyncManager {
       follower.lastSeen = Date.now();
     }
 
-    console.log(this._tag, `Follower ${msg.displayId} ready for layout ${msg.layoutId}`);
+    this._log.info( `Follower ${msg.displayId} ready for layout ${msg.layoutId}`);
 
     // Check if all followers are now ready
     if (this._pendingLayoutId === msg.layoutId && this._readyResolve) {
       if (this._allFollowersReady(msg.layoutId)) {
-        console.log(this._tag, 'All followers ready');
+        this._log.info( 'All followers ready');
         this._readyResolve();
         this._readyResolve = null;
       }
@@ -348,7 +351,7 @@ export class SyncManager {
               notReady.push(id);
             }
           }
-          console.warn(this._tag, `Ready timeout — proceeding without: ${notReady.join(', ')}`);
+          this._log.warn( `Ready timeout — proceeding without: ${notReady.join(', ')}`);
           this._readyResolve = null;
           resolve();
         }
@@ -373,7 +376,7 @@ export class SyncManager {
     const now = Date.now();
     for (const [id, follower] of this.followers) {
       if (now - follower.lastSeen > FOLLOWER_TIMEOUT) {
-        console.log(this._tag, `Removing stale follower: ${id} (last seen ${Math.round((now - follower.lastSeen) / 1000)}s ago)`);
+        this._log.info( `Removing stale follower: ${id} (last seen ${Math.round((now - follower.lastSeen) / 1000)}s ago)`);
         this.followers.delete(id);
       }
     }
@@ -385,7 +388,7 @@ export class SyncManager {
     try {
       this.channel.postMessage(msg);
     } catch (e) {
-      console.error(this._tag, 'Failed to send:', e);
+      this._log.error( 'Failed to send:', e);
     }
   }
 

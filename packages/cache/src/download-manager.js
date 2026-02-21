@@ -25,6 +25,9 @@
  *   const blob = await file.wait();
  */
 
+import { createLogger } from '@xiboplayer/utils';
+
+const log = createLogger('Download');
 const DEFAULT_CONCURRENCY = 6; // Max concurrent HTTP connections (matches Chromium per-host limit)
 const DEFAULT_CHUNK_SIZE = 50 * 1024 * 1024; // 50MB chunks
 const DEFAULT_MAX_CHUNKS_PER_FILE = 3; // Max parallel chunk downloads per file
@@ -149,7 +152,7 @@ export class DownloadTask {
         if (attempt < MAX_RETRIES) {
           const delay = RETRY_DELAY_MS * attempt;
           const chunkLabel = this.chunkIndex != null ? ` chunk ${this.chunkIndex}` : '';
-          console.warn(`[DownloadTask] ${this.fileInfo.type}/${this.fileInfo.id}${chunkLabel} attempt ${attempt}/${MAX_RETRIES} failed: ${msg}. Retrying in ${delay / 1000}s...`);
+          log.warn(`[DownloadTask] ${this.fileInfo.type}/${this.fileInfo.id}${chunkLabel} attempt ${attempt}/${MAX_RETRIES} failed: ${msg}. Retrying in ${delay / 1000}s...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
           this.state = 'failed';
@@ -220,7 +223,7 @@ export class FileDownload {
     try {
       this.state = 'preparing';
       const { id, type, size } = this.fileInfo;
-      console.log('[FileDownload] Starting:', `${type}/${id}`);
+      log.info('[FileDownload] Starting:', `${type}/${id}`);
 
       // Use declared size from RequiredFiles — no HEAD needed for queue building
       this.totalBytes = (size && size > 0) ? parseInt(size) : 0;
@@ -242,7 +245,7 @@ export class FileDownload {
         }
       }
 
-      console.log('[FileDownload] File size:', (this.totalBytes / 1024 / 1024).toFixed(1), 'MB');
+      log.info('[FileDownload] File size:', (this.totalBytes / 1024 / 1024).toFixed(1), 'MB');
 
       const chunkSize = this.options.chunkSize || DEFAULT_CHUNK_SIZE;
 
@@ -267,14 +270,14 @@ export class FileDownload {
         }
 
         if (needed.length === 0) {
-          console.log('[FileDownload] All chunks already cached, nothing to download');
+          log.info('[FileDownload] All chunks already cached, nothing to download');
           this.state = 'complete';
           this._resolve(new Blob([], { type: this._contentType }));
           return;
         }
 
         if (skippedCount > 0) {
-          console.log(`[FileDownload] Resuming: ${skippedCount} chunks cached, ${needed.length} to download`);
+          log.info(`[FileDownload] Resuming: ${skippedCount} chunks cached, ${needed.length} to download`);
         }
 
         const isResume = skippedCount > 0;
@@ -301,7 +304,7 @@ export class FileDownload {
         }
 
         const highCount = this.tasks.filter(t => t._priority >= PRIORITY.high).length;
-        console.log(`[FileDownload] ${type}/${id}: ${this.tasks.length} chunks` +
+        log.info(`[FileDownload] ${type}/${id}: ${this.tasks.length} chunks` +
           (highCount > 0 ? ` (${highCount} priority)` : '') +
           (isResume ? ' (resume)' : ''));
 
@@ -316,7 +319,7 @@ export class FileDownload {
       this.state = 'downloading';
 
     } catch (error) {
-      console.error('[FileDownload] Prepare failed:', `${this.fileInfo.type}/${this.fileInfo.id}`, error);
+      log.error('[FileDownload] Prepare failed:', `${this.fileInfo.type}/${this.fileInfo.id}`, error);
       this.state = 'failed';
       this._reject(error);
     }
@@ -339,7 +342,7 @@ export class FileDownload {
       try {
         await this.onChunkDownloaded(task.chunkIndex, task.blob, this.totalChunks);
       } catch (e) {
-        console.warn('[FileDownload] onChunkDownloaded callback error:', e);
+        log.warn('[FileDownload] onChunkDownloaded callback error:', e);
       }
     }
 
@@ -348,10 +351,10 @@ export class FileDownload {
       const { type, id } = this.fileInfo;
 
       if (task.chunkIndex == null) {
-        console.log('[FileDownload] Complete:', `${type}/${id}`, `(${task.blob.size} bytes)`);
+        log.info('[FileDownload] Complete:', `${type}/${id}`, `(${task.blob.size} bytes)`);
         this._resolve(task.blob);
       } else if (this.onChunkDownloaded) {
-        console.log('[FileDownload] Complete:', `${type}/${id}`, `(progressive, ${this.totalChunks} chunks)`);
+        log.info('[FileDownload] Complete:', `${type}/${id}`, `(progressive, ${this.totalChunks} chunks)`);
         this._resolve(new Blob([], { type: this._contentType }));
       } else {
         const ordered = [];
@@ -360,7 +363,7 @@ export class FileDownload {
           if (blob) ordered.push(blob);
         }
         const assembled = new Blob(ordered, { type: this._contentType });
-        console.log('[FileDownload] Complete:', `${type}/${id}`, `(${assembled.size} bytes, reassembled)`);
+        log.info('[FileDownload] Complete:', `${type}/${id}`, `(${assembled.size} bytes, reassembled)`);
         this._resolve(assembled);
       }
 
@@ -376,7 +379,7 @@ export class FileDownload {
     // provides fresh URLs and the resume logic (skipChunks) fills the gaps.
     if (error.message?.includes('URL expired')) {
       const chunkLabel = task.chunkIndex != null ? ` chunk ${task.chunkIndex}` : '';
-      console.warn(`[FileDownload] URL expired, dropping${chunkLabel}:`, `${this.fileInfo.type}/${this.fileInfo.id}`);
+      log.warn(`[FileDownload] URL expired, dropping${chunkLabel}:`, `${this.fileInfo.type}/${this.fileInfo.id}`);
       this.tasks = this.tasks.filter(t => t !== task);
       // If all remaining tasks completed, resolve as partial
       if (this.tasks.length === 0 || this.completedChunks >= this.tasks.length) {
@@ -387,7 +390,7 @@ export class FileDownload {
       return;
     }
 
-    console.error('[FileDownload] Failed:', `${this.fileInfo.type}/${this.fileInfo.id}`, error);
+    log.error('[FileDownload] Failed:', `${this.fileInfo.type}/${this.fileInfo.id}`, error);
     this.state = 'failed';
     this._reject(error);
   }
@@ -564,7 +567,7 @@ export class DownloadQueue {
         const oldExpiry = getUrlExpiry(existing.fileInfo.path);
         const newExpiry = getUrlExpiry(fileInfo.path);
         if (newExpiry > oldExpiry) {
-          console.log('[DownloadQueue] Refreshing URL for', key);
+          log.info('[DownloadQueue] Refreshing URL for', key);
           existing.fileInfo.path = fileInfo.path;
         }
       }
@@ -578,7 +581,7 @@ export class DownloadQueue {
     });
 
     this.active.set(key, file);
-    console.log('[DownloadQueue] Enqueued:', key);
+    log.info('[DownloadQueue] Enqueued:', key);
 
     // Throttled prepare: HEAD requests are limited to avoid flooding connections
     this._schedulePrepare(file);
@@ -612,7 +615,7 @@ export class DownloadQueue {
     }
     this._sortQueue();
 
-    console.log(`[DownloadQueue] ${tasks.length} tasks added (${this.queue.length} pending, ${this.running} active)`);
+    log.info(`[DownloadQueue] ${tasks.length} tasks added (${this.queue.length} pending, ${this.running} active)`);
     this.processQueue();
   }
 
@@ -638,7 +641,7 @@ export class DownloadQueue {
       }
     }
 
-    console.log(`[DownloadQueue] Ordered queue: ${taskCount} tasks, ${barrierCount} barriers (${this.queue.length} pending, ${this.running} active)`);
+    log.info(`[DownloadQueue] Ordered queue: ${taskCount} tasks, ${barrierCount} barriers (${this.queue.length} pending, ${this.running} active)`);
     this.processQueue();
   }
 
@@ -652,7 +655,7 @@ export class DownloadQueue {
     const file = this.active.get(key);
 
     if (!file) {
-      console.log('[DownloadQueue] Not found:', key);
+      log.info('[DownloadQueue] Not found:', key);
       return false;
     }
 
@@ -665,7 +668,7 @@ export class DownloadQueue {
     }
     this._sortQueue();
 
-    console.log('[DownloadQueue] Prioritized:', key, `(${boosted} tasks boosted)`);
+    log.info('[DownloadQueue] Prioritized:', key, `(${boosted} tasks boosted)`);
     return true;
   }
 
@@ -691,7 +694,7 @@ export class DownloadQueue {
     }
     this._sortQueue();
 
-    console.log('[DownloadQueue] Layout files prioritized:', idSet.size, 'files,', boosted, 'tasks boosted to', priority);
+    log.info('[DownloadQueue] Layout files prioritized:', idSet.size, 'files,', boosted, 'tasks boosted to', priority);
   }
 
   /**
@@ -704,7 +707,7 @@ export class DownloadQueue {
     const file = this.active.get(key);
 
     if (!file) {
-      console.log('[DownloadQueue] urgentChunk: file not active:', key, 'chunk', chunkIndex);
+      log.info('[DownloadQueue] urgentChunk: file not active:', key, 'chunk', chunkIndex);
       return false;
     }
 
@@ -719,13 +722,13 @@ export class DownloadQueue {
       );
       if (activeTask && activeTask._priority < PRIORITY.urgent) {
         activeTask._priority = PRIORITY.urgent;
-        console.log(`[DownloadQueue] URGENT: ${key} chunk ${chunkIndex} (already in-flight, limiting slots)`);
+        log.info(`[DownloadQueue] URGENT: ${key} chunk ${chunkIndex} (already in-flight, limiting slots)`);
         // Don't call processQueue() — can't stop in-flight tasks, but next
         // processQueue() call (when any task completes) will see hasUrgent
         // and limit new starts to URGENT_CONCURRENCY.
         return true;
       }
-      console.log('[DownloadQueue] urgentChunk: already urgent:', key, 'chunk', chunkIndex);
+      log.info('[DownloadQueue] urgentChunk: already urgent:', key, 'chunk', chunkIndex);
       return false;
     }
 
@@ -735,7 +738,7 @@ export class DownloadQueue {
     );
 
     if (idx === -1) {
-      console.log('[DownloadQueue] urgentChunk: chunk not in queue:', key, 'chunk', chunkIndex);
+      log.info('[DownloadQueue] urgentChunk: chunk not in queue:', key, 'chunk', chunkIndex);
       return false;
     }
 
@@ -744,7 +747,7 @@ export class DownloadQueue {
     // Move to front of queue (past any barriers)
     this.queue.unshift(task);
 
-    console.log(`[DownloadQueue] URGENT: ${key} chunk ${chunkIndex} (moved to front)`);
+    log.info(`[DownloadQueue] URGENT: ${key} chunk ${chunkIndex} (moved to front)`);
     this.processQueue();
     return true;
   }
@@ -809,7 +812,7 @@ export class DownloadQueue {
     }
 
     if (this.queue.length === 0 && this.running === 0) {
-      console.log('[DownloadQueue] All downloads complete');
+      log.info('[DownloadQueue] All downloads complete');
     }
   }
 
@@ -827,14 +830,14 @@ export class DownloadQueue {
     this._activeTasks.push(task);
     const key = `${task.fileInfo.type}/${task.fileInfo.id}`;
     const chunkLabel = task.chunkIndex != null ? ` chunk ${task.chunkIndex}` : '';
-    console.log(`[DownloadQueue] Starting: ${key}${chunkLabel} (${this.running}/${this.concurrency} active)`);
+    log.info(`[DownloadQueue] Starting: ${key}${chunkLabel} (${this.running}/${this.concurrency} active)`);
 
     task.start()
       .then(() => {
         this.running--;
         task._parentFile._runningCount--;
         this._activeTasks = this._activeTasks.filter(t => t !== task);
-        console.log(`[DownloadQueue] Fetched: ${key}${chunkLabel} (${this.running} active, ${this.queue.length} pending)`);
+        log.info(`[DownloadQueue] Fetched: ${key}${chunkLabel} (${this.running} active, ${this.queue.length} pending)`);
         this.processQueue();
         return task._parentFile.onTaskComplete(task);
       })

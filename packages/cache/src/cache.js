@@ -8,6 +8,9 @@
  * - Full cache clearing
  */
 
+import { createLogger } from '@xiboplayer/utils';
+
+const log = createLogger('Cache');
 const CACHE_NAME = 'xibo-media-v1';
 
 // Dynamic base path for multi-variant deployment (pwa, pwa-xmds, pwa-xlr)
@@ -61,7 +64,7 @@ export class CacheManager {
     }
 
     if (orphaned.length > 0) {
-      console.log(`[Cache] ${orphaned.length} media files orphaned after layout ${layoutId} removed:`, orphaned);
+      log.info(`${orphaned.length} media files orphaned after layout ${layoutId} removed:`, orphaned);
     }
     return orphaned;
   }

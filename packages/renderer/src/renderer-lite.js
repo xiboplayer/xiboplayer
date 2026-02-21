@@ -1759,7 +1759,7 @@ export class RendererLite {
             try {
               // Our cached widget HTML has a <base> tag; server 404 page doesn't
               if (!iframe.contentDocument?.querySelector('base')) {
-                console.warn('[RendererLite] Cache URL failed (hard reload?), using original CMS URLs');
+                self.log.warn('Cache URL failed (hard reload?), using original CMS URLs');
                 const blob = new Blob([result.fallback], { type: 'text/html' });
                 const blobUrl = URL.createObjectURL(blob);
                 self.trackBlobUrl(blobUrl);
@@ -1896,7 +1896,7 @@ export class RendererLite {
             try {
               // Our cached widget HTML has a <base> tag; server 404 page doesn't
               if (!iframe.contentDocument?.querySelector('base')) {
-                console.warn('[RendererLite] Cache URL failed (hard reload?), using original CMS URLs');
+                self.log.warn('Cache URL failed (hard reload?), using original CMS URLs');
                 const blob = new Blob([result.fallback], { type: 'text/html' });
                 const blobUrl = URL.createObjectURL(blob);
                 self.trackBlobUrl(blobUrl);

@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@xiboplayer/utils": "workspace:*"
+  },
   "devDependencies": {
     "vitest": "^2.0.0"
   },

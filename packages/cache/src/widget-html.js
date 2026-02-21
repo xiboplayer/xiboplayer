@@ -80,7 +80,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
     `hostAddress: "${BASE}/ic"`
   );
 
-  console.log(`[Cache] Injected base tag and rewrote CMS URLs in widget HTML`);
+  log.info('Injected base tag and rewrote CMS URLs in widget HTML');
 
   // Construct full URL for cache storage
   const cacheUrl = new URL(cacheKey, window.location.origin);
@@ -93,7 +93,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   });
 
   await cache.put(cacheUrl, response);
-  console.log(`[Cache] Stored widget HTML at ${cacheKey} (${modifiedHtml.length} bytes)`);
+  log.info(`Stored widget HTML at ${cacheKey} (${modifiedHtml.length} bytes)`);
 
   // Fetch and cache static resources (shared Cache API - accessible from main thread and SW)
   if (staticResources.length > 0) {
@@ -108,7 +108,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
       try {
         const resp = await fetch(originalUrl);
         if (!resp.ok) {
-          console.warn(`[Cache] Failed to fetch static resource: ${filename} (HTTP ${resp.status})`);
+          log.warn(`Failed to fetch static resource: ${filename} (HTTP ${resp.status})`);
           return;
         }
 
@@ -129,14 +129,14 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
           const fontUrlRegex = /url\((['"]?)(https?:\/\/[^'")\s]+\?[^'")\s]*file=([^&'")\s]+\.(?:woff2?|ttf|otf|eot|svg))[^'")\s]*)\1\)/gi;
           cssText = cssText.replace(fontUrlRegex, (_match, quote, fullUrl, fontFilename) => {
             fontResources.push({ filename: fontFilename, originalUrl: fullUrl });
-            console.log(`[Cache] Rewrote font URL in CSS: ${fontFilename}`);
+            log.info(`Rewrote font URL in CSS: ${fontFilename}`);
             return `url(${quote}${BASE}/cache/static/${encodeURIComponent(fontFilename)}${quote})`;
           });
 
           await staticCache.put(staticKey, new Response(cssText, {
             headers: { 'Content-Type': 'text/css' }
           }));
-          console.log(`[Cache] Cached CSS with ${fontResources.length} rewritten font URLs: ${filename}`);
+          log.info(`Cached CSS with ${fontResources.length} rewritten font URLs: ${filename}`);
 
           // Fetch and cache referenced font files
           await Promise.all(fontResources.map(async ({ filename: fontFile, originalUrl: fontUrl }) => {
@@ -147,7 +147,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
             try {
               const fontResp = await fetch(fontUrl);
               if (!fontResp.ok) {
-                console.warn(`[Cache] Failed to fetch font: ${fontFile} (HTTP ${fontResp.status})`);
+                log.warn(`Failed to fetch font: ${fontFile} (HTTP ${fontResp.status})`);
                 return;
               }
               const fontBlob = await fontResp.blob();
@@ -162,9 +162,9 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
               await staticCache.put(fontKey, new Response(fontBlob, {
                 headers: { 'Content-Type': fontContentType }
               }));
-              console.log(`[Cache] Cached font: ${fontFile} (${fontContentType}, ${fontBlob.size} bytes)`);
+              log.info(`Cached font: ${fontFile} (${fontContentType}, ${fontBlob.size} bytes)`);
             } catch (fontErr) {
-              console.warn(`[Cache] Failed to cache font: ${fontFile}`, fontErr);
+              log.warn(`Failed to cache font: ${fontFile}`, fontErr);
             }
           }));
         } else {
@@ -172,10 +172,10 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
           await staticCache.put(staticKey, new Response(blob, {
             headers: { 'Content-Type': contentType }
           }));
-          console.log(`[Cache] Cached static resource: ${filename} (${contentType}, ${blob.size} bytes)`);
+          log.info(`Cached static resource: ${filename} (${contentType}, ${blob.size} bytes)`);
         }
       } catch (error) {
-        console.warn(`[Cache] Failed to cache static resource: ${filename}`, error);
+        log.warn(`Failed to cache static resource: ${filename}`, error);
       }
     }));
   }
