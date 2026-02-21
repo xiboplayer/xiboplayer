@@ -2735,6 +2735,13 @@ export class RendererLite {
   }
 
   /**
+   * Check if playback is currently paused.
+   */
+  isPaused() {
+    return this._paused;
+  }
+
+  /**
    * Resume playback: restart layout timer with remaining time, resume media and widget cycling.
    */
   resume() {
