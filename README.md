@@ -48,7 +48,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **HTTP 429 retry** — respects Retry-After header for rate-limited CMS responses
 - **Spec-compliant logging** — SubmitLog XML with child elements per upstream format
 - **Configurable client identity** — clientType/clientVersion/clientCode in RegisterDisplay
-- **1142 tests** across 30 test suites
+- **1144 tests** across 30 test suites
 
 ## Packages
 
@@ -165,7 +165,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1142 tests across 30 suites)
+pnpm test              # run all tests (1144 tests across 30 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
