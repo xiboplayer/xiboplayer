@@ -45,10 +45,12 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Dynamic duration** — parses NUMITEMS/DURATION HTML comments from GetResource for DataSet tickers and RSS feeds
 - **Region loop control** — `loop=0` keeps single media visible after expiry instead of cycling
 - **Purge file handling** — processes CMS purge directives from RequiredFiles
-- **HTTP 429 retry** — respects Retry-After header for rate-limited CMS responses
+- **HTTP 429 retry** — respects Retry-After header (delta-seconds and HTTP-date) for rate-limited CMS responses
 - **Spec-compliant logging** — SubmitLog XML with child elements per upstream format
 - **Configurable client identity** — clientType/clientVersion/clientCode in RegisterDisplay
-- **1144 tests** across 30 test suites
+- **Fault reporting agent** — independent 60s fault submission cycle for faster CMS alerts
+- **Layout blacklisting** — tracks consecutive render failures, auto-blacklists after 3 failures, reports to CMS via BlackList XMDS
+- **1167 tests** across 31 test suites
 
 ## Packages
 
@@ -165,7 +167,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1144 tests across 30 suites)
+pnpm test              # run all tests (1167 tests across 31 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
