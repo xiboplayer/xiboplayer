@@ -555,12 +555,22 @@ export class RendererLite {
     const playCount = parseInt(mediaEl.getAttribute('playCount') || '0');
     const isRandom = mediaEl.getAttribute('isRandom') === '1';
 
+    // Media expiry dates (per-widget time-gating within a layout)
+    const fromDt = mediaEl.getAttribute('fromDt') || mediaEl.getAttribute('fromdt') || null;
+    const toDt = mediaEl.getAttribute('toDt') || mediaEl.getAttribute('todt') || null;
+
+    // Render mode: 'native' (player renders directly) or 'html' (use GetResource)
+    const render = mediaEl.getAttribute('render') || null;
+
     return {
       type,
       duration,
       useDuration, // Whether to use specified duration (1) or media length (0)
       id,
       fileId, // Media library file ID for cache lookup
+      render, // 'native' or 'html' — null means use type-based dispatch
+      fromDt, // Widget valid-from date (Y-m-d H:i:s)
+      toDt, // Widget valid-to date (Y-m-d H:i:s)
       enableStat: mediaEl.getAttribute('enableStat') !== '0', // absent or "1" = enabled
       webhookUrl: options.webhookUrl || null,
       options,
@@ -1089,8 +1099,10 @@ export class RendererLite {
 
     this.container.appendChild(regionEl);
 
+    // Filter expired widgets (fromDt/toDt time-gating within XLF)
+    let widgets = regionConfig.widgets.filter(w => this._isWidgetActive(w));
+
     // For regions with sub-playlist cycle playback, select which widgets play this cycle
-    let widgets = regionConfig.widgets;
     if (widgets.some(w => w.cyclePlayback)) {
       widgets = this._applyCyclePlayback(widgets);
     }
@@ -1471,6 +1483,55 @@ export class RendererLite {
     this._stopAudioOverlays(widget.id);
 
     return { widget, animPromise };
+  }
+
+  /**
+   * Check if a widget is within its valid time window (fromDt/toDt).
+   * Widgets without dates are always active.
+   * @param {Object} widget - Widget config with optional fromDt/toDt
+   * @returns {boolean}
+   */
+  _isWidgetActive(widget) {
+    const now = new Date();
+    if (widget.fromDt) {
+      const from = new Date(widget.fromDt);
+      if (now < from) return false;
+    }
+    if (widget.toDt) {
+      const to = new Date(widget.toDt);
+      if (now > to) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Parse NUMITEMS and DURATION HTML comments from GetResource responses.
+   * CMS embeds these in widget HTML to override duration for dynamic content
+   * (e.g. DataSet tickers, RSS feeds). Format: <!-- NUMITEMS=5 --> <!-- DURATION=30 -->
+   * DURATION takes precedence; otherwise NUMITEMS × widget.duration is used.
+   * @param {string} html - Widget HTML content
+   * @param {Object} widget - Widget config (duration may be updated)
+   */
+  _parseDurationComments(html, widget) {
+    const durationMatch = html.match(/<!--\s*DURATION=(\d+)\s*-->/);
+    if (durationMatch) {
+      const newDuration = parseInt(durationMatch[1], 10);
+      if (newDuration > 0) {
+        this.log.info(`Widget ${widget.id}: DURATION comment overrides duration ${widget.duration}→${newDuration}s`);
+        widget.duration = newDuration;
+        return;
+      }
+    }
+
+    const numItemsMatch = html.match(/<!--\s*NUMITEMS=(\d+)\s*-->/);
+    if (numItemsMatch) {
+      const numItems = parseInt(numItemsMatch[1], 10);
+      if (numItems > 0 && widget.duration > 0) {
+        const newDuration = numItems * widget.duration;
+        this.log.info(`Widget ${widget.id}: NUMITEMS=${numItems} × ${widget.duration}s = ${newDuration}s`);
+        widget.duration = newDuration;
+      }
+    }
   }
 
   /**
@@ -2035,12 +2096,21 @@ export class RendererLite {
           }, { once: true });
         }
 
+        // Parse NUMITEMS/DURATION from fallback HTML (cache path)
+        if (result.fallback) {
+          this._parseDurationComments(result.fallback, widget);
+        }
+
         return iframe;
       }
       html = result;
     }
 
     if (html) {
+      // Parse NUMITEMS/DURATION HTML comments for dynamic widget duration
+      // Format: <!-- NUMITEMS=5 --> and <!-- DURATION=30 -->
+      this._parseDurationComments(html, widget);
+
       const blob = new Blob([html], { type: 'text/html' });
       const blobUrl = URL.createObjectURL(blob);
       iframe.src = blobUrl;

@@ -1891,4 +1891,126 @@ describe('RendererLite', () => {
       expect(ids.some(id => id.startsWith('b'))).toBe(true);
     });
   });
+
+  // ── Medium-Priority Spec Compliance ────────────────────────────────
+
+  describe('Widget fromDt/toDt Expiry', () => {
+    it('should parse fromDt and toDt attributes on widgets', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1"
+                   fromDt="2025-01-01 09:00:00" toDt="2025-12-31 17:00:00">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].widgets[0].fromDt).toBe('2025-01-01 09:00:00');
+      expect(layout.regions[0].widgets[0].toDt).toBe('2025-12-31 17:00:00');
+    });
+
+    it('should set fromDt/toDt to null when absent', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].widgets[0].fromDt).toBeNull();
+      expect(layout.regions[0].widgets[0].toDt).toBeNull();
+    });
+
+    it('should filter out expired widgets (toDt in the past)', () => {
+      const widget = { id: 'm1', fromDt: null, toDt: '2020-01-01 00:00:00' };
+      expect(renderer._isWidgetActive(widget)).toBe(false);
+    });
+
+    it('should filter out future widgets (fromDt in the future)', () => {
+      const widget = { id: 'm1', fromDt: '2099-12-31 23:59:59', toDt: null };
+      expect(renderer._isWidgetActive(widget)).toBe(false);
+    });
+
+    it('should accept widgets with no date constraints', () => {
+      const widget = { id: 'm1', fromDt: null, toDt: null };
+      expect(renderer._isWidgetActive(widget)).toBe(true);
+    });
+
+    it('should accept widgets within their date range', () => {
+      const widget = { id: 'm1', fromDt: '2020-01-01 00:00:00', toDt: '2099-12-31 23:59:59' };
+      expect(renderer._isWidgetActive(widget)).toBe(true);
+    });
+  });
+
+  describe('Render Attribute', () => {
+    it('should parse render attribute on widgets', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="text" duration="10" render="native">
+              <options><uri>test.html</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].widgets[0].render).toBe('native');
+    });
+
+    it('should set render to null when absent', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].widgets[0].render).toBeNull();
+    });
+  });
+
+  describe('NUMITEMS/DURATION HTML Comments', () => {
+    it('should override widget duration with DURATION comment', () => {
+      const widget = { id: 'w1', duration: 10 };
+      const html = '<html><!-- DURATION=45 --><body>content</body></html>';
+      renderer._parseDurationComments(html, widget);
+      expect(widget.duration).toBe(45);
+    });
+
+    it('should multiply duration by NUMITEMS when no DURATION present', () => {
+      const widget = { id: 'w2', duration: 5 };
+      const html = '<html><!-- NUMITEMS=8 --><body>content</body></html>';
+      renderer._parseDurationComments(html, widget);
+      expect(widget.duration).toBe(40); // 8 × 5
+    });
+
+    it('should prefer DURATION over NUMITEMS when both present', () => {
+      const widget = { id: 'w3', duration: 5 };
+      const html = '<html><!-- NUMITEMS=8 --><!-- DURATION=30 --><body>content</body></html>';
+      renderer._parseDurationComments(html, widget);
+      expect(widget.duration).toBe(30); // DURATION takes precedence
+    });
+
+    it('should not modify duration when no comments present', () => {
+      const widget = { id: 'w4', duration: 15 };
+      const html = '<html><body>plain content</body></html>';
+      renderer._parseDurationComments(html, widget);
+      expect(widget.duration).toBe(15);
+    });
+
+    it('should handle whitespace variations in comments', () => {
+      const widget = { id: 'w5', duration: 10 };
+      const html = '<html><!--  DURATION=60  --><body>content</body></html>';
+      renderer._parseDurationComments(html, widget);
+      expect(widget.duration).toBe(60);
+    });
+  });
 });
