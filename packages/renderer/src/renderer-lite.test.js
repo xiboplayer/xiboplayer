@@ -1590,4 +1590,248 @@ describe('RendererLite', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('Drawer Nodes (#11)', () => {
+    it('should parse drawer elements as regions with isDrawer flag', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+          <drawer id="d1" width="400" height="300" top="100" left="100">
+            <media id="dm1" type="image" duration="5" fileId="2">
+              <options><uri>drawer.png</uri></options>
+            </media>
+          </drawer>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+
+      expect(layout.regions).toHaveLength(2);
+      expect(layout.regions[0].isDrawer).toBe(false);
+      expect(layout.regions[0].id).toBe('r1');
+      expect(layout.regions[1].isDrawer).toBe(true);
+      expect(layout.regions[1].id).toBe('d1');
+      expect(layout.regions[1].widgets).toHaveLength(1);
+      expect(layout.regions[1].widgets[0].id).toBe('dm1');
+    });
+
+    it('should exclude drawers from layout duration calculation', () => {
+      const xlf = `
+        <layout width="1920" height="1080">
+          <region id="r1" width="960" height="540" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+          <drawer id="d1" width="400" height="300" top="100" left="100">
+            <media id="dm1" type="image" duration="120" fileId="2">
+              <options><uri>drawer.png</uri></options>
+            </media>
+          </drawer>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+
+      // Duration should be 10s (from region), not 120s (from drawer)
+      expect(layout.duration).toBe(10);
+    });
+
+    it('should assign high z-index to drawer regions by default', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="960" height="540" top="0" left="0" zindex="1">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+          <drawer id="d1">
+            <media id="dm1" type="image" duration="5" fileId="2">
+              <options><uri>drawer.png</uri></options>
+            </media>
+          </drawer>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+
+      expect(layout.regions[0].zindex).toBe(1);
+      expect(layout.regions[1].zindex).toBe(2000); // Drawer default z-index
+    });
+
+    it('should create drawer regions with display:none', async () => {
+      vi.useFakeTimers();
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+          <drawer id="d1" width="400" height="300" top="100" left="100">
+            <media id="dm1" type="image" duration="5" fileId="2">
+              <options><uri>drawer.png</uri></options>
+            </media>
+          </drawer>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(10000);
+      await renderPromise;
+
+      const drawerRegion = renderer.regions.get('d1');
+      expect(drawerRegion).toBeDefined();
+      expect(drawerRegion.isDrawer).toBe(true);
+      expect(drawerRegion.element.style.display).toBe('none');
+
+      vi.useRealTimers();
+    });
+
+    it('should reveal drawer region when navigateToWidget targets drawer widget', async () => {
+      vi.useFakeTimers();
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+          <drawer id="d1" width="400" height="300" top="100" left="100">
+            <media id="dm1" type="image" duration="5" fileId="2">
+              <options><uri>drawer.png</uri></options>
+            </media>
+          </drawer>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(10000);
+      await renderPromise;
+
+      // Drawer starts hidden
+      const drawerRegion = renderer.regions.get('d1');
+      expect(drawerRegion.element.style.display).toBe('none');
+
+      // Navigate to drawer widget — should reveal the drawer
+      renderer.navigateToWidget('dm1');
+      expect(drawerRegion.element.style.display).toBe('');
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('Sub-Playlist (#10)', () => {
+    it('should parse sub-playlist attributes from media elements', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" parentWidgetId="sp1"
+                   displayOrder="1" cyclePlayback="1" playCount="1" isRandom="0" fileId="1">
+              <options><uri>img1.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="10" parentWidgetId="sp1"
+                   displayOrder="2" cyclePlayback="1" playCount="1" isRandom="0" fileId="2">
+              <options><uri>img2.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const w1 = layout.regions[0].widgets[0];
+      const w2 = layout.regions[0].widgets[1];
+
+      expect(w1.parentWidgetId).toBe('sp1');
+      expect(w1.displayOrder).toBe(1);
+      expect(w1.cyclePlayback).toBe(true);
+      expect(w1.playCount).toBe(1);
+      expect(w1.isRandom).toBe(false);
+
+      expect(w2.parentWidgetId).toBe('sp1');
+      expect(w2.displayOrder).toBe(2);
+    });
+
+    it('should select one widget per group when cyclePlayback is enabled', () => {
+      const widgets = [
+        { id: 'm1', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 1, cyclePlayback: true, playCount: 1, isRandom: false },
+        { id: 'm2', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 2, cyclePlayback: true, playCount: 1, isRandom: false },
+        { id: 'm3', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 3, cyclePlayback: true, playCount: 1, isRandom: false },
+      ];
+
+      const result = renderer._applyCyclePlayback(widgets);
+
+      // Should select exactly 1 widget from the 3-widget group
+      expect(result).toHaveLength(1);
+      expect(['m1', 'm2', 'm3']).toContain(result[0].id);
+    });
+
+    it('should pass through non-grouped widgets unchanged', () => {
+      const widgets = [
+        { id: 'standalone', type: 'image', duration: 10,
+          parentWidgetId: null, cyclePlayback: false },
+        { id: 'm1', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 1, cyclePlayback: true, playCount: 1, isRandom: false },
+        { id: 'm2', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 2, cyclePlayback: true, playCount: 1, isRandom: false },
+      ];
+
+      const result = renderer._applyCyclePlayback(widgets);
+
+      // Standalone + 1 from group = 2
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('standalone');
+    });
+
+    it('should round-robin across cycles for deterministic playback', () => {
+      const widgets = [
+        { id: 'm1', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 1, cyclePlayback: true, playCount: 1, isRandom: false },
+        { id: 'm2', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 2, cyclePlayback: true, playCount: 1, isRandom: false },
+      ];
+
+      // Reset cycle index for clean test
+      renderer._subPlaylistCycleIndex = new Map();
+
+      const result1 = renderer._applyCyclePlayback(widgets);
+      const result2 = renderer._applyCyclePlayback(widgets);
+
+      // First cycle picks widget at index 0, second cycle picks at index 1
+      expect(result1[0].id).toBe('m1');
+      expect(result2[0].id).toBe('m2');
+    });
+
+    it('should handle multiple groups independently', () => {
+      const widgets = [
+        { id: 'a1', type: 'image', duration: 10, parentWidgetId: 'grpA',
+          displayOrder: 1, cyclePlayback: true, playCount: 1, isRandom: false },
+        { id: 'a2', type: 'image', duration: 10, parentWidgetId: 'grpA',
+          displayOrder: 2, cyclePlayback: true, playCount: 1, isRandom: false },
+        { id: 'b1', type: 'image', duration: 10, parentWidgetId: 'grpB',
+          displayOrder: 1, cyclePlayback: true, playCount: 1, isRandom: false },
+        { id: 'b2', type: 'image', duration: 10, parentWidgetId: 'grpB',
+          displayOrder: 2, cyclePlayback: true, playCount: 1, isRandom: false },
+      ];
+
+      renderer._subPlaylistCycleIndex = new Map();
+      const result = renderer._applyCyclePlayback(widgets);
+
+      // 1 from each group = 2 total
+      expect(result).toHaveLength(2);
+      const ids = result.map(w => w.id);
+      // Should have one from grpA and one from grpB
+      expect(ids.some(id => id.startsWith('a'))).toBe(true);
+      expect(ids.some(id => id.startsWith('b'))).toBe(true);
+    });
+  });
 });

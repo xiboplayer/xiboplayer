@@ -226,6 +226,9 @@ export class RendererLite {
     this._keydownHandler = null; // Document keydown listener (single, shared)
     this._keyboardActions = []; // Active keyboard actions for current layout
 
+    // Sub-playlist cycle state (round-robin per parentWidgetId group)
+    this._subPlaylistCycleIndex = new Map();
+
     // Layout preload pool (2-layout pool for instant transitions)
     this.layoutPool = new LayoutPool(2);
     this.preloadTimer = null;
@@ -389,17 +392,20 @@ export class RendererLite {
       this.log.info(`Layout duration NOT in XLF, will calculate from widgets`);
     }
 
-    // Parse regions
-    for (const regionEl of doc.querySelectorAll('region')) {
+    // Parse regions and drawers (drawers are invisible regions for interactive actions)
+    const regionAndDrawerEls = layoutEl.querySelectorAll(':scope > region, :scope > drawer');
+    for (const regionEl of regionAndDrawerEls) {
+      const isDrawer = regionEl.tagName === 'drawer';
       const region = {
         id: regionEl.getAttribute('id'),
-        width: parseInt(regionEl.getAttribute('width')),
-        height: parseInt(regionEl.getAttribute('height')),
-        top: parseInt(regionEl.getAttribute('top')),
-        left: parseInt(regionEl.getAttribute('left')),
-        zindex: parseInt(regionEl.getAttribute('zindex') || '0'),
+        width: parseInt(regionEl.getAttribute('width') || '0'),
+        height: parseInt(regionEl.getAttribute('height') || '0'),
+        top: parseInt(regionEl.getAttribute('top') || '0'),
+        left: parseInt(regionEl.getAttribute('left') || '0'),
+        zindex: parseInt(regionEl.getAttribute('zindex') || (isDrawer ? '2000' : '0')),
         actions: this.parseActions(regionEl),
         exitTransition: null,
+        isDrawer,
         widgets: []
       };
 
@@ -419,20 +425,27 @@ export class RendererLite {
         }
       }
 
-      // Parse media/widgets
-      for (const mediaEl of regionEl.querySelectorAll('media')) {
-        const widget = this.parseWidget(mediaEl);
+      // Parse media/widgets (use direct children to avoid nested matches)
+      for (const child of regionEl.children) {
+        if (child.tagName !== 'media') continue;
+        const widget = this.parseWidget(child);
         region.widgets.push(widget);
       }
 
       layout.regions.push(region);
+
+      if (isDrawer) {
+        this.log.info(`Parsed drawer: id=${region.id} with ${region.widgets.length} widgets`);
+      }
     }
 
     // Calculate layout duration if not specified (duration=0)
+    // Drawers don't contribute to layout duration (they're action-triggered)
     if (layout.duration === 0) {
       let maxDuration = 0;
 
       for (const region of layout.regions) {
+        if (region.isDrawer) continue;
         let regionDuration = 0;
 
         // Calculate region duration based on widgets
@@ -521,6 +534,13 @@ export class RendererLite {
       }
     }
 
+    // Sub-playlist attributes (widgets grouped by parentWidgetId)
+    const parentWidgetId = mediaEl.getAttribute('parentWidgetId') || null;
+    const displayOrder = parseInt(mediaEl.getAttribute('displayOrder') || '0');
+    const cyclePlayback = mediaEl.getAttribute('cyclePlayback') === '1';
+    const playCount = parseInt(mediaEl.getAttribute('playCount') || '0');
+    const isRandom = mediaEl.getAttribute('isRandom') === '1';
+
     return {
       type,
       duration,
@@ -533,7 +553,12 @@ export class RendererLite {
       raw,
       transitions,
       actions,
-      audioNodes // Audio overlays attached to this widget
+      audioNodes, // Audio overlays attached to this widget
+      parentWidgetId,
+      displayOrder,
+      cyclePlayback,
+      playCount,
+      isRandom
     };
   }
 
@@ -577,6 +602,7 @@ export class RendererLite {
     let maxRegionDuration = 0;
 
     for (const region of this.currentLayout.regions) {
+      if (region.isDrawer) continue;
       let regionDuration = 0;
 
       for (const widget of region.widgets) {
@@ -770,6 +796,12 @@ export class RendererLite {
 
       this.log.info(`Navigating to widget ${targetWidgetId} in region ${regionId} (index ${widgetIndex})`);
 
+      // Show drawer region if hidden (drawers start display:none)
+      if (region.isDrawer && region.element.style.display === 'none') {
+        region.element.style.display = '';
+        this.log.info(`Drawer region ${regionId} revealed`);
+      }
+
       if (region.timer) {
         clearTimeout(region.timer);
         region.timer = null;
@@ -786,7 +818,22 @@ export class RendererLite {
           this.stopWidget(regionId, widgetIndex);
           const nextIndex = (widgetIndex + 1) % region.widgets.length;
           region.currentIndex = nextIndex;
-          this.startRegion(regionId);
+          // For drawers, hide again after last widget; for normal regions, continue cycling
+          if (region.isDrawer && nextIndex === 0) {
+            region.element.style.display = 'none';
+            this.log.info(`Drawer region ${regionId} hidden (cycle complete)`);
+          } else {
+            this.startRegion(regionId);
+          }
+        }, duration);
+      } else if (region.isDrawer) {
+        // Single-widget drawer: hide after widget duration
+        const widget = region.widgets[widgetIndex];
+        const duration = widget.duration * 1000;
+        region.timer = setTimeout(() => {
+          this.stopWidget(regionId, widgetIndex);
+          region.element.style.display = 'none';
+          this.log.info(`Drawer region ${regionId} hidden (single widget done)`);
         }, duration);
       }
       return;
@@ -865,8 +912,9 @@ export class RendererLite {
         // Emit layout start event
         this.emit('layoutStart', layoutId, this.currentLayout);
 
-        // Restart all regions from widget 0
+        // Restart all regions from widget 0 (except drawers)
         for (const [regionId, region] of this.regions) {
+          if (region.isDrawer) continue;
           this.startRegion(regionId);
         }
 
@@ -983,8 +1031,9 @@ export class RendererLite {
       // Emit layout start event
       this.emit('layoutStart', layoutId, layout);
 
-      // Start all regions
+      // Start all regions (except drawers — they're action-triggered)
       for (const [regionId, region] of this.regions) {
+        if (region.isDrawer) continue;
         this.startRegion(regionId);
       }
 
@@ -1016,22 +1065,34 @@ export class RendererLite {
     regionEl.style.zIndex = regionConfig.zindex;
     regionEl.style.overflow = 'hidden';
 
+    // Drawer regions start fully hidden — shown only by navWidget actions
+    if (regionConfig.isDrawer) {
+      regionEl.style.display = 'none';
+    }
+
     // Apply scaled positioning
     this.applyRegionScale(regionEl, regionConfig);
 
     this.container.appendChild(regionEl);
+
+    // For regions with sub-playlist cycle playback, select which widgets play this cycle
+    let widgets = regionConfig.widgets;
+    if (widgets.some(w => w.cyclePlayback)) {
+      widgets = this._applyCyclePlayback(widgets);
+    }
 
     // Store region state (dimensions use scaled values for transitions)
     const sf = this.scaleFactor;
     this.regions.set(regionConfig.id, {
       element: regionEl,
       config: regionConfig,
-      widgets: regionConfig.widgets,
+      widgets,
       currentIndex: 0,
       timer: null,
       width: regionConfig.width * sf,
       height: regionConfig.height * sf,
       complete: false, // Track if region has played all widgets once
+      isDrawer: regionConfig.isDrawer || false,
       widgetElements: new Map() // widgetId -> DOM element (for element reuse)
     });
   }
@@ -1396,6 +1457,60 @@ export class RendererLite {
     this._stopAudioOverlays(widget.id);
 
     return { widget, animPromise };
+  }
+
+  /**
+   * Apply sub-playlist cycle playback filtering.
+   * Groups widgets by parentWidgetId, then selects one widget per group for this cycle.
+   * Non-grouped widgets pass through unchanged.
+   *
+   * @param {Array} widgets - All widgets in the region
+   * @returns {Array} Filtered widgets for this playback cycle
+   */
+  _applyCyclePlayback(widgets) {
+    // Track cycle indices per group for deterministic round-robin
+    if (!this._subPlaylistCycleIndex) {
+      this._subPlaylistCycleIndex = new Map();
+    }
+
+    // Group widgets by parentWidgetId
+    const groups = new Map(); // parentWidgetId → [widgets]
+    const result = [];
+
+    for (const widget of widgets) {
+      if (widget.parentWidgetId && widget.cyclePlayback) {
+        if (!groups.has(widget.parentWidgetId)) {
+          groups.set(widget.parentWidgetId, []);
+        }
+        groups.get(widget.parentWidgetId).push(widget);
+      } else {
+        // Non-grouped widget: add a placeholder to preserve order
+        result.push({ type: 'direct', widget });
+      }
+    }
+
+    // For each group, select one widget for this cycle
+    for (const [groupId, groupWidgets] of groups) {
+      // Sort by displayOrder
+      groupWidgets.sort((a, b) => a.displayOrder - b.displayOrder);
+
+      let selectedWidget;
+      if (groupWidgets.some(w => w.isRandom)) {
+        // Random selection
+        const idx = Math.floor(Math.random() * groupWidgets.length);
+        selectedWidget = groupWidgets[idx];
+      } else {
+        // Round-robin based on cycle index
+        const cycleIdx = this._subPlaylistCycleIndex.get(groupId) || 0;
+        selectedWidget = groupWidgets[cycleIdx % groupWidgets.length];
+        this._subPlaylistCycleIndex.set(groupId, cycleIdx + 1);
+      }
+
+      this.log.info(`Sub-playlist cycle: group ${groupId} selected widget ${selectedWidget.id} (${groupWidgets.length} in group)`);
+      result.push({ type: 'direct', widget: selectedWidget });
+    }
+
+    return result.map(r => r.widget);
   }
 
   /**
