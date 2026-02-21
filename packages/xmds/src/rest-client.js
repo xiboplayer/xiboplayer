@@ -230,6 +230,8 @@ export class RestClient {
         md5: attrs.md5 || null,
         download: attrs.download || null,
         path,
+        saveAs: attrs.saveAs || null,
+        fileType: attrs.fileType || null,
         code: attrs.code || null,
         layoutid: attrs.layoutid || null,
         regionid: attrs.regionid || null,
@@ -237,7 +239,19 @@ export class RestClient {
       });
     }
 
-    return files;
+    // Parse purge items — files CMS wants the player to delete
+    const purgeItems = [];
+    let purgeList = json.purge?.item || [];
+    if (!Array.isArray(purgeList)) purgeList = [purgeList];
+    for (const p of purgeList) {
+      const pAttrs = p['@attributes'] || p;
+      purgeItems.push({
+        id: pAttrs.id || null,
+        storedAs: pAttrs.storedAs || null,
+      });
+    }
+
+    return { files, purge: purgeItems };
   }
 
   /**

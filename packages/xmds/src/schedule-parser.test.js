@@ -167,4 +167,38 @@ describe('parseScheduleResponse', () => {
     expect(layout.groupKey).toBe('group-A');
     expect(layout.playCount).toBe(3);
   });
+
+  it('should parse command code attribute correctly', () => {
+    const xml = `<schedule>
+      <command code="collectNow" date="2026-01-01"/>
+      <command code="reboot" date="2026-01-02"/>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    expect(result.commands).toHaveLength(2);
+    expect(result.commands[0].code).toBe('collectNow');
+    expect(result.commands[1].code).toBe('reboot');
+  });
+
+  it('should parse dataConnectors with connector child elements', () => {
+    const xml = `<schedule>
+      <dataConnectors>
+        <connector id="dc1" dataSetId="42" dataParams="limit=10" js="render.js"
+                   url="http://cms.example.com/data" updateInterval="60"/>
+      </dataConnectors>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    expect(result.dataConnectors).toHaveLength(1);
+    expect(result.dataConnectors[0].id).toBe('dc1');
+    expect(result.dataConnectors[0].dataSetId).toBe('42');
+    expect(result.dataConnectors[0].dataParams).toBe('limit=10');
+    expect(result.dataConnectors[0].js).toBe('render.js');
+    expect(result.dataConnectors[0].url).toBe('http://cms.example.com/data');
+    expect(result.dataConnectors[0].updateInterval).toBe(60);
+  });
+
+  it('should return empty dataConnectors when no dataConnectors element', () => {
+    const xml = '<schedule><default file="0"/></schedule>';
+    const result = parseScheduleResponse(xml);
+    expect(result.dataConnectors).toEqual([]);
+  });
 });

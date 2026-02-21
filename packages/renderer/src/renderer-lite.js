@@ -408,11 +408,12 @@ export class RendererLite {
         enableStat: regionEl.getAttribute('enableStat') !== '0',
         actions: this.parseActions(regionEl),
         exitTransition: null,
+        loop: true, // Default: cycle widgets. Spec: loop=0 means single media stays visible
         isDrawer,
         widgets: []
       };
 
-      // Parse region-level options (exit transitions)
+      // Parse region-level options (exit transitions, loop)
       // Use direct children only to avoid matching <options> inside <media>
       const regionOptionsEl = Array.from(regionEl.children).find(el => el.tagName === 'options');
       if (regionOptionsEl) {
@@ -425,6 +426,12 @@ export class RendererLite {
             duration: parseInt((exitTransDuration && exitTransDuration.textContent) || '1000'),
             direction: (exitTransDirection && exitTransDirection.textContent) || 'N'
           };
+        }
+
+        // Region loop option: 0 = single media stays on screen, 1 = cycles (default)
+        const loopEl = regionOptionsEl.querySelector('loop');
+        if (loopEl) {
+          region.loop = loopEl.textContent !== '0';
         }
       }
 
@@ -551,6 +558,21 @@ export class RendererLite {
       }
     }
 
+    // Parse commands on media (shell/native commands triggered on widget start)
+    // Spec: <commands><command commandCode="code" commandString="args"/></commands>
+    const commands = [];
+    const commandsEl = Array.from(mediaEl.children).find(el => el.tagName === 'commands');
+    if (commandsEl) {
+      for (const cmdEl of commandsEl.children) {
+        if (cmdEl.tagName === 'command') {
+          commands.push({
+            commandCode: cmdEl.getAttribute('commandCode') || '',
+            commandString: cmdEl.getAttribute('commandString') || ''
+          });
+        }
+      }
+    }
+
     // Sub-playlist attributes (widgets grouped by parentWidgetId)
     const parentWidgetId = mediaEl.getAttribute('parentWidgetId') || null;
     const displayOrder = parseInt(mediaEl.getAttribute('displayOrder') || '0');
@@ -581,6 +603,7 @@ export class RendererLite {
       transitions,
       actions,
       audioNodes, // Audio overlays attached to this widget
+      commands, // Shell commands triggered on widget start
       parentWidgetId,
       displayOrder,
       cyclePlayback,
@@ -1602,6 +1625,7 @@ export class RendererLite {
   _startRegionCycle(region, regionId, showFn, hideFn, onCycleComplete) {
     if (!region || region.widgets.length === 0) return;
 
+    // Non-looping region with a single widget: show it and stay (spec: loop=0)
     if (region.widgets.length === 1) {
       showFn(regionId, 0);
       return;
@@ -1634,6 +1658,13 @@ export class RendererLite {
           onCycleComplete?.();
         }
 
+        // Non-looping region (loop=0): stop after one full cycle
+        if (nextIndex === 0 && region.config?.loop === false) {
+          // Show the last widget again and keep it visible
+          showFn(regionId, region.widgets.length - 1);
+          return;
+        }
+
         region.currentIndex = nextIndex;
         playNext();
       }, duration);
@@ -1656,6 +1687,19 @@ export class RendererLite {
           type: widget.type, duration: widget.duration,
           enableStat: widget.enableStat
         });
+
+        // Execute commands attached to this widget (shell/native commands)
+        if (widget.commands && widget.commands.length > 0) {
+          for (const cmd of widget.commands) {
+            this.emit('widgetCommand', {
+              commandCode: cmd.commandCode,
+              commandString: cmd.commandString,
+              widgetId: widget.id,
+              regionId,
+              layoutId: this.currentLayoutId
+            });
+          }
+        }
       }
     } catch (error) {
       this.log.error(`Error rendering widget:`, error);

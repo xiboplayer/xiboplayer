@@ -240,6 +240,8 @@ export class XmdsClient {
         md5: fileEl.getAttribute('md5'),
         download: fileEl.getAttribute('download'),
         path: fileEl.getAttribute('path'),
+        saveAs: fileEl.getAttribute('saveAs') || null,
+        fileType: fileEl.getAttribute('fileType') || null,
         code: fileEl.getAttribute('code'),
         layoutid: fileEl.getAttribute('layoutid'),
         regionid: fileEl.getAttribute('regionid'),
@@ -247,7 +249,19 @@ export class XmdsClient {
       });
     }
 
-    return files;
+    // Parse purge block — files CMS wants the player to delete
+    const purgeItems = [];
+    const purgeEl = doc.querySelector('purge');
+    if (purgeEl) {
+      for (const itemEl of purgeEl.querySelectorAll('item')) {
+        purgeItems.push({
+          id: itemEl.getAttribute('id'),
+          storedAs: itemEl.getAttribute('storedAs')
+        });
+      }
+    }
+
+    return { files, purge: purgeItems };
   }
 
   /**

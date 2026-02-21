@@ -174,20 +174,27 @@ export function parseScheduleResponse(xml) {
   // Parse server commands (remote control)
   for (const cmdEl of doc.querySelectorAll('schedule > command')) {
     schedule.commands.push({
-      code: cmdEl.getAttribute('command') || '',
+      code: cmdEl.getAttribute('code') || '',
       date: cmdEl.getAttribute('date') || ''
     });
   }
 
   // Parse data connectors (real-time data sources for widgets)
-  for (const dcEl of doc.querySelectorAll('dataconnector')) {
-    schedule.dataConnectors.push({
-      id: dcEl.getAttribute('id') || '',
-      dataConnectorId: dcEl.getAttribute('dataConnectorId') || '',
-      dataKey: dcEl.getAttribute('dataKey') || '',
-      url: dcEl.getAttribute('url') || '',
-      updateInterval: parseInt(dcEl.getAttribute('updateInterval') || '300', 10)
-    });
+  // Spec: <dataConnectors><connector dataSetId="" dataParams="" js=""/></dataConnectors>
+  const dataConnectorsContainer = doc.querySelector('dataConnectors');
+  if (dataConnectorsContainer) {
+    for (const dcEl of dataConnectorsContainer.querySelectorAll('connector')) {
+      schedule.dataConnectors.push({
+        id: dcEl.getAttribute('id') || '',
+        dataConnectorId: dcEl.getAttribute('dataConnectorId') || '',
+        dataSetId: dcEl.getAttribute('dataSetId') || '',
+        dataKey: dcEl.getAttribute('dataKey') || '',
+        dataParams: dcEl.getAttribute('dataParams') || '',
+        js: dcEl.getAttribute('js') || '',
+        url: dcEl.getAttribute('url') || '',
+        updateInterval: parseInt(dcEl.getAttribute('updateInterval') || '300', 10)
+      });
+    }
   }
 
   return schedule;

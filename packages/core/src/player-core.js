@@ -402,19 +402,19 @@ export class PlayerCore extends EventEmitter {
       // Get required files (skip if CRC unchanged)
       if (!this._lastCheckRf || this._lastCheckRf !== checkRf) {
         log.debug('Collection step: requiredFiles');
-        const allFiles = await this.xmds.requiredFiles();
-        // Separate purge entries from download entries
-        const purgeFiles = allFiles.filter(f => f.type === 'purge');
-        const files = allFiles.filter(f => f.type !== 'purge');
-        log.info('Required files:', files.length, purgeFiles.length > 0 ? `(+ ${purgeFiles.length} purge)` : '');
+        const rfResult = await this.xmds.requiredFiles();
+        // RequiredFiles returns { files, purge } — files to download, items to delete
+        const files = rfResult.files || rfResult;
+        const purgeItems = rfResult.purge || [];
+        log.info('Required files:', files.length, purgeItems.length > 0 ? `(+ ${purgeItems.length} purge)` : '');
         this._lastCheckRf = checkRf;
         this.emit('files-received', files);
 
         // Cache required files for offline use
-        this._offlineSave('requiredFiles', allFiles);
+        this._offlineSave('requiredFiles', rfResult);
 
-        if (purgeFiles.length > 0) {
-          this.emit('purge-request', purgeFiles);
+        if (purgeItems.length > 0) {
+          this.emit('purge-request', purgeItems);
         }
 
         // Get schedule (skip if CRC unchanged)

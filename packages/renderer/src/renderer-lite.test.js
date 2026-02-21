@@ -2147,4 +2147,88 @@ describe('RendererLite', () => {
       expect(layout.actions).toEqual([]);
     });
   });
+
+  describe('Region loop option', () => {
+    it('should default loop to true when no loop option present', () => {
+      const xlf = `
+        <layout width="1920" height="1080">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].loop).toBe(true);
+    });
+
+    it('should set loop to false when loop option is 0', () => {
+      const xlf = `
+        <layout width="1920" height="1080">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <options><loop>0</loop></options>
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].loop).toBe(false);
+    });
+
+    it('should set loop to true when loop option is 1', () => {
+      const xlf = `
+        <layout width="1920" height="1080">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <options><loop>1</loop></options>
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].loop).toBe(true);
+    });
+  });
+
+  describe('Widget commands parsing', () => {
+    it('should parse commands on media elements', () => {
+      const xlf = `
+        <layout width="1920" height="1080">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+              <commands>
+                <command commandCode="shellCommand" commandString="echo hello"/>
+                <command commandCode="reboot" commandString=""/>
+              </commands>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+      expect(widget.commands).toHaveLength(2);
+      expect(widget.commands[0].commandCode).toBe('shellCommand');
+      expect(widget.commands[0].commandString).toBe('echo hello');
+      expect(widget.commands[1].commandCode).toBe('reboot');
+    });
+
+    it('should return empty commands array when no commands element', () => {
+      const xlf = `
+        <layout width="1920" height="1080">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].widgets[0].commands).toEqual([]);
+    });
+  });
 });

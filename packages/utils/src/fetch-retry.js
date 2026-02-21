@@ -29,7 +29,23 @@ export async function fetchWithRetry(url, options = {}, retryOptions = {}) {
     try {
       const response = await fetch(url, options);
 
-      // Don't retry client errors (4xx) — they won't change with retries
+      // HTTP 429 Too Many Requests — respect Retry-After header
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const delaySec = retryAfter ? parseInt(retryAfter, 10) : 30;
+        const delayMs = Math.min((isNaN(delaySec) ? 30 : delaySec) * 1000, maxDelayMs);
+        log.debug(`429 Rate limited, waiting ${delayMs}ms (Retry-After: ${retryAfter})`);
+        lastResponse = response;
+        lastError = new Error(`HTTP 429: Too Many Requests`);
+        lastError.status = 429;
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue; // Skip the normal backoff delay below
+        }
+        break; // Exhausted retries
+      }
+
+      // Don't retry other client errors (4xx) — they won't change with retries
       if (response.ok || (response.status >= 400 && response.status < 500)) {
         return response;
       }
