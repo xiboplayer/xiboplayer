@@ -14,7 +14,7 @@
 | Schedule Spec | ~95% | Recurrence + weather done; adspace stub only |
 | Stats Spec | ~95% | Engagement tracking exists; BroadcastChannel not needed |
 | Interactive Control | 100% | Full IC server via postMessage |
-| Overall | **~98%** | 14/15 gaps resolved (PRs #86–#90), 1 remaining (#84 adspace) |
+| Overall | **~98%** | 15/15 gaps resolved (PRs #86–#90), #84 closed as not needed |
 
 ## Feature Compliance Matrix
 
@@ -134,11 +134,11 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 | Renderer | Browser DOM | GTK4/WebView | Different approach |
 | Offline mode | ✅ (IndexedDB) | ✅ (SQLite) | Both robust |
 | Package system | npm monorepo | Single binary | Different trade-offs |
-| Test coverage | 1179 tests | ~200 tests | SDK more tested |
+| Test coverage | 1258 tests | ~200 tests | SDK more tested |
 
 ## Prioritized Gap List — Resolution Status
 
-14 of 15 issues resolved. 8 implemented via PRs #86–#90, 5 already existed, 1 closed as not needed.
+All 15 issues resolved. 8 implemented via PRs #86–#90, 5 already existed, 2 closed as not needed.
 
 ### Critical — All Resolved
 
@@ -168,7 +168,7 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 | 12 | [#81](https://github.com/xibo-players/xiboplayer/issues/81) | ✅ Download window enforcement in PlayerCore | #90 |
 | 13 | [#82](https://github.com/xibo-players/xiboplayer/issues/82) | ✅ Closed — fire-and-forget pattern sufficient | — |
 | 14 | [#83](https://github.com/xibo-players/xiboplayer/issues/83) | ✅ Already implemented (instant opacity fallback) | — |
-| 15 | [#84](https://github.com/xibo-players/xiboplayer/issues/84) | ❌ **Open** — Adspace/SSP (stub only) | — |
+| 15 | [#84](https://github.com/xibo-players/xiboplayer/issues/84) | ✅ Closed — CMS API undocumented/unstable; stub sufficient | — |
 
 ## renderer-lite Advantages
 

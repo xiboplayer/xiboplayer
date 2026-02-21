@@ -110,12 +110,12 @@
 - Android - WebView wrapper
 - webOS - Cordova wrapper
 
-## Known Gaps (1 remaining of 15 tracked)
+## Known Gaps (0 remaining of 15 tracked)
 
-14 of 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already done, 1 closed as not needed.
+All 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already done, 2 closed as not needed.
 
-### Remaining
-- [#84](https://github.com/xibo-players/xiboplayer/issues/84) Adspace exchange / SSP ad rotation (stub `isSspEnabled` flag exists, no ad logic)
+### Closed
+- [#84](https://github.com/xibo-players/xiboplayer/issues/84) Adspace exchange / SSP ad rotation — closed, CMS API undocumented/unstable; `isSspEnabled` stub sufficient
 
 ### Not Applicable (Browser Sandbox)
 - Shell commands (use HTTP commands instead)
@@ -124,7 +124,7 @@
 ## Test Suite
 
 ```
-Tests:  1179 passed | 7 skipped (1186 total)
+Tests:  1258 passed | 7 skipped (1265 total)
 Files:  31 test files (all passed)
 Time:   ~9s
 ```
