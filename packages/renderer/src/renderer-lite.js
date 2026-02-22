@@ -1098,6 +1098,11 @@ export class RendererLite {
 
           try {
             const element = await this.createWidgetElement(widget, region);
+            element.style.position = 'absolute';
+            element.style.top = '0';
+            element.style.left = '0';
+            element.style.width = '100%';
+            element.style.height = '100%';
             element.style.visibility = 'hidden'; // Hidden by default
             element.style.opacity = '0';
             region.element.appendChild(element);
@@ -1441,6 +1446,11 @@ export class RendererLite {
     if (!element) {
       this.log.warn(`Widget ${widget.id} not pre-created, creating now`);
       element = await this.createWidgetElement(widget, region);
+      element.style.position = 'absolute';
+      element.style.top = '0';
+      element.style.left = '0';
+      element.style.width = '100%';
+      element.style.height = '100%';
       region.widgetElements.set(widget.id, element);
       region.element.appendChild(element);
     }
@@ -2539,6 +2549,11 @@ export class RendererLite {
 
           try {
             const element = await this.createWidgetElement(widget, region);
+            element.style.position = 'absolute';
+            element.style.top = '0';
+            element.style.left = '0';
+            element.style.width = '100%';
+            element.style.height = '100%';
             element.style.visibility = 'hidden';
             element.style.opacity = '0';
             region.element.appendChild(element);
