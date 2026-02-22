@@ -1623,8 +1623,15 @@ export class PlayerCore extends EventEmitter {
         const xlfXml = await this.cache.getFile('layout', layoutId);
         if (xlfXml) {
           const duration = parseLayoutDuration(xlfXml);
-          this._layoutDurations.set(file, duration);
-          this._layoutDurations.set(String(layoutId), duration);
+          // Only set if no runtime-corrected value exists yet.
+          // Runtime corrections (from video metadata / probeLayoutDurations) are
+          // more accurate than static XLF parsing which estimates videos at 60s.
+          if (!this._layoutDurations.has(file)) {
+            this._layoutDurations.set(file, duration);
+          }
+          if (!this._layoutDurations.has(String(layoutId))) {
+            this._layoutDurations.set(String(layoutId), duration);
+          }
           parsed++;
         }
       } catch (e) {
@@ -1644,7 +1651,9 @@ export class PlayerCore extends EventEmitter {
     if (this._layoutDurations.size === 0) return;
     if (!this.schedule.getLayoutsAtTime) return; // Schedule doesn't support time queries
 
-    const timeline = calculateTimeline(this.schedule, this._layoutDurations);
+    const timeline = calculateTimeline(this.schedule, this._layoutDurations, {
+      currentLayoutStartedAt: this._lastLayoutChangeTime ? new Date(this._lastLayoutChangeTime) : null,
+    });
     if (timeline.length === 0) return;
 
     const lines = timeline.slice(0, 20).map(e => {
