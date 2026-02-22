@@ -1818,16 +1818,18 @@ export class RendererLite {
     img.className = 'renderer-lite-widget';
     img.style.width = '100%';
     img.style.height = '100%';
-    // Scale type: stretch → fill, center → none (natural size), default → contain
+    // Scale type: stretch → fill (ignore ratio), center → none (natural size), fit → cover (fill region, crop excess)
+    // Matches CMS xibo-layout-renderer behavior: fit uses background-size:cover
     const scaleType = widget.options.scaleType;
-    const fitMap = { stretch: 'fill', center: 'none', fit: 'contain' };
+    const fitMap = { stretch: 'fill', center: 'none', fit: 'cover' };
     img.style.objectFit = fitMap[scaleType] || 'contain';
 
-    // Alignment: map align/valign to CSS object-position
+    // Alignment: map alignId/valignId to CSS object-position
+    // XLF tags are <alignId> and <valignId> (from CMS image.xml property ids)
     const alignMap = { left: 'left', center: 'center', right: 'right' };
     const valignMap = { top: 'top', middle: 'center', bottom: 'bottom' };
-    const hPos = alignMap[widget.options.align] || 'center';
-    const vPos = valignMap[widget.options.valign] || 'center';
+    const hPos = alignMap[widget.options.alignId] || 'center';
+    const vPos = valignMap[widget.options.valignId] || 'center';
     img.style.objectPosition = `${hPos} ${vPos}`;
 
     img.style.opacity = '0';

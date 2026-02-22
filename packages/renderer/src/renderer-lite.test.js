@@ -467,7 +467,7 @@ describe('RendererLite', () => {
       expect(element.style.objectFit).toBe('none');
     });
 
-    it('should apply objectFit contain when scaleType is fit', async () => {
+    it('should apply objectFit cover when scaleType is fit', async () => {
       const widget = {
         type: 'image',
         id: 'm1',
@@ -480,15 +480,15 @@ describe('RendererLite', () => {
       const region = { width: 1920, height: 1080 };
       const element = await renderer.renderImage(widget, region);
 
-      expect(element.style.objectFit).toBe('contain');
+      expect(element.style.objectFit).toBe('cover');
     });
 
-    it('should map align and valign to objectPosition', async () => {
+    it('should map alignId and valignId to objectPosition', async () => {
       const widget = {
         type: 'image',
         id: 'm1',
         fileId: '1',
-        options: { uri: 'test.png', align: 'left', valign: 'top' },
+        options: { uri: 'test.png', alignId: 'left', valignId: 'top' },
         duration: 10,
         transitions: { in: null, out: null }
       };
@@ -499,12 +499,12 @@ describe('RendererLite', () => {
       expect(element.style.objectPosition).toBe('left top');
     });
 
-    it('should map align right and valign bottom to objectPosition', async () => {
+    it('should map alignId right and valignId bottom to objectPosition', async () => {
       const widget = {
         type: 'image',
         id: 'm1',
         fileId: '1',
-        options: { uri: 'test.png', align: 'right', valign: 'bottom' },
+        options: { uri: 'test.png', alignId: 'right', valignId: 'bottom' },
         duration: 10,
         transitions: { in: null, out: null }
       };
@@ -515,12 +515,12 @@ describe('RendererLite', () => {
       expect(element.style.objectPosition).toBe('right bottom');
     });
 
-    it('should map valign middle to center in objectPosition', async () => {
+    it('should map valignId middle to center in objectPosition', async () => {
       const widget = {
         type: 'image',
         id: 'm1',
         fileId: '1',
-        options: { uri: 'test.png', align: 'center', valign: 'middle' },
+        options: { uri: 'test.png', alignId: 'center', valignId: 'middle' },
         duration: 10,
         transitions: { in: null, out: null }
       };
@@ -536,7 +536,7 @@ describe('RendererLite', () => {
         type: 'image',
         id: 'm1',
         fileId: '1',
-        options: { uri: 'test.png', scaleType: 'stretch', align: 'left', valign: 'bottom' },
+        options: { uri: 'test.png', scaleType: 'stretch', alignId: 'left', valignId: 'bottom' },
         duration: 10,
         transitions: { in: null, out: null }
       };
