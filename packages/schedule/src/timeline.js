@@ -153,6 +153,7 @@ function getPlayableLayouts(allLayouts, simPlays, timeMs) {
  * @param {Date}   [options.from]    - Start time (default: now)
  * @param {number} [options.hours]   - Hours to simulate (default: 2)
  * @param {number} [options.defaultDuration] - Fallback duration in seconds (default: 60)
+ * @param {Date}   [options.currentLayoutStartedAt] - When current layout started (adjusts first entry to remaining time)
  * @returns {Array<{layoutFile: string, startTime: Date, endTime: Date, duration: number, isDefault: boolean}>}
  */
 export function calculateTimeline(schedule, durations, options = {}) {
@@ -160,8 +161,10 @@ export function calculateTimeline(schedule, durations, options = {}) {
   const hours = options.hours || 2;
   const to = new Date(from.getTime() + hours * 3600000);
   const defaultDuration = options.defaultDuration || 60;
+  const currentLayoutStartedAt = options.currentLayoutStartedAt || null;
   const timeline = [];
   let currentTime = new Date(from);
+  let isFirstEntry = true;
 
   // Use getAllLayoutsAtTime if available (new API), fall back to getLayoutsAtTime (old API)
   const hasFullApi = typeof schedule.getAllLayoutsAtTime === 'function';
@@ -216,7 +219,16 @@ export function calculateTimeline(schedule, durations, options = {}) {
     // Round-robin through playable layouts
     for (let i = 0; i < playable.length && currentTime < to && timeline.length < maxEntries; i++) {
       const file = playable[i];
-      const dur = durations.get(file) || defaultDuration;
+      let dur = durations.get(file) || defaultDuration;
+
+      // First entry: use remaining duration if we know when the current layout started
+      if (isFirstEntry && currentLayoutStartedAt) {
+        const elapsedSec = (from.getTime() - currentLayoutStartedAt.getTime()) / 1000;
+        const remaining = Math.max(1, Math.round(dur - elapsedSec));
+        dur = remaining;
+        isFirstEntry = false;
+      }
+
       const endMs = currentTime.getTime() + dur * 1000;
 
       const entry = {
