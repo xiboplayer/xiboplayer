@@ -1212,8 +1212,9 @@ export class RendererLite {
    * @returns {Promise<HTMLElement>} Widget DOM element
    */
   async createWidgetElement(widget, region) {
-    // render="html" forces GetResource iframe regardless of native type
-    if (widget.render === 'html') {
+    // render="html" forces GetResource iframe regardless of native type,
+    // EXCEPT for types we handle natively (PDF: CMS bundle can't work cross-origin)
+    if (widget.render === 'html' && widget.type !== 'pdf') {
       return await this.renderGenericWidget(widget, region);
     }
 
