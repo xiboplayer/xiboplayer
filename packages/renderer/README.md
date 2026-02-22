@@ -12,6 +12,8 @@ RendererLite parses Xibo Layout Format (XLF) files and builds a live DOM with:
 - **Layout preloading** — 2-layout pool pre-builds upcoming layouts at 75% of current duration for zero-gap transitions
 - **Proportional scaling** — ResizeObserver-based scaling to fit any screen resolution
 - **Overlay support** — multiple simultaneous overlay layouts with independent z-index (1000+)
+- **Absolute widget positioning** — widget elements use `position: absolute` within regions to layer correctly in multi-widget regions
+- **Animation cleanup** — `fill: forwards` animations cancelled between widgets to prevent stale visual state (e.g. video hidden after PDF)
 
 ## Installation
 
@@ -37,7 +39,7 @@ await renderer.renderLayout(xlf, { mediaBaseUrl: '/cache/' });
 | Widget | Implementation |
 |--------|---------------|
 | Video | `<video>` with native HLS (Safari) + hls.js fallback, pause-on-last-frame |
-| Image | `<img>` with objectFit contain, blob URL from cache |
+| Image | `<img>` with CMS scaleType mapping (center->contain, stretch->fill, fit->cover), blob URL from cache |
 | PDF | PDF.js canvas rendering (dynamically imported) |
 | Text / Ticker | iframe with CMS-rendered HTML via GetResource |
 | Web page | bare `<iframe src="...">` |

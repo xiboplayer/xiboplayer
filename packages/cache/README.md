@@ -11,6 +11,8 @@ Manages media downloads and offline storage for Xibo players:
 - **MD5 verification** — integrity checking with CRC32-based skip optimization
 - **Download queue** — flat queue with barriers for layout-ordered downloading
 - **CacheProxy** — browser-side proxy that communicates with a Service Worker backend
+- **Widget data via enriched RequiredFiles** — RSS/dataset widget data is fetched through server-side enriched RequiredFiles paths (CMS adds download URLs), not via client-side pre-fetching
+- **Dynamic BASE path** — widget HTML `<base>` tag uses a dynamic path within the Service Worker scope for correct relative URL resolution
 
 ## Installation
 

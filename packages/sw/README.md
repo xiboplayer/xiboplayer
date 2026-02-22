@@ -10,7 +10,8 @@ Provides Service Worker building blocks for Xibo players:
 - **BlobCache** — in-memory cache for assembled chunks with LRU eviction
 - **Widget HTML serving** — intercepts GetResource requests and serves from cache
 - **Version-aware activation** — prevents re-activation of same SW version to preserve in-flight streams
-- **XLF-driven media resolution** — parses layout XLF to determine exactly which media each layout needs
+- **XLF-driven media resolution** — parses layout XLF to determine exactly which media each layout needs, including data widget IDs extracted from media tags without a fileId
+- **Unclaimed media downloads** — media files not claimed by any layout (widget data, non-XLF assets) are enqueued for download instead of being skipped
 
 ## Installation
 

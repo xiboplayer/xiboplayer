@@ -26,6 +26,8 @@
 | Visibility toggle | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
 | Avoid DOM recreation | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
 | Layout reuse detection | ⚠️ Partial | ✅ Yes | ✅ Yes | ✅ Better than XLR! |
+| Widget absolute positioning | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
+| Image scaleType mapping | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete (center->contain, stretch->fill, fit->cover) |
 | **Widget Types** | | | | |
 | Image | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
 | Video | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
@@ -206,20 +208,15 @@ RendererLite events match XLR/Arexibo with additions:
 
 ### 7. Memory Management
 
-**Status**: ⚠️ **Good with Minor Gap**
+**Status**: ✅ **Complete**
 
 **What's correct**:
 - ✅ Elements reused (not recreated)
-- ✅ Blob URLs revoked on layout change
+- ✅ Blob URLs revoked on layout change (layout-scoped tracking)
 - ✅ Cache cleared appropriately
 - ✅ Timers cleared before new layout
 - ✅ Event listeners managed properly
-
-**Gap identified**:
-- ⚠️ Layout-scoped blob URL tracking missing
-- ⚠️ Could accumulate blob URLs across many layout cycles
-
-**Impact**: Low (only affects 24/7 deployments with frequent layout changes)
+- ✅ `fill: forwards` animations cancelled between widgets to prevent stale visual state
 
 ---
 
@@ -231,12 +228,7 @@ RendererLite events match XLR/Arexibo with additions:
 
 ### Important Features (Should Have)
 
-1. **Blob URL lifecycle tracking**
-   - **Priority**: Medium
-   - **Impact**: Memory leak in long-running deployments
-   - **Effort**: Low (add Map tracking)
-
-2. **Widget action events**
+1. **Widget action events**
    - **Priority**: Low
    - **Impact**: Interactive widgets might need action callbacks
    - **Effort**: Medium (event propagation from widget iframes)
@@ -417,9 +409,8 @@ XLF → Parse → Pre-create Elements → Toggle Visibility → Transitions
 
 ### ⚠️ Features Needing Work
 
-1. **Blob URL Lifecycle**: Needs layout-scoped tracking
-2. **Widget Actions**: Event propagation from iframes
-3. **Service Worker**: Currently disabled (HTTP 202 issues)
+1. **Widget Actions**: Event propagation from iframes
+2. **Service Worker**: Currently disabled (HTTP 202 issues)
 
 ### ❌ Features Not Applicable
 
@@ -472,7 +463,7 @@ XLF → Parse → Pre-create Elements → Toggle Visibility → Transitions
 
 **RendererLite successfully implements the Arexibo pattern** and adds significant performance improvements through parallelization. The implementation is production-ready with minor improvements needed for blob URL lifecycle management.
 
-**Feature Parity**: ~95% (missing only blob URL tracking and widget actions)
+**Feature Parity**: ~98% (missing only widget action event propagation)
 **Performance**: Exceeds XLR and Arexibo benchmarks
 **Memory**: Stable with Arexibo pattern correctly implemented
 

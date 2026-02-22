@@ -43,9 +43,9 @@ const schedule = await client.schedule();
 | `getResource(regionId, mediaId)` | Get rendered widget HTML |
 | `notifyStatus(status)` | Report display status to CMS |
 | `mediaInventory(inventory)` | Report cached media inventory |
-| `submitStats(stats)` | Submit proof of play statistics |
+| `submitStats(stats, hardwareKeyOverride?)` | Submit proof of play statistics (optional `hardwareKeyOverride` for delegated submissions on behalf of another display) |
 | `submitScreenShot(base64)` | Upload a screenshot to the CMS |
-| `submitLog(logs)` | Submit display logs |
+| `submitLog(logs, hardwareKeyOverride?)` | Submit display logs (optional `hardwareKeyOverride` for delegated submissions on behalf of another display) |
 
 ## Dependencies
 

@@ -363,6 +363,18 @@ it('should download and cache files', async () => {
    const blob = await cacheProxy.getFile('media', id);
    ```
 
+## Widget Data Download Flow
+
+Widget data for RSS feeds and dataset widgets is handled server-side. The CMS enriches
+the RequiredFiles response with absolute download URLs for widget data files. These are
+downloaded through the normal CacheProxy/Service Worker pipeline alongside regular media,
+rather than being fetched client-side by the player. This ensures widget data is available
+offline and benefits from the same parallel chunk download and caching infrastructure.
+
+Widget HTML served from cache uses a dynamic `<base>` tag pointing to the Service Worker
+scope path, ensuring relative URLs within widget HTML resolve correctly regardless of the
+player's deployment path.
+
 ### For New Platforms
 
 Simply use CacheProxy from the start:

@@ -9,6 +9,7 @@ BroadcastChannel-based lead/follower synchronization:
 - **Lead election** — automatic leader selection among browser tabs/windows
 - **Synchronized playback** — video start coordinated across displays
 - **Layout sync** — all displays transition to the same layout simultaneously
+- **Stats/logs delegation** — follower tabs delegate proof-of-play stats and log submission to the sync lead via BroadcastChannel, avoiding duplicate CMS traffic in video wall setups
 
 Designed for video wall setups where multiple screens show synchronized content.
 
