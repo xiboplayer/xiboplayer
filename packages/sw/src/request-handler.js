@@ -235,6 +235,25 @@ export class RequestHandler {
 
     this.log.info('IS a cache request, proceeding...', url.pathname);
 
+    // Handle widget data requests (pre-fetched JSON for RSS, dataset, etc.)
+    if (url.pathname.startsWith(BASE + '/cache/data/')) {
+      this.log.info('Widget data request:', url.pathname);
+      const cached = await this.cacheManager.get(url.pathname);
+      if (cached) {
+        return new Response(cached.clone().body, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=300'
+          }
+        });
+      }
+      return new Response('{"data":[],"meta":{}}', {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     // Handle widget HTML requests
     if (url.pathname.startsWith(BASE + '/cache/widget/')) {
       this.log.info('Widget HTML request:', url.pathname);
