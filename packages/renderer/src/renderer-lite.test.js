@@ -451,7 +451,7 @@ describe('RendererLite', () => {
       expect(element.style.objectFit).toBe('fill');
     });
 
-    it('should apply objectFit none when scaleType is center (natural size)', async () => {
+    it('should apply objectFit contain when scaleType is center (proportional fit)', async () => {
       const widget = {
         type: 'image',
         id: 'm1',
@@ -464,7 +464,7 @@ describe('RendererLite', () => {
       const region = { width: 1920, height: 1080 };
       const element = await renderer.renderImage(widget, region);
 
-      expect(element.style.objectFit).toBe('none');
+      expect(element.style.objectFit).toBe('contain');
     });
 
     it('should apply objectFit cover when scaleType is fit', async () => {

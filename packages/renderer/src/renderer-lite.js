@@ -1828,10 +1828,12 @@ export class RendererLite {
     img.className = 'renderer-lite-widget';
     img.style.width = '100%';
     img.style.height = '100%';
-    // Scale type: stretch → fill (ignore ratio), center → none (natural size), fit → cover (fill region, crop excess)
-    // Matches CMS xibo-layout-renderer behavior: fit uses background-size:cover
+    // Scale type mapping (CMS image.xml):
+    // center (default) → contain: scale proportionally to fit region, centered
+    // stretch → fill: ignore aspect ratio, fill entire region
+    // fit → cover: scale proportionally to fill region, crop excess
     const scaleType = widget.options.scaleType;
-    const fitMap = { stretch: 'fill', center: 'none', fit: 'cover' };
+    const fitMap = { stretch: 'fill', center: 'contain', fit: 'cover' };
     img.style.objectFit = fitMap[scaleType] || 'contain';
 
     // Alignment: map alignId/valignId to CSS object-position
