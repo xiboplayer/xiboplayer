@@ -24,33 +24,36 @@ function makeApp() {
 }
 
 // Helper to make a request to the Express app without starting a persistent server
-async function request(app, method, url) {
+async function request(app, method, url, opts = {}) {
   return new Promise((resolve) => {
     const server = app.listen(0, 'localhost', () => {
       const port = server.address().port;
-      realFetch(`http://localhost:${port}${url}`, { method })
+      realFetch(`http://localhost:${port}${url}`, {
+        method,
+        redirect: opts.redirect || 'follow',
+      })
         .then(async (res) => {
           const body = await res.text();
           server.close();
-          resolve({ status: res.status, body, headers: res.headers });
+          resolve({ status: res.status, body, headers: res.headers, url: res.url });
         })
         .catch((err) => {
           server.close();
-          resolve({ status: 0, body: err.message, headers: new Headers() });
+          resolve({ status: 0, body: err.message, headers: new Headers(), url: '' });
         });
     });
   });
 }
 
 describe('createProxyApp', () => {
-  it('serves PWA at /player/pwa/', async () => {
+  it('serves PWA at /player/', async () => {
     const app = makeApp();
-    const res = await request(app, 'GET', '/player/pwa/');
+    const res = await request(app, 'GET', '/player/');
     expect(res.status).toBe(200);
     expect(res.body).toContain('test');
   });
 
-  it('redirects / to /player/pwa/', async () => {
+  it('redirects / to /player/', async () => {
     const app = makeApp();
     // fetch follows redirects by default, so we check the final body
     const res = await request(app, 'GET', '/');
@@ -81,8 +84,20 @@ describe('createProxyApp', () => {
 
   it('SPA fallback serves index.html for sub-routes', async () => {
     const app = makeApp();
-    const res = await request(app, 'GET', '/player/pwa/some/deep/route');
+    const res = await request(app, 'GET', '/player/some/deep/route');
     expect(res.status).toBe(200);
     expect(res.body).toContain('test');
+  });
+
+  // Regression: CMS widget JS requests /player/cache/media/193.json
+  // which must be within the SW scope (/player/) to be intercepted.
+  // Previously PWA was at /player/pwa/ and these requests 404'd.
+  it('serves /player/cache/* paths within SW scope (RSS widget data)', async () => {
+    const app = makeApp();
+    // /player/cache/media/193.json is a virtual path handled by SW in-browser,
+    // but Express should serve the SPA fallback (not 404)
+    const res = await request(app, 'GET', '/player/cache/media/193.json');
+    expect(res.status).toBe(200);
+    expect(res.body).toContain('test'); // SPA fallback
   });
 });

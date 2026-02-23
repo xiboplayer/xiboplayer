@@ -39,14 +39,16 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   const baseTag = `<base href="${BASE}/cache/media/">`;
   let modifiedHtml = html;
 
-  // Insert base tag after <head> opening tag
-  if (html.includes('<head>')) {
-    modifiedHtml = html.replace('<head>', '<head>' + baseTag);
-  } else if (html.includes('<HEAD>')) {
-    modifiedHtml = html.replace('<HEAD>', '<HEAD>' + baseTag);
-  } else {
-    // No head tag, prepend base tag
-    modifiedHtml = baseTag + html;
+  // Insert base tag after <head> opening tag (skip if already present)
+  if (!html.includes('<base ')) {
+    if (html.includes('<head>')) {
+      modifiedHtml = html.replace('<head>', '<head>' + baseTag);
+    } else if (html.includes('<HEAD>')) {
+      modifiedHtml = html.replace('<HEAD>', '<HEAD>' + baseTag);
+    } else {
+      // No head tag, prepend base tag
+      modifiedHtml = baseTag + html;
+    }
   }
 
   // Rewrite absolute CMS signed URLs to local cache paths
@@ -65,10 +67,12 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   // CMS global-elements.xml uses {{alignId}} {{valignId}} which produces
   // invalid CSS (empty value) when alignment is not configured
   const cssFixTag = '<style>img,video{object-position:center center}</style>';
-  if (modifiedHtml.includes('</head>')) {
-    modifiedHtml = modifiedHtml.replace('</head>', cssFixTag + '</head>');
-  } else if (modifiedHtml.includes('</HEAD>')) {
-    modifiedHtml = modifiedHtml.replace('</HEAD>', cssFixTag + '</HEAD>');
+  if (!modifiedHtml.includes('object-position:center center')) {
+    if (modifiedHtml.includes('</head>')) {
+      modifiedHtml = modifiedHtml.replace('</head>', cssFixTag + '</head>');
+    } else if (modifiedHtml.includes('</HEAD>')) {
+      modifiedHtml = modifiedHtml.replace('</HEAD>', cssFixTag + '</HEAD>');
+    }
   }
 
   // Rewrite Interactive Control hostAddress to SW-interceptable path

@@ -301,12 +301,12 @@ export class RequestHandler {
 
     // File not found - check if download in progress
     const parts = cacheKey.split('/');
-    const type = parts[2]; // 'media' or 'layout'
-    const id = parts[3];
+    const type = parts[parts.length - 2];
+    const id = parts[parts.length - 1];
 
     let task = null;
-    for (const [downloadUrl, activeTask] of this.downloadManager.queue.active.entries()) {
-      if (activeTask.fileInfo.type === type && activeTask.fileInfo.id === id) {
+    for (const [, activeTask] of this.downloadManager.queue.active.entries()) {
+      if (activeTask.fileInfo.type === type && String(activeTask.fileInfo.id) === id) {
         task = activeTask;
         break;
       }

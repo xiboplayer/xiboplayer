@@ -150,17 +150,17 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0' }) {
   });
 
   // ─── Serve PWA static files ────────────────────────────────────────
-  app.use('/player/pwa', express.static(pwaPath, {
+  app.use('/player', express.static(pwaPath, {
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('sw-pwa.js')) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.setHeader('Service-Worker-Allowed', '/player/pwa/');
+        res.setHeader('Service-Worker-Allowed', '/player/');
       }
     },
   }));
 
-  app.get('/', (req, res) => res.redirect('/player/pwa/'));
-  app.get('/player/pwa/{*splat}', (req, res) => res.sendFile(path.join(pwaPath, 'index.html')));
+  app.get('/', (req, res) => res.redirect('/player/'));
+  app.get('/player/{*splat}', (req, res) => res.sendFile(path.join(pwaPath, 'index.html')));
 
   return app;
 }
