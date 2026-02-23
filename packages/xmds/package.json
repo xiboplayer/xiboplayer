@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/xmds",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "XMDS SOAP client for Xibo CMS communication",
   "type": "module",
   "main": "./src/index.js",
