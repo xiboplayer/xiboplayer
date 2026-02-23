@@ -152,7 +152,7 @@ Layout features: proportional scaling with ResizeObserver, overlay support (z-in
 | [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Fedora / Ubuntu | `dnf install xiboplayer-chromium` |
 | [xibo-kiosk](https://github.com/xibo-players/xibo-kiosk) | Fedora / Ubuntu | `dnf install xibo-kiosk` |
 
-RPM and DEB packages are available from [dnf.xiboplayer.org](https://dnf.xiboplayer.org).
+RPM and DEB packages are available from [dl.xiboplayer.org](https://dl.xiboplayer.org).
 
 ## Development
 
