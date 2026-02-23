@@ -160,7 +160,17 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0' }) {
   }));
 
   app.get('/', (req, res) => res.redirect('/player/'));
-  app.get('/player/{*splat}', (req, res) => res.sendFile(path.join(pwaPath, 'index.html')));
+
+  // SPA fallback: serve index.html for navigation requests only.
+  // Asset requests (.js, .css, .wasm, etc.) that didn't match express.static
+  // must return 404 — otherwise the browser gets HTML with the wrong MIME type,
+  // causing "Failed to load module script" errors and a black screen.
+  app.get('/player/{*splat}', (req, res, next) => {
+    const segments = req.params.splat;
+    const last = segments[segments.length - 1] || '';
+    if (path.extname(last)) return next();
+    res.sendFile(path.join(pwaPath, 'index.html'));
+  });
 
   return app;
 }
