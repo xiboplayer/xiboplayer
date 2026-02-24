@@ -20,6 +20,11 @@ npm install @xiboplayer/player
 - `@xiboplayer/xmr`
 - `@xiboplayer/sw`
 - `@xiboplayer/utils`
+- `@xiboplayer/stats`
+- `@xiboplayer/settings`
+- `@xiboplayer/crypto`
+- `@xiboplayer/sync`
+- `@xiboplayer/proxy`
 
 ## Usage
 
@@ -32,5 +37,3 @@ import { CacheManager } from '@xiboplayer/cache';
 ```
 
 ---
-
-**Package Version**: 1.0.0

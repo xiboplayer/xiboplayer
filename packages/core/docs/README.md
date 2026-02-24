@@ -87,6 +87,3 @@ class PlayerCore {
 - [@xiboplayer/schedule](../../schedule/docs/) - Scheduling logic
 
 ---
-
-**Package Version**: 1.0.0
-**Last Updated**: 2026-02-10
