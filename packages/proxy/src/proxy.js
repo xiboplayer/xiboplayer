@@ -128,7 +128,11 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
 
       const fetchOptions = { method: req.method, headers };
       if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
-        fetchOptions.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+        if (req.headers['content-type']?.includes('x-www-form-urlencoded') && typeof req.body === 'object') {
+          fetchOptions.body = new URLSearchParams(req.body).toString();
+        } else {
+          fetchOptions.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+        }
       }
 
       const response = await fetch(fullUrl, fetchOptions);
