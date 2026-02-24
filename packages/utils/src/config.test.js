@@ -76,7 +76,7 @@ describe('Config', () => {
       config = new Config();
 
       expect(config.data).toBeDefined();
-      expect(config.data.cmsAddress).toBe('');
+      expect(config.data.cmsUrl).toBe('');
       expect(config.data.cmsKey).toBe('');
       expect(config.data.displayName).toBe('');
       expect(config.data.hardwareKey).toMatch(/^pwa-/);
@@ -100,7 +100,7 @@ describe('Config', () => {
 
     it('should load existing config from localStorage', () => {
       const existingConfig = {
-        cmsAddress: 'https://test.cms.com',
+        cmsUrl: 'https://test.cms.com',
         cmsKey: 'test-key',
         displayName: 'Test Display',
         hardwareKey: 'pwa-existinghardwarekey1234567',
@@ -116,7 +116,7 @@ describe('Config', () => {
 
     it('should regenerate hardware key if invalid in stored config', () => {
       const invalidConfig = {
-        cmsAddress: 'https://test.cms.com',
+        cmsUrl: 'https://test.cms.com',
         cmsKey: 'test-key',
         displayName: 'Test Display',
         hardwareKey: 'short', // Invalid: too short
@@ -298,20 +298,20 @@ describe('Config', () => {
       config = new Config();
     });
 
-    it('should get/set cmsAddress', () => {
-      expect(config.cmsAddress).toBe('');
+    it('should get/set cmsUrl', () => {
+      expect(config.cmsUrl).toBe('');
 
-      config.cmsAddress = 'https://new.cms.com';
+      config.cmsUrl = 'https://new.cms.com';
 
-      expect(config.cmsAddress).toBe('https://new.cms.com');
-      expect(config.data.cmsAddress).toBe('https://new.cms.com');
+      expect(config.cmsUrl).toBe('https://new.cms.com');
+      expect(config.data.cmsUrl).toBe('https://new.cms.com');
     });
 
-    it('should save to localStorage when cmsAddress set', () => {
-      config.cmsAddress = 'https://test.com';
+    it('should save to localStorage when cmsUrl set', () => {
+      config.cmsUrl = 'https://test.com';
 
       const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
-      expect(stored.cmsAddress).toBe('https://test.com');
+      expect(stored.cmsUrl).toBe('https://test.com');
     });
 
     it('should get/set cmsKey', () => {
@@ -351,8 +351,8 @@ describe('Config', () => {
       expect(config.isConfigured()).toBe(false);
     });
 
-    it('should return false when only cmsAddress set', () => {
-      config.cmsAddress = 'https://test.com';
+    it('should return false when only cmsUrl set', () => {
+      config.cmsUrl = 'https://test.com';
 
       expect(config.isConfigured()).toBe(false);
     });
@@ -370,7 +370,7 @@ describe('Config', () => {
     });
 
     it('should return true when all required fields set', () => {
-      config.cmsAddress = 'https://test.com';
+      config.cmsUrl = 'https://test.com';
       config.cmsKey = 'test-key';
       config.displayName = 'Test Display';
 
@@ -384,21 +384,21 @@ describe('Config', () => {
     });
 
     it('should save current config to localStorage', () => {
-      config.data.cmsAddress = 'https://manual.com';
+      config.data.cmsUrl = 'https://manual.com';
       config.data.cmsKey = 'manual-key';
 
       config.save();
 
       const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
-      expect(stored.cmsAddress).toBe('https://manual.com');
+      expect(stored.cmsUrl).toBe('https://manual.com');
       expect(stored.cmsKey).toBe('manual-key');
     });
 
     it('should auto-save when setters used', () => {
-      config.cmsAddress = 'https://auto.com';
+      config.cmsUrl = 'https://auto.com';
 
       const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
-      expect(stored.cmsAddress).toBe('https://auto.com');
+      expect(stored.cmsUrl).toBe('https://auto.com');
     });
   });
 
@@ -420,7 +420,7 @@ describe('Config', () => {
   describe('Edge Cases', () => {
     it('should handle missing hardwareKey in loaded config', () => {
       mockLocalStorage.setItem('xibo_config', JSON.stringify({
-        cmsAddress: 'https://test.com',
+        cmsUrl: 'https://test.com',
         cmsKey: 'test-key',
         displayName: 'Test'
         // hardwareKey missing
@@ -434,7 +434,7 @@ describe('Config', () => {
 
     it('should handle null values in config', () => {
       mockLocalStorage.setItem('xibo_config', JSON.stringify({
-        cmsAddress: null,
+        cmsUrl: null,
         cmsKey: null,
         displayName: null,
         hardwareKey: 'pwa-1234567812344567890123456789',
@@ -444,7 +444,7 @@ describe('Config', () => {
       config = new Config();
 
       expect(config.isConfigured()).toBe(false);
-      expect(config.cmsAddress).toBeNull();
+      expect(config.cmsUrl).toBeNull();
     });
 
     it('should handle very long strings', () => {
@@ -478,13 +478,13 @@ describe('Config', () => {
 
     it('should persist configuration changes', () => {
       const config1 = new Config();
-      config1.cmsAddress = 'https://persist.com';
+      config1.cmsUrl = 'https://persist.com';
       config1.cmsKey = 'persist-key';
       config1.displayName = 'Persist Display';
 
       const config2 = new Config();
 
-      expect(config2.cmsAddress).toBe('https://persist.com');
+      expect(config2.cmsUrl).toBe('https://persist.com');
       expect(config2.cmsKey).toBe('persist-key');
       expect(config2.displayName).toBe('Persist Display');
     });

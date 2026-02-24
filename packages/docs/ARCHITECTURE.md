@@ -222,7 +222,7 @@ Database: xibo-player
 
 ```
 {
-  cmsAddress: "https://cms.example.com",
+  cmsUrl: "https://cms.example.com",
   cmsKey: "server-key-from-cms",
   hardwareKey: "pwa-a1b2c3d4...",       // FNV-1a hash with pwa- prefix
   displayName: "Lobby Display",

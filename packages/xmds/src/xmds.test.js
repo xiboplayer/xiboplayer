@@ -13,7 +13,7 @@ describe('XmdsClient - RegisterDisplay', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       displayName: 'Test Display',
@@ -45,7 +45,7 @@ describe('XmdsClient - RegisterDisplay', () => {
 
   it('should send empty xmrPubKey when config has no key', () => {
     const clientNoKey = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       displayName: 'Test Display',
@@ -76,7 +76,7 @@ describe('XmdsClient - URL construction', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       retryOptions: { maxRetries: 0 }
@@ -138,7 +138,7 @@ describe('XmdsClient - SubmitLog', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       retryOptions: { maxRetries: 0 }
@@ -279,7 +279,7 @@ describe('XmdsClient - SubmitScreenShot', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       retryOptions: { maxRetries: 0 }
@@ -425,7 +425,7 @@ describe('XmdsClient - BlackList', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       retryOptions: { maxRetries: 0 }
@@ -585,7 +585,7 @@ describe('XmdsClient - ReportFaults', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       retryOptions: { maxRetries: 0 }
@@ -661,7 +661,7 @@ describe('XmdsClient - NotifyStatus', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       retryOptions: { maxRetries: 0 }
@@ -889,7 +889,7 @@ describe('XmdsClient - GetWeather', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       retryOptions: { maxRetries: 0 }
@@ -988,7 +988,7 @@ describe('XmdsClient - MediaInventory', () => {
 
   beforeEach(() => {
     client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'test-server-key',
       hardwareKey: 'test-hardware-key',
       retryOptions: { maxRetries: 0 }

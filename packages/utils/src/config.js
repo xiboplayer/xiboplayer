@@ -12,7 +12,7 @@ const HW_DB_VERSION = 1;
 
 /**
  * Check for environment variable config (highest priority).
- * Env vars: CMS_ADDRESS, CMS_KEY, DISPLAY_NAME, HARDWARE_KEY, XMR_CHANNEL
+ * Env vars: CMS_URL, CMS_KEY, DISPLAY_NAME, HARDWARE_KEY, XMR_CHANNEL
  * Returns config object if any env vars are set, null otherwise.
  */
 function loadFromEnv() {
@@ -20,7 +20,7 @@ function loadFromEnv() {
   const env = typeof process !== 'undefined' && process.env ? process.env : {};
 
   const envConfig = {
-    cmsAddress: env.CMS_ADDRESS || env.CMS_URL || '',
+    cmsUrl: env.CMS_URL || '',
     cmsKey: env.CMS_KEY || '',
     displayName: env.DISPLAY_NAME || '',
     hardwareKey: env.HARDWARE_KEY || '',
@@ -53,7 +53,7 @@ export class Config {
 
     // Priority 2: localStorage (browser)
     if (typeof localStorage === 'undefined') {
-      return { cmsAddress: '', cmsKey: '', displayName: '', hardwareKey: '', xmrChannel: '' };
+      return { cmsUrl: '', cmsKey: '', displayName: '', hardwareKey: '', xmrChannel: '' };
     }
 
     // Try to load from localStorage
@@ -84,7 +84,7 @@ export class Config {
     console.log('[Config] No config in localStorage - first time setup');
 
     const newConfig = {
-      cmsAddress: '',
+      cmsUrl: '',
       cmsKey: '',
       displayName: '',
       hardwareKey: this.generateStableHardwareKey(),
@@ -188,7 +188,7 @@ export class Config {
   }
 
   isConfigured() {
-    return !!(this.data.cmsAddress && this.data.cmsKey && this.data.displayName);
+    return !!(this.data.cmsUrl && this.data.cmsKey && this.data.displayName);
   }
 
   generateStableHardwareKey() {
@@ -302,8 +302,8 @@ export class Config {
     return result.substring(0, 32);
   }
 
-  get cmsAddress() { return this.data.cmsAddress; }
-  set cmsAddress(val) { this.data.cmsAddress = val; this.save(); }
+  get cmsUrl() { return this.data.cmsUrl; }
+  set cmsUrl(val) { this.data.cmsUrl = val; this.save(); }
 
   get cmsKey() { return this.data.cmsKey; }
   set cmsKey(val) { this.data.cmsKey = val; this.save(); }

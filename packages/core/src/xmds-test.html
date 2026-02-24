@@ -64,7 +64,7 @@
 `;
 
     function testParseScheduleWithCampaigns() {
-      const client = new XmdsClient({ cmsAddress: 'http://test', cmsKey: 'key', hardwareKey: 'hw' });
+      const client = new XmdsClient({ cmsUrl: 'http://test', cmsKey: 'key', hardwareKey: 'hw' });
       const schedule = client.parseScheduleResponse(scheduleXmlWithCampaigns);
 
       console.log('Parsed schedule:', schedule);
@@ -85,7 +85,7 @@
     }
 
     function testParseScheduleStandalone() {
-      const client = new XmdsClient({ cmsAddress: 'http://test', cmsKey: 'key', hardwareKey: 'hw' });
+      const client = new XmdsClient({ cmsUrl: 'http://test', cmsKey: 'key', hardwareKey: 'hw' });
       const schedule = client.parseScheduleResponse(scheduleXmlStandalone);
 
       console.assert(schedule.campaigns.length === 0, 'Should have 0 campaigns');

@@ -238,7 +238,7 @@ From CMS display management page:
 3. **Configure player** with CMS credentials:
    ```javascript
    const config = {
-     cmsAddress: 'http://localhost',
+     cmsUrl: 'http://localhost',
      hardwareKey: 'test-player-123',
      serverKey: 'your-server-key'
    };

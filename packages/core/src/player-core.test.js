@@ -21,7 +21,7 @@ describe('PlayerCore', () => {
   beforeEach(() => {
     // Mock dependencies
     mockConfig = {
-      cmsAddress: 'https://test.cms.com',
+      cmsUrl: 'https://test.cms.com',
       hardwareKey: 'test-hw-key',
       serverKey: 'test-server-key'
     };

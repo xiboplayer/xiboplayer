@@ -22,7 +22,7 @@ const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'co
  * @param {string} options.pwaPath  — absolute path to PWA dist directory
  * @param {string} [options.appVersion='0.0.0'] — version string for User-Agent header
  * @param {object} [options.cmsConfig] — optional CMS connection params to pre-seed in localStorage
- * @param {string} [options.cmsConfig.cmsAddress] — CMS server URL
+ * @param {string} [options.cmsConfig.cmsUrl] — CMS server URL
  * @param {string} [options.cmsConfig.cmsKey] — CMS server key
  * @param {string} [options.cmsConfig.displayName] — display name for registration
  * @returns {import('express').Express}
@@ -158,9 +158,9 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}
   // Build a <script> tag that pre-seeds localStorage with CMS connection
   // params from the config file, so the PWA skips the setup screen.
   let cmsConfigScript = '';
-  if (cmsConfig && cmsConfig.cmsAddress) {
+  if (cmsConfig && cmsConfig.cmsUrl) {
     const configJson = JSON.stringify({
-      cmsAddress: cmsConfig.cmsAddress,
+      cmsUrl: cmsConfig.cmsUrl,
       cmsKey: cmsConfig.cmsKey || '',
       displayName: cmsConfig.displayName || '',
     });
@@ -170,14 +170,14 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}
     var existing = {};
     try { existing = JSON.parse(localStorage.getItem('xibo_config') || '{}'); } catch(e) {}
     var injected = ${configJson};
-    if (existing.cmsAddress !== injected.cmsAddress || existing.cmsKey !== injected.cmsKey || existing.displayName !== injected.displayName) {
+    if (existing.cmsUrl !== injected.cmsUrl || existing.cmsKey !== injected.cmsKey || existing.displayName !== injected.displayName) {
       var merged = Object.assign({}, existing, injected);
       localStorage.setItem('xibo_config', JSON.stringify(merged));
     }
   } catch(e) { console.warn('[ConfigInject] Failed:', e); }
 })();
 </script>`;
-    console.log(`[Proxy] CMS config injection enabled for ${cmsConfig.cmsAddress}`);
+    console.log(`[Proxy] CMS config injection enabled for ${cmsConfig.cmsUrl}`);
   }
 
   /**

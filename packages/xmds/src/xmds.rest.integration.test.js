@@ -48,7 +48,7 @@ describe.skipIf(SKIP)('XMDS REST API — Live Integration', () => {
 
     // REST client
     client = new RestClient({
-      cmsAddress: CMS_URL,
+      cmsUrl: CMS_URL,
       cmsKey: CMS_KEY,
       hardwareKey: HARDWARE_KEY,
       displayName: DISPLAY_NAME,
@@ -58,7 +58,7 @@ describe.skipIf(SKIP)('XMDS REST API — Live Integration', () => {
 
     // SOAP client for parity comparison
     soapClient = new XmdsClient({
-      cmsAddress: CMS_URL,
+      cmsUrl: CMS_URL,
       cmsKey: CMS_KEY,
       hardwareKey: HARDWARE_KEY,
       displayName: DISPLAY_NAME,
@@ -111,7 +111,7 @@ describe.skipIf(SKIP)('XMDS REST API — Live Integration', () => {
 
     it('should fail gracefully with wrong server key', async () => {
       const badClient = new RestClient({
-        cmsAddress: CMS_URL,
+        cmsUrl: CMS_URL,
         cmsKey: 'wrong-key',
         hardwareKey: HARDWARE_KEY,
         displayName: DISPLAY_NAME,
@@ -440,7 +440,7 @@ describe.skipIf(SKIP)('XMDS REST API — Live Integration', () => {
     it('should execute the complete player boot sequence via REST', async () => {
       // Fresh client with no cache
       const bootClient = new RestClient({
-        cmsAddress: CMS_URL,
+        cmsUrl: CMS_URL,
         cmsKey: CMS_KEY,
         hardwareKey: HARDWARE_KEY,
         displayName: 'Boot Sequence Test',
@@ -590,7 +590,7 @@ describe.skipIf(SKIP)('XMDS REST API — Live Integration', () => {
   describe('Error Handling', () => {
     it('should handle invalid hardware key gracefully', async () => {
       const badClient = new RestClient({
-        cmsAddress: CMS_URL,
+        cmsUrl: CMS_URL,
         cmsKey: CMS_KEY,
         hardwareKey: 'nonexistent-display',
         displayName: 'Bad Display',
@@ -610,7 +610,7 @@ describe.skipIf(SKIP)('XMDS REST API — Live Integration', () => {
 
     it('should handle unreachable CMS', async () => {
       const badClient = new RestClient({
-        cmsAddress: 'https://nonexistent.example.com',
+        cmsUrl: 'https://nonexistent.example.com',
         cmsKey: 'test',
         hardwareKey: 'test',
         displayName: 'Unreachable',

@@ -31,7 +31,7 @@ export class RestClient {
    * Falls back to /pwa path relative to the CMS address.
    */
   getRestBaseUrl() {
-    const base = this.config.restApiUrl || `${this.config.cmsAddress}/pwa`;
+    const base = this.config.restApiUrl || `${this.config.cmsUrl}/pwa`;
     return base.replace(/\/+$/, '');
   }
 

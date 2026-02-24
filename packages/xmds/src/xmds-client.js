@@ -72,7 +72,7 @@ export class XmdsClient {
    * Call XMDS SOAP method
    */
   async call(method, params = {}) {
-    const xmdsUrl = this.rewriteXmdsUrl(this.config.cmsAddress);
+    const xmdsUrl = this.rewriteXmdsUrl(this.config.cmsUrl);
     const url = `${xmdsUrl}${xmdsUrl.includes('?') ? '&' : '?'}v=${this.schemaVersion}&method=${method}`;
     const body = this.buildEnvelope(method, params);
 

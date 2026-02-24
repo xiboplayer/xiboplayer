@@ -13,7 +13,7 @@ import { XmdsClient } from './xmds-client.js';
 
 function createRestClient(overrides = {}) {
   return new RestClient({
-    cmsAddress: 'https://cms.example.com',
+    cmsUrl: 'https://cms.example.com',
     cmsKey: 'test-server-key',
     hardwareKey: 'test-hw-key',
     displayName: 'Test Display',
@@ -77,7 +77,7 @@ function errorResponse(status, message) {
 // ─── Constructor & Config ─────────────────────────────────────────────
 
 describe('RestClient - Config', () => {
-  it('should derive REST base URL from cmsAddress', () => {
+  it('should derive REST base URL from cmsUrl', () => {
     const client = createRestClient();
     expect(client.getRestBaseUrl()).toBe('https://cms.example.com/pwa');
   });
@@ -723,7 +723,7 @@ describe('RestClient - BlackList', () => {
 describe('Transport Parity', () => {
   it('SOAP and REST clients should expose identical public methods', () => {
     const soap = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
+      cmsUrl: 'https://cms.example.com',
       cmsKey: 'k', hardwareKey: 'h',
     });
     const rest = createRestClient();

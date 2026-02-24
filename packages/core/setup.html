@@ -168,7 +168,7 @@
 
     // Pre-fill if already configured
     if (config.isConfigured()) {
-      document.getElementById('cms-address').value = config.cmsAddress;
+      document.getElementById('cms-address').value = config.cmsUrl;
       document.getElementById('cms-key').value = config.cmsKey;
       document.getElementById('display-name').value = config.displayName;
     }
@@ -177,12 +177,12 @@
       e.preventDefault();
       errorEl.style.display = 'none';
 
-      const cmsAddress = document.getElementById('cms-address').value.trim().replace(/\/$/, '');
+      const cmsUrl = document.getElementById('cms-address').value.trim().replace(/\/$/, '');
       const cmsKey = document.getElementById('cms-key').value.trim();
       const displayName = document.getElementById('display-name').value.trim();
 
       // Save config
-      config.cmsAddress = cmsAddress;
+      config.cmsUrl = cmsUrl;
       config.cmsKey = cmsKey;
       config.displayName = displayName;
 

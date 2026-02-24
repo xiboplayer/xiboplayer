@@ -264,7 +264,7 @@ HTML:
 **Stored in localStorage:**
 ```javascript
 {
-  cmsAddress: "https://your-cms.example.com",
+  cmsUrl: "https://your-cms.example.com",
   cmsKey: "your-cms-key",
   hardwareKey: "abc123-def456",
   displayName: "Lobby Display",
