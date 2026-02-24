@@ -518,7 +518,7 @@ All players maintain full backward compatibility:
 - [Xibo Manual - Campaigns](https://xibosignage.com/manual/en/media_module_campaigns.html)
 
 ### Implementation Branches
-- **PWA**: `feature/pwa-campaigns` in [xibo_players repo](https://github.com/linuxnow/xibo_players)
+- **PWA**: `feature/pwa-campaigns` in [xiboplayer repo](https://github.com/xibo-players/xiboplayer)
 - **Arexibo**: `feature/arx-dayparting` in [arexibo repo](https://github.com/linuxnow/arexibo)
 
 ### Related Documentation
