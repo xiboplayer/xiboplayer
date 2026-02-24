@@ -8,6 +8,7 @@
  * - Serves the PWA player as static files (/player/pwa/)
  */
 
+import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import cors from 'cors';
@@ -20,9 +21,13 @@ const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'co
  * @param {object} options
  * @param {string} options.pwaPath  — absolute path to PWA dist directory
  * @param {string} [options.appVersion='0.0.0'] — version string for User-Agent header
+ * @param {object} [options.cmsConfig] — optional CMS connection params to pre-seed in localStorage
+ * @param {string} [options.cmsConfig.cmsAddress] — CMS server URL
+ * @param {string} [options.cmsConfig.cmsKey] — CMS server key
+ * @param {string} [options.cmsConfig.displayName] — display name for registration
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0' }) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}) {
   const app = express();
 
   app.use(cors({
@@ -149,6 +154,60 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0' }) {
     }
   });
 
+  // ─── CMS config injection helper ──────────────────────────────────
+  // Build a <script> tag that pre-seeds localStorage with CMS connection
+  // params from the config file, so the PWA skips the setup screen.
+  let cmsConfigScript = '';
+  if (cmsConfig && cmsConfig.cmsAddress) {
+    const configJson = JSON.stringify({
+      cmsAddress: cmsConfig.cmsAddress,
+      cmsKey: cmsConfig.cmsKey || '',
+      displayName: cmsConfig.displayName || '',
+    });
+    cmsConfigScript = `<script>
+(function(){
+  try {
+    var existing = {};
+    try { existing = JSON.parse(localStorage.getItem('xibo_config') || '{}'); } catch(e) {}
+    var injected = ${configJson};
+    if (existing.cmsAddress !== injected.cmsAddress || existing.cmsKey !== injected.cmsKey || existing.displayName !== injected.displayName) {
+      var merged = Object.assign({}, existing, injected);
+      localStorage.setItem('xibo_config', JSON.stringify(merged));
+    }
+  } catch(e) { console.warn('[ConfigInject] Failed:', e); }
+})();
+</script>`;
+    console.log(`[Proxy] CMS config injection enabled for ${cmsConfig.cmsAddress}`);
+  }
+
+  /**
+   * Send index.html, optionally injecting the CMS config script.
+   * The script is inserted right before the first <script> tag so it runs
+   * before the PWA's own config check.
+   */
+  function sendIndexHtml(res) {
+    const indexPath = path.join(pwaPath, 'index.html');
+    if (!cmsConfigScript) {
+      return res.sendFile(indexPath);
+    }
+    const html = fs.readFileSync(indexPath, 'utf8');
+    // Insert before the first <script> tag, or before </head> if no scripts
+    let injected;
+    if (html.includes('<script')) {
+      injected = html.replace('<script', cmsConfigScript + '<script');
+    } else {
+      injected = html.replace('</head>', cmsConfigScript + '</head>');
+    }
+    res.type('html').send(injected);
+  }
+
+  // Serve index.html with config injection before static middleware,
+  // so the injected version takes priority over the static file.
+  if (cmsConfigScript) {
+    app.get('/player/', (req, res) => sendIndexHtml(res));
+    app.get('/player/index.html', (req, res) => sendIndexHtml(res));
+  }
+
   // ─── Serve PWA static files ────────────────────────────────────────
   app.use('/player', express.static(pwaPath, {
     setHeaders: (res, filePath) => {
@@ -157,6 +216,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0' }) {
         res.setHeader('Service-Worker-Allowed', '/player/');
       }
     },
+    index: cmsConfigScript ? false : 'index.html',
   }));
 
   app.get('/', (req, res) => res.redirect('/player/'));
@@ -169,7 +229,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0' }) {
     const segments = req.params.splat;
     const last = segments[segments.length - 1] || '';
     if (path.extname(last)) return next();
-    res.sendFile(path.join(pwaPath, 'index.html'));
+    sendIndexHtml(res);
   });
 
   return app;
@@ -184,8 +244,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0' }) {
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0' }) {
-  const app = createProxyApp({ pwaPath, appVersion });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, cmsConfig });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {
