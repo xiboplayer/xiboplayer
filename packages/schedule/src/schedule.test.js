@@ -196,56 +196,147 @@ describe('ScheduleManager - Campaigns', () => {
   });
 });
 
-describe('ScheduleManager - Default Layout Interleaving', () => {
+describe('ScheduleManager - Schedule Queue (LCM-based)', () => {
   let manager;
+  const durations = new Map();
 
   beforeEach(() => {
     manager = new ScheduleManager();
+    durations.clear();
+    durations.set('100', 60);
+    durations.set('200', 60);
+    durations.set('300', 60);
+    durations.set('999', 60);
   });
 
-  it('should interleave default layout between multiple scheduled layouts', () => {
+  it('should build a queue with unlimited layouts and default', () => {
     manager.setSchedule({
       default: '999',
       layouts: [
         { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
         { file: '200', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
-        { file: '300', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) }
       ],
       campaigns: []
     });
 
-    const layouts = manager.getInterleavedLayouts();
+    const { queue } = manager.getScheduleQueue(durations);
 
-    expect(layouts).toEqual(['100', '999', '200', '999', '300', '999']);
+    // Should include all layouts
+    expect(queue.length).toBeGreaterThan(0);
+    const layoutIds = queue.map(e => e.layoutId);
+    expect(layoutIds).toContain('100');
+    expect(layoutIds).toContain('200');
   });
 
-  it('should not interleave when only default layout is active', () => {
+  it('should return only default when no layouts are scheduled', () => {
     manager.setSchedule({
       default: '999',
       layouts: [],
       campaigns: []
     });
 
-    const layouts = manager.getInterleavedLayouts();
+    const { queue } = manager.getScheduleQueue(durations);
 
-    expect(layouts).toEqual(['999']);
+    expect(queue).toHaveLength(1);
+    expect(queue[0].layoutId).toBe('999');
   });
 
-  it('should not interleave when only one scheduled layout', () => {
+  it('should return empty queue when no schedule set', () => {
+    const { queue } = manager.getScheduleQueue(durations);
+
+    expect(queue).toEqual([]);
+  });
+
+  it('should place rate-limited layouts at even intervals', () => {
+    durations.set('472', 219);
     manager.setSchedule({
       default: '999',
       layouts: [
-        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) }
+        { file: '472', priority: 10, maxPlaysPerHour: 3, fromdt: dateStr(-1), todt: dateStr(1) },
       ],
       campaigns: []
     });
 
-    const layouts = manager.getInterleavedLayouts();
+    const { queue, periodSeconds } = manager.getScheduleQueue(durations);
 
-    expect(layouts).toEqual(['100']);
+    // With maxPlaysPerHour=3, interval=1200s, LCM=1200s
+    expect(periodSeconds).toBe(1200);
+    // Should have exactly 1 play of 472 in a 1200s period
+    const plays472 = queue.filter(e => e.layoutId === '472');
+    expect(plays472).toHaveLength(1);
+    // Gaps filled by default
+    const defaultPlays = queue.filter(e => e.layoutId === '999');
+    expect(defaultPlays.length).toBeGreaterThan(0);
   });
 
-  it('should preserve layout order when interleaving', () => {
+  it('should pop entries in order and wrap around', () => {
+    manager.setSchedule({
+      default: '999',
+      layouts: [
+        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+        { file: '200', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+      ],
+      campaigns: []
+    });
+
+    const { queue } = manager.getScheduleQueue(durations);
+    const firstPop = manager.popNextFromQueue(durations);
+    const secondPop = manager.popNextFromQueue(durations);
+
+    expect(firstPop.layoutId).toBe(queue[0].layoutId);
+    expect(secondPop.layoutId).toBe(queue[1].layoutId);
+
+    // Pop through entire queue to test wrap-around
+    for (let i = 2; i < queue.length; i++) {
+      manager.popNextFromQueue(durations);
+    }
+    const wrapped = manager.popNextFromQueue(durations);
+    expect(wrapped.layoutId).toBe(queue[0].layoutId);
+  });
+
+  it('should invalidate queue on schedule change', () => {
+    manager.setSchedule({
+      default: '999',
+      layouts: [
+        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+      ],
+      campaigns: []
+    });
+
+    manager.popNextFromQueue(durations); // advance position
+
+    // Change schedule — should reset
+    manager.setSchedule({
+      default: '999',
+      layouts: [
+        { file: '200', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+      ],
+      campaigns: []
+    });
+
+    const { queue } = manager.getScheduleQueue(durations);
+    expect(queue.map(e => e.layoutId)).toContain('200');
+    expect(queue.map(e => e.layoutId)).not.toContain('100');
+  });
+
+  it('should cache queue and return same result for unchanged schedule', () => {
+    manager.setSchedule({
+      default: '999',
+      layouts: [
+        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+      ],
+      campaigns: []
+    });
+
+    const result1 = manager.getScheduleQueue(durations);
+    const result2 = manager.getScheduleQueue(durations);
+
+    expect(result1).toBe(result2); // Same reference (cached)
+  });
+
+  it('should include campaign layouts in queue', () => {
+    durations.set('205', 60);
+    durations.set('203', 60);
     manager.setSchedule({
       default: '999',
       layouts: [],
@@ -258,67 +349,15 @@ describe('ScheduleManager - Default Layout Interleaving', () => {
           layouts: [
             { file: '205' },
             { file: '203' },
-            { file: '204' }
           ]
         }
       ]
     });
 
-    const layouts = manager.getInterleavedLayouts();
-
-    // Order must be preserved: 205, default, 203, default, 204, default
-    expect(layouts).toEqual(['205', '999', '203', '999', '204', '999']);
-  });
-
-  it('should return empty array when no schedule is set', () => {
-    const layouts = manager.getInterleavedLayouts();
-
-    expect(layouts).toEqual([]);
-  });
-
-  it('should not interleave when no default layout is configured', () => {
-    manager.setSchedule({
-      layouts: [
-        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
-        { file: '200', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) }
-      ],
-      campaigns: []
-    });
-
-    const layouts = manager.getInterleavedLayouts();
-
-    // No default, so no interleaving — just the scheduled layouts
-    expect(layouts).toEqual(['100', '200']);
-  });
-
-  it('should interleave with campaign and standalone layouts at same priority', () => {
-    manager.setSchedule({
-      default: '999',
-      layouts: [
-        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) }
-      ],
-      campaigns: [
-        {
-          id: '1',
-          priority: 10,
-          fromdt: dateStr(-1),
-          todt: dateStr(1),
-          layouts: [
-            { file: '200' },
-            { file: '201' }
-          ]
-        }
-      ]
-    });
-
-    const layouts = manager.getInterleavedLayouts();
-
-    // 3 scheduled layouts + 3 default insertions = 6
-    expect(layouts).toHaveLength(6);
-    // Every odd-indexed element should be the default
-    expect(layouts[1]).toBe('999');
-    expect(layouts[3]).toBe('999');
-    expect(layouts[5]).toBe('999');
+    const { queue } = manager.getScheduleQueue(durations);
+    const layoutIds = queue.map(e => e.layoutId);
+    expect(layoutIds).toContain('205');
+    expect(layoutIds).toContain('203');
   });
 });
 

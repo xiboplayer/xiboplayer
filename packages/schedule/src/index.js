@@ -25,4 +25,4 @@ export { OverlayScheduler } from './overlays.js';
  * Offline timeline calculator — duration parser + timeline simulator
  * @module @xiboplayer/schedule/timeline
  */
-export { calculateTimeline, parseLayoutDuration } from './timeline.js';
+export { calculateTimeline, parseLayoutDuration, buildScheduleQueue } from './timeline.js';

@@ -16,19 +16,20 @@
  *  3. Fallback: 60s
  *
  * @param {string} xlfXml - Raw XLF XML string
- * @returns {number} Duration in seconds
+ * @returns {{ duration: number, isDynamic: boolean }} Duration in seconds and whether any widget has useDuration=0
  */
 export function parseLayoutDuration(xlfXml) {
   const doc = new DOMParser().parseFromString(xlfXml, 'text/xml');
   const layoutEl = doc.querySelector('layout');
-  if (!layoutEl) return 60;
+  if (!layoutEl) return { duration: 60, isDynamic: false };
 
   // 1. Explicit layout duration attribute
   const explicit = parseInt(layoutEl.getAttribute('duration') || '0', 10);
-  if (explicit > 0) return explicit;
+  if (explicit > 0) return { duration: explicit, isDynamic: false };
 
   // 2. Calculate from widget durations (max region wins — regions play in parallel)
   let maxDuration = 0;
+  let isDynamic = false;
   for (const regionEl of layoutEl.querySelectorAll('region')) {
     let regionDuration = 0;
     for (const mediaEl of regionEl.querySelectorAll('media')) {
@@ -40,12 +41,14 @@ export function parseLayoutDuration(xlfXml) {
         // Video with useDuration=0 means "play to end" — estimate 60s,
         // corrected later via recordLayoutDuration() when video metadata loads
         regionDuration += 60;
+        isDynamic = true;
       }
     }
     maxDuration = Math.max(maxDuration, regionDuration);
   }
 
-  return maxDuration > 0 ? maxDuration : 60;
+  const duration = maxDuration > 0 ? maxDuration : 60;
+  return { duration, isDynamic };
 }
 
 /**
@@ -266,4 +269,137 @@ export function calculateTimeline(schedule, durations, options = {}) {
   }
 
   return timeline;
+}
+
+// ── LCM-based deterministic schedule queue ──────────────────────────────
+
+/**
+ * Greatest common divisor (Euclidean algorithm).
+ * @param {number} a
+ * @param {number} b
+ * @returns {number}
+ */
+function gcd(a, b) {
+  a = Math.abs(Math.round(a));
+  b = Math.abs(Math.round(b));
+  while (b) { [a, b] = [b, a % b]; }
+  return a;
+}
+
+/**
+ * Least common multiple of two integers.
+ * @param {number} a
+ * @param {number} b
+ * @returns {number}
+ */
+function lcm(a, b) {
+  if (a === 0 || b === 0) return 0;
+  return Math.abs(Math.round(a) * Math.round(b)) / gcd(a, b);
+}
+
+/**
+ * LCM of an array of integers.
+ * @param {number[]} values
+ * @returns {number}
+ */
+function lcmArray(values) {
+  return values.reduce((acc, v) => lcm(acc, v), 1);
+}
+
+/**
+ * Build a deterministic playback queue by simulating one LCM period.
+ *
+ * Uses getPlayableLayouts() (the same priority-fallback + rate-limit logic
+ * that calculateTimeline uses) to simulate playback for one repeating cycle.
+ * This ensures the queue matches the timeline overlay exactly: high-priority
+ * rate-limited layouts get their slots, then lower-priority layouts fill gaps.
+ *
+ * @param {Array<{file: string, priority: number, maxPlaysPerHour: number}>} allLayouts
+ *   All time-active layouts from schedule.getAllLayoutsAtTime()
+ * @param {Map<string, number>} durations
+ *   Map of layoutFile → duration in seconds
+ * @param {Object} [options]
+ * @param {string}  [options.defaultLayout] - Default layout file (CMS fallback)
+ * @param {number}  [options.defaultDuration] - Fallback duration (default: 60)
+ * @param {Set<string>} [options.dynamicLayouts] - Set of layout files that are dynamic (video, useDuration=0)
+ * @returns {{ queue: Array<{layoutId: string, duration: number}>, periodSeconds: number }}
+ */
+export function buildScheduleQueue(allLayouts, durations, options = {}) {
+  const {
+    defaultLayout = null,
+    defaultDuration = 60,
+  } = options;
+
+  if (allLayouts.length === 0 && !defaultLayout) {
+    return { queue: [], periodSeconds: 0 };
+  }
+
+  // Step 1: Identify rate-limited layouts to calculate LCM period
+  const rateLimited = allLayouts.filter(l => l.maxPlaysPerHour > 0);
+
+  let periodSeconds;
+  if (rateLimited.length > 0) {
+    const intervals = rateLimited.map(l => Math.round(3600 / l.maxPlaysPerHour));
+    periodSeconds = lcmArray(intervals);
+    // Cap at 2 hours to prevent absurd periods
+    if (periodSeconds > 7200) periodSeconds = 7200;
+  } else {
+    // No rate-limited layouts — single round-robin cycle
+    const totalDuration = allLayouts.reduce((sum, l) => sum + (durations.get(l.file) || defaultDuration), 0)
+      + (defaultLayout && !allLayouts.some(l => l.file === defaultLayout)
+        ? (durations.get(defaultLayout) || defaultDuration)
+        : 0);
+    periodSeconds = totalDuration || defaultDuration;
+  }
+
+  // Step 2: Simulate playback for one period using getPlayableLayouts()
+  const queue = [];
+  const simPlays = new Map(); // file → [timestampMs] for rate-limit tracking
+  let cursorMs = 0;
+  const periodMs = periodSeconds * 1000;
+  const maxEntries = 500; // safety cap
+
+  while (cursorMs < periodMs && queue.length < maxEntries) {
+    // Get playable layouts at current simulated time (priority fallback + rate limits)
+    const playable = getPlayableLayouts(allLayouts, simPlays, cursorMs);
+
+    if (playable.length === 0) {
+      // All layouts exhausted — use default
+      if (defaultLayout) {
+        const dur = durations.get(defaultLayout) || defaultDuration;
+        queue.push({ layoutId: defaultLayout, duration: dur });
+        cursorMs += dur * 1000;
+      } else {
+        // No default — skip ahead 60s to avoid infinite loop
+        cursorMs += 60000;
+      }
+      continue;
+    }
+
+    // Play all playable layouts in round-robin order (one each), then re-evaluate
+    for (let i = 0; i < playable.length && cursorMs < periodMs && queue.length < maxEntries; i++) {
+      const file = playable[i];
+      const dur = durations.get(file) || defaultDuration;
+
+      queue.push({ layoutId: file, duration: dur });
+
+      // Record simulated play for rate-limit tracking
+      if (!simPlays.has(file)) simPlays.set(file, []);
+      simPlays.get(file).push(cursorMs);
+
+      cursorMs += dur * 1000;
+
+      // Re-evaluate after each play: if the playable set changed, break to outer loop
+      const nextPlayable = getPlayableLayouts(allLayouts, simPlays, cursorMs);
+      if (!arraysEqual(playable, nextPlayable)) break;
+    }
+  }
+
+  // Handle edge case: no layouts and only default
+  if (queue.length === 0 && defaultLayout) {
+    const defDur = durations.get(defaultLayout) || defaultDuration;
+    queue.push({ layoutId: defaultLayout, duration: defDur });
+  }
+
+  return { queue, periodSeconds };
 }

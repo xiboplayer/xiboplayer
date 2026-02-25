@@ -4,6 +4,7 @@
 
 import { createLogger } from '@xiboplayer/utils';
 import { evaluateCriteria } from './criteria.js';
+import { buildScheduleQueue } from './timeline.js';
 
 const log = createLogger('Schedule');
 
@@ -16,6 +17,11 @@ export class ScheduleManager {
     this.weatherData = {}; // Weather data from GetWeather XMDS call
     this.playerLocation = null; // { latitude, longitude } from Geolocation API
     this._layoutMetadata = new Map(); // layoutFile → { syncEvent, shareOfVoice, ... }
+
+    // Pre-calculated schedule queue (LCM-based deterministic timeline)
+    this._scheduleQueue = null;      // { queue: [{layoutId, duration}], periodSeconds }
+    this._queuePosition = 0;         // Current position in the queue
+    this._queueLayoutSet = null;     // Stringified active layout set (for invalidation)
   }
 
   /**
@@ -23,6 +29,7 @@ export class ScheduleManager {
    */
   setSchedule(schedule) {
     this.schedule = schedule;
+    this._invalidateQueue();
   }
 
   /**
@@ -606,42 +613,102 @@ export class ScheduleManager {
   }
 
   /**
-   * Get current layouts with the default layout interleaved between scheduled layouts.
+   * Get (or build) the deterministic schedule queue.
    *
-   * Xibo CMS expects the default layout (fallback) to play between each scheduled
-   * layout in the rotation. For example, with layouts [A, B, C] and default D,
-   * the result is [A, D, B, D, C, D].
+   * Uses LCM-based even distribution to pre-calculate a repeating cycle where
+   * each rate-limited layout plays at evenly spaced intervals and gaps are
+   * filled by unlimited layouts and the CMS default.
    *
-   * No interleaving when:
-   * - There is no default layout configured
-   * - There are no scheduled layouts (only default plays)
-   * - There is only one scheduled layout (no gaps to fill)
+   * The queue is cached and only rebuilt when:
+   * - The schedule changes (setSchedule)
+   * - The active layout set changes (time boundary crossed)
+   * - durations are updated
    *
-   * @returns {string[]} Layout files with default interleaved
+   * @param {Map<string, number>} durations - layoutFile → duration in seconds
+   * @param {Object} [options]
+   * @param {Set<string>} [options.dynamicLayouts] - Set of layout files with useDuration=0
+   * @returns {{ queue: Array<{layoutId: string, duration: number}>, periodSeconds: number }}
    */
-  getInterleavedLayouts() {
-    const layouts = this.getCurrentLayouts();
-    const defaultLayout = this.schedule?.default;
+  getScheduleQueue(durations, options = {}) {
+    const allLayouts = this.getAllLayoutsAtTime(new Date());
+    const layoutSetKey = allLayouts.map(l => `${l.file}:${l.priority}:${l.maxPlaysPerHour}`).sort().join('|');
 
-    // No interleaving needed: no default, no layouts, or single layout
-    if (!defaultLayout || layouts.length <= 1) {
-      return layouts;
+    // Return cached queue if the active layout set hasn't changed
+    if (this._scheduleQueue && this._queueLayoutSet === layoutSetKey) {
+      return this._scheduleQueue;
     }
 
-    // If the only layout is the default itself, return as-is
-    if (layouts.length === 1 && layouts[0] === defaultLayout) {
-      return layouts;
+    const result = buildScheduleQueue(allLayouts, durations, {
+      defaultLayout: this.schedule?.default || null,
+      defaultDuration: 60,
+      dynamicLayouts: options.dynamicLayouts || new Set(),
+    });
+
+    this._scheduleQueue = result;
+    this._queueLayoutSet = layoutSetKey;
+    // Reset position when queue is rebuilt
+    this._queuePosition = 0;
+
+    if (result.queue.length > 0) {
+      log.info(`[Schedule] Built queue: ${result.queue.length} entries, period ${result.periodSeconds}s`);
+      log.info(`[Schedule] Queue: ${result.queue.map(e => `${e.layoutId}(${e.duration}s)`).join(' → ')}`);
     }
 
-    // Interleave: A, D, B, D, C, D
-    const interleaved = [];
-    for (const layout of layouts) {
-      interleaved.push(layout);
-      interleaved.push(defaultLayout);
-    }
+    return result;
+  }
 
-    log.info('[Schedule] Interleaved', layouts.length, 'layouts with default', defaultLayout);
-    return interleaved;
+  /**
+   * Pop the next entry from the schedule queue.
+   * Wraps around at the end (the LCM period guarantees the pattern repeats).
+   *
+   * @param {Map<string, number>} durations - layoutFile → duration in seconds
+   * @param {Object} [options]
+   * @param {Set<string>} [options.dynamicLayouts] - Dynamic layout set
+   * @returns {{ layoutId: string, duration: number } | null}
+   */
+  popNextFromQueue(durations, options = {}) {
+    const { queue } = this.getScheduleQueue(durations, options);
+    if (queue.length === 0) return null;
+
+    const entry = queue[this._queuePosition % queue.length];
+    this._queuePosition = (this._queuePosition + 1) % queue.length;
+    return entry;
+  }
+
+  /**
+   * Peek at the next entry in the schedule queue without advancing.
+   *
+   * @param {Map<string, number>} durations - layoutFile → duration in seconds
+   * @param {Object} [options]
+   * @returns {{ layoutId: string, duration: number } | null}
+   */
+  peekNextInQueue(durations, options = {}) {
+    const { queue } = this.getScheduleQueue(durations, options);
+    if (queue.length === 0) return null;
+    return queue[this._queuePosition % queue.length];
+  }
+
+  /**
+   * Peek at the entry after the current one (two positions ahead).
+   * Used for preloading.
+   *
+   * @param {Map<string, number>} durations
+   * @param {Object} [options]
+   * @returns {{ layoutId: string, duration: number } | null}
+   */
+  peekAfterNext(durations, options = {}) {
+    const { queue } = this.getScheduleQueue(durations, options);
+    if (queue.length <= 1) return null;
+    return queue[(this._queuePosition + 1) % queue.length];
+  }
+
+  /**
+   * Invalidate the cached queue (called on schedule change, time boundaries, etc.)
+   */
+  _invalidateQueue() {
+    this._scheduleQueue = null;
+    this._queueLayoutSet = null;
+    this._queuePosition = 0;
   }
 
   /**

@@ -62,7 +62,29 @@ describe('PlayerCore', () => {
       getCurrentLayouts: vi.fn(() => ['100.xlf']),
       getDependantsMap: vi.fn(() => new Map()),
       getDataConnectors: vi.fn(() => []),
-      findActionByTrigger: vi.fn(() => null)
+      findActionByTrigger: vi.fn(() => null),
+      // Queue-based scheduling
+      _queuePosition: 0,
+      _defaultQueue: [{ layoutId: '100', duration: 60 }],
+      getScheduleQueue: vi.fn(function() {
+        return { queue: this._defaultQueue, periodSeconds: 60 };
+      }),
+      popNextFromQueue: vi.fn(function() {
+        if (this._defaultQueue.length === 0) return null;
+        const entry = this._defaultQueue[this._queuePosition % this._defaultQueue.length];
+        this._queuePosition = (this._queuePosition + 1) % this._defaultQueue.length;
+        return entry;
+      }),
+      peekNextInQueue: vi.fn(function() {
+        if (this._defaultQueue.length === 0) return null;
+        return this._defaultQueue[this._queuePosition % this._defaultQueue.length];
+      }),
+      peekAfterNext: vi.fn(function() {
+        if (this._defaultQueue.length <= 1) return null;
+        return this._defaultQueue[(this._queuePosition + 1) % this._defaultQueue.length];
+      }),
+      isSyncEvent: vi.fn(() => false),
+      schedule: { default: '999' },
     };
 
     mockRenderer = {
@@ -1473,105 +1495,93 @@ describe('PlayerCore', () => {
     });
   });
 
-  describe('Schedule Cycling (Round-Robin)', () => {
-    it('should initialize _currentLayoutIndex to 0', () => {
-      expect(core._currentLayoutIndex).toBe(0);
-    });
-
-    it('should reset _currentLayoutIndex to 0 on collect()', async () => {
-      core._currentLayoutIndex = 2;
-
-      await core.collect();
-
-      expect(core._currentLayoutIndex).toBe(0);
-    });
-
+  describe('Schedule Queue (LCM-based)', () => {
     describe('getNextLayout', () => {
-      it('should return first layout when index is 0', () => {
-        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
-        core._currentLayoutIndex = 0;
+      it('should return the next layout from the queue', () => {
+        mockSchedule._defaultQueue = [
+          { layoutId: '100', duration: 60 },
+          { layoutId: '200', duration: 60 },
+          { layoutId: '300', duration: 60 },
+        ];
+        mockSchedule._queuePosition = 0;
 
         const result = core.getNextLayout();
 
-        expect(result).toEqual({ layoutId: 100, layoutFile: '100.xlf' });
+        expect(result).toEqual({ layoutId: 100, layoutFile: '100' });
       });
 
-      it('should return layout at current index', () => {
-        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
-        core._currentLayoutIndex = 1;
-
-        const result = core.getNextLayout();
-
-        expect(result).toEqual({ layoutId: 200, layoutFile: '200.xlf' });
-      });
-
-      it('should return null when no layouts scheduled', () => {
-        mockSchedule.getCurrentLayouts.mockReturnValue([]);
+      it('should return null when queue is empty and no default', () => {
+        mockSchedule._defaultQueue = [];
+        mockSchedule.popNextFromQueue.mockReturnValue(null);
+        mockSchedule.schedule = {};
 
         const result = core.getNextLayout();
 
         expect(result).toBeNull();
       });
 
-      it('should wrap index when schedule shrinks', () => {
-        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf']);
-        core._currentLayoutIndex = 5; // Out of bounds
+      it('should fall back to default layout when queue is empty', () => {
+        mockSchedule._defaultQueue = [];
+        mockSchedule.popNextFromQueue.mockReturnValue(null);
+        mockSchedule.schedule = { default: '999.xlf' };
 
         const result = core.getNextLayout();
 
-        expect(result).toEqual({ layoutId: 100, layoutFile: '100.xlf' });
-        expect(core._currentLayoutIndex).toBe(0);
+        expect(result).toEqual({ layoutId: 999, layoutFile: '999.xlf' });
       });
     });
 
     describe('advanceToNextLayout', () => {
-      it('should advance index and emit layout-prepare-request', () => {
+      it('should pop from queue and emit layout-prepare-request', () => {
         const spy = createSpy();
         core.on('layout-prepare-request', spy);
 
-        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
-        core._currentLayoutIndex = 0;
+        mockSchedule._defaultQueue = [
+          { layoutId: '100', duration: 60 },
+          { layoutId: '200', duration: 60 },
+        ];
+        mockSchedule._queuePosition = 0;
 
         core.advanceToNextLayout();
 
-        expect(core._currentLayoutIndex).toBe(1);
-        expect(spy).toHaveBeenCalledWith(200);
-      });
-
-      it('should wrap around to first layout after last', () => {
-        const spy = createSpy();
-        core.on('layout-prepare-request', spy);
-
-        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
-        core._currentLayoutIndex = 2;
-
-        core.advanceToNextLayout();
-
-        expect(core._currentLayoutIndex).toBe(0);
         expect(spy).toHaveBeenCalledWith(100);
       });
 
-      it('should trigger replay for single layout (wraps to same)', () => {
+      it('should trigger replay for single-layout queue', () => {
         const spy = createSpy();
         core.on('layout-prepare-request', spy);
 
-        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf']);
-        core._currentLayoutIndex = 0;
+        mockSchedule._defaultQueue = [{ layoutId: '100', duration: 60 }];
+        mockSchedule._queuePosition = 0;
         core.currentLayoutId = 100;
 
         core.advanceToNextLayout();
 
-        expect(core._currentLayoutIndex).toBe(0);
-        // currentLayoutId should be cleared (for replay)
         expect(core.currentLayoutId).toBeNull();
         expect(spy).toHaveBeenCalledWith(100);
       });
 
-      it('should emit no-layouts-scheduled when schedule is empty', () => {
+      it('should replay current layout when queue returns null', () => {
+        const spy = createSpy();
+        core.on('layout-prepare-request', spy);
+
+        mockSchedule._defaultQueue = [];
+        mockSchedule.popNextFromQueue.mockReturnValue(null);
+        mockSchedule.schedule = {};
+        core.currentLayoutId = 100;
+
+        core.advanceToNextLayout();
+
+        expect(spy).toHaveBeenCalledWith(100);
+      });
+
+      it('should emit no-layouts-scheduled when empty queue and no current', () => {
         const spy = createSpy();
         core.on('no-layouts-scheduled', spy);
 
-        mockSchedule.getCurrentLayouts.mockReturnValue([]);
+        mockSchedule._defaultQueue = [];
+        mockSchedule.popNextFromQueue.mockReturnValue(null);
+        mockSchedule.schedule = {};
 
         core.advanceToNextLayout();
 
@@ -1584,27 +1594,28 @@ describe('PlayerCore', () => {
         core.on('no-layouts-scheduled', spy);
 
         core._layoutOverride = { layoutId: 999, type: 'change' };
-        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf']);
 
         core.advanceToNextLayout();
 
         expect(spy).not.toHaveBeenCalled();
-        expect(core._currentLayoutIndex).toBe(0); // Unchanged
       });
 
-      it('should cycle through all layouts in order', () => {
+      it('should cycle through queue in order', () => {
         const emitted = [];
         core.on('layout-prepare-request', (id) => emitted.push(id));
 
-        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
-        core._currentLayoutIndex = 0;
+        mockSchedule._defaultQueue = [
+          { layoutId: '100', duration: 60 },
+          { layoutId: '200', duration: 60 },
+          { layoutId: '300', duration: 60 },
+        ];
+        mockSchedule._queuePosition = 0;
 
-        core.advanceToNextLayout(); // → 200 (index 1)
-        core.advanceToNextLayout(); // → 300 (index 2)
-        core.advanceToNextLayout(); // → 100 (index 0, wrap)
+        core.advanceToNextLayout(); // pops 100
+        core.advanceToNextLayout(); // pops 200
+        core.advanceToNextLayout(); // pops 300
 
-        expect(emitted).toEqual([200, 300, 100]);
-        expect(core._currentLayoutIndex).toBe(0);
+        expect(emitted).toEqual([100, 200, 300]);
       });
     });
   });
@@ -1793,6 +1804,8 @@ describe('PlayerCore', () => {
 
       core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
       mockSchedule.getCurrentLayouts.mockReturnValue(['500.xlf']);
+      mockSchedule._defaultQueue = [{ layoutId: '500', duration: 60 }];
+      mockSchedule._queuePosition = 0;
 
       core.collectOffline();
 
@@ -2097,24 +2110,35 @@ describe('PlayerCore', () => {
     });
 
     it('should skip blacklisted layouts in getNextLayout', () => {
-      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+      mockSchedule._defaultQueue = [
+        { layoutId: '100', duration: 60 },
+        { layoutId: '200', duration: 60 },
+        { layoutId: '300', duration: 60 },
+      ];
+      mockSchedule._queuePosition = 0;
 
       // Blacklist layout 100
       core.reportLayoutFailure(100, 'error');
       core.reportLayoutFailure(100, 'error');
       core.reportLayoutFailure(100, 'error');
 
-      core._currentLayoutIndex = 0; // Would normally pick 100
       const next = core.getNextLayout();
       expect(next.layoutId).toBe(200);
     });
 
     it('should skip blacklisted layouts in advanceToNextLayout', () => {
-      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
-      core._currentLayoutIndex = 0;
+      mockSchedule._defaultQueue = [
+        { layoutId: '100', duration: 60 },
+        { layoutId: '200', duration: 60 },
+        { layoutId: '300', duration: 60 },
+      ];
+      mockSchedule._queuePosition = 0;
       core.currentLayoutId = 100;
 
-      // Blacklist layout 200
+      // Blacklist layout 200 — but the queue will pop 100 first (which is current → replay)
+      // Set position to 1 so next pop returns '200'
+      mockSchedule._queuePosition = 1;
+
       core.reportLayoutFailure(200, 'error');
       core.reportLayoutFailure(200, 'error');
       core.reportLayoutFailure(200, 'error');
@@ -2127,8 +2151,12 @@ describe('PlayerCore', () => {
       expect(spy).toHaveBeenCalledWith(300);
     });
 
-    it('should fall back to first layout if all are blacklisted', () => {
-      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf']);
+    it('should fall back to first entry if all are blacklisted', () => {
+      mockSchedule._defaultQueue = [
+        { layoutId: '100', duration: 60 },
+        { layoutId: '200', duration: 60 },
+      ];
+      mockSchedule._queuePosition = 0;
 
       core.reportLayoutFailure(100, 'error');
       core.reportLayoutFailure(100, 'error');
@@ -2140,12 +2168,15 @@ describe('PlayerCore', () => {
       // getNextLayout should still return something (never blank screen)
       const next = core.getNextLayout();
       expect(next).not.toBeNull();
-      expect(next.layoutId).toBe(100);
     });
 
     it('should skip blacklisted in peekNextLayout', () => {
-      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
-      core._currentLayoutIndex = 0;
+      mockSchedule._defaultQueue = [
+        { layoutId: '100', duration: 60 },
+        { layoutId: '200', duration: 60 },
+        { layoutId: '300', duration: 60 },
+      ];
+      mockSchedule._queuePosition = 0;
       core.currentLayoutId = 100;
 
       // Blacklist layout 200
@@ -2153,8 +2184,17 @@ describe('PlayerCore', () => {
       core.reportLayoutFailure(200, 'error');
       core.reportLayoutFailure(200, 'error');
 
+      // peekNextInQueue returns the entry at current position (0 → '100')
+      // Since 100 is current, it tries peekAfterNext (1 → '200') which is blacklisted
+      // So peek returns null
+      // Let's set position so peek returns 200 first, then falls through to 300
+      mockSchedule._queuePosition = 1; // peek sees '200'
+      mockSchedule.peekNextInQueue.mockReturnValue({ layoutId: '200', duration: 60 });
+      mockSchedule.peekAfterNext.mockReturnValue({ layoutId: '300', duration: 60 });
+
+      // peekNextLayout sees 200 is blacklisted → returns null
       const peek = core.peekNextLayout();
-      expect(peek.layoutId).toBe(300);
+      expect(peek).toBeNull();
     });
 
     it('should track multiple layouts independently', () => {

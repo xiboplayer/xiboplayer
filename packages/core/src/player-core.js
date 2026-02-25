@@ -127,8 +127,8 @@ export class PlayerCore extends EventEmitter {
     this._lastLayoutChangeTime = null; // ISO timestamp of last layout switch
     this._statusCode = 2; // 1=running, 2=downloading, 3=error
 
-    // Schedule cycle state (round-robin through multiple layouts)
-    this._currentLayoutIndex = 0;
+    // Dynamic layout tracking (useDuration=0 videos — must play to natural end)
+    this._dynamicLayouts = new Set();
 
     // Multi-display sync configuration (from RegisterDisplay syncGroup settings)
     this.syncConfig = null;
@@ -274,14 +274,9 @@ export class PlayerCore extends EventEmitter {
           parseLayoutFile(f) === this.currentLayoutId
         );
         if (currentStillScheduled) {
-          const idx = layoutFiles.findIndex(f =>
-            parseLayoutFile(f) === this.currentLayoutId
-          );
-          if (idx >= 0) this._currentLayoutIndex = idx;
           log.debug(`Layout ${this.currentLayoutId} still in schedule${context ? ` (${context.toLowerCase()})` : ''}, continuing playback`);
           this.emit('layout-already-playing', this.currentLayoutId);
         } else {
-          this._currentLayoutIndex = 0;
           const next = this.getNextLayout();
           if (next) {
             log.info(`${prefix}switching to layout ${next.layoutId}${!context ? ` (from ${this.currentLayoutId})` : ''}`);
@@ -289,7 +284,6 @@ export class PlayerCore extends EventEmitter {
           }
         }
       } else {
-        this._currentLayoutIndex = 0;
         const next = this.getNextLayout();
         if (next) {
           log.info(`${prefix}switching to layout ${next.layoutId}`);
@@ -301,7 +295,7 @@ export class PlayerCore extends EventEmitter {
       this.emit('no-layouts-scheduled');
     }
 
-    // Build layout durations and log upcoming timeline
+    // Build layout durations (async) — improves queue precision on next rebuild
     await this._buildLayoutDurations();
     this.logUpcomingTimeline();
   }
@@ -463,13 +457,12 @@ export class PlayerCore extends EventEmitter {
         log.debug('Collection step: download-request + mediaInventory');
         const currentLayouts = this.schedule.getCurrentLayouts();
 
-        // Layout IDs in playback order (rotated from current index)
-        const layoutIds = currentLayouts.map(f => parseLayoutFile(f));
-        const layoutOrder = [];
-        for (let i = 0; i < layoutIds.length; i++) {
-          const idx = (this._currentLayoutIndex + i) % layoutIds.length;
-          layoutOrder.push(layoutIds[idx]);
-        }
+        // Layout IDs in playback order (from the pre-calculated queue)
+        const { queue } = this.schedule.getScheduleQueue(
+          this._layoutDurations,
+          { dynamicLayouts: this._dynamicLayouts }
+        );
+        const layoutOrder = [...new Set(queue.map(e => parseLayoutFile(e.layoutId)))];
 
         this._lastRequiredFiles = files;
 
@@ -735,70 +728,90 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
-   * Get the next layout from the schedule using round-robin cycling.
-   * Skips blacklisted layouts. Returns { layoutId, layoutFile } or null.
+   * Get the next layout from the pre-calculated schedule queue.
+   * Pops the next entry, skipping blacklisted layouts.
+   * Returns { layoutId, layoutFile } or null.
    */
   getNextLayout() {
-    const layoutFiles = this.schedule.getCurrentLayouts();
-    if (layoutFiles.length === 0) {
+    const entry = this.schedule.popNextFromQueue(
+      this._layoutDurations,
+      { dynamicLayouts: this._dynamicLayouts }
+    );
+
+    if (!entry) {
+      // No queue entries — try default
+      const defaultFile = this.schedule.schedule?.default;
+      if (defaultFile) {
+        const layoutId = parseLayoutFile(defaultFile);
+        return { layoutId, layoutFile: defaultFile };
+      }
       return null;
     }
 
-    // Wrap index in case schedule shrank
-    if (this._currentLayoutIndex >= layoutFiles.length) {
-      this._currentLayoutIndex = 0;
-    }
+    const layoutId = parseLayoutFile(entry.layoutId);
 
-    // Try each layout starting from current index, skip blacklisted
-    for (let i = 0; i < layoutFiles.length; i++) {
-      const idx = (this._currentLayoutIndex + i) % layoutFiles.length;
-      const layoutFile = layoutFiles[idx];
-      const layoutId = parseLayoutFile(layoutFile);
-
-      if (!this.isLayoutBlacklisted(layoutId)) {
-        this._currentLayoutIndex = idx;
-        return { layoutId, layoutFile };
+    if (this.isLayoutBlacklisted(layoutId)) {
+      // Try next entries (up to queue length) to find a non-blacklisted one
+      const { queue } = this.schedule.getScheduleQueue(
+        this._layoutDurations,
+        { dynamicLayouts: this._dynamicLayouts }
+      );
+      for (let i = 0; i < queue.length - 1; i++) {
+        const next = this.schedule.popNextFromQueue(
+          this._layoutDurations,
+          { dynamicLayouts: this._dynamicLayouts }
+        );
+        if (next) {
+          const nextId = parseLayoutFile(next.layoutId);
+          if (!this.isLayoutBlacklisted(nextId)) {
+            return { layoutId: nextId, layoutFile: next.layoutId };
+          }
+        }
       }
+      // All blacklisted — return this one anyway to avoid blank screen
+      log.warn('All queued layouts are blacklisted, using current entry as fallback');
     }
 
-    // All layouts blacklisted — return first anyway to avoid blank screen
-    log.warn('All scheduled layouts are blacklisted, using first layout as fallback');
-    const layoutFile = layoutFiles[this._currentLayoutIndex];
-    const layoutId = parseLayoutFile(layoutFile);
-    return { layoutId, layoutFile };
+    return { layoutId, layoutFile: entry.layoutId };
   }
 
   /**
-   * Peek at the next layout in the schedule without advancing the index.
+   * Peek at the next layout in the schedule queue without advancing.
    * Used by the preload system to know which layout to pre-build.
    * Returns { layoutId, layoutFile } or null if no next layout or same as current.
    */
   peekNextLayout() {
-    const layoutFiles = this.schedule.getInterleavedLayouts?.() || this.schedule.getCurrentLayouts();
-    if (layoutFiles.length <= 1) {
-      // Single layout or empty schedule - no different layout to preload
-      return null;
+    const entry = this.schedule.peekNextInQueue(
+      this._layoutDurations,
+      { dynamicLayouts: this._dynamicLayouts }
+    );
+
+    if (!entry) return null;
+
+    const layoutId = parseLayoutFile(entry.layoutId);
+
+    // Don't preload if it's the same as current
+    if (layoutId === this.currentLayoutId) {
+      // Try the one after that
+      const after = this.schedule.peekAfterNext(
+        this._layoutDurations,
+        { dynamicLayouts: this._dynamicLayouts }
+      );
+      if (!after) return null;
+      const afterId = parseLayoutFile(after.layoutId);
+      if (afterId === this.currentLayoutId || this.isLayoutBlacklisted(afterId)) return null;
+      return { layoutId: afterId, layoutFile: after.layoutId };
     }
 
-    // Find next non-blacklisted layout
-    for (let i = 1; i < layoutFiles.length; i++) {
-      const idx = (this._currentLayoutIndex + i) % layoutFiles.length;
-      const layoutFile = layoutFiles[idx];
-      const layoutId = parseLayoutFile(layoutFile);
+    if (this.isLayoutBlacklisted(layoutId)) return null;
 
-      if (layoutId !== this.currentLayoutId && !this.isLayoutBlacklisted(layoutId)) {
-        return { layoutId, layoutFile };
-      }
-    }
-
-    return null;
+    return { layoutId, layoutFile: entry.layoutId };
   }
 
   /**
-   * Advance to the next layout in the schedule (round-robin).
+   * Advance to the next layout in the pre-calculated schedule queue.
    * Called by platform layer when a layout finishes (layoutEnd event).
-   * Increments the index and emits layout-prepare-request for the next layout,
-   * or triggers replay if only one layout is scheduled.
+   * Pops the next entry from the queue and emits layout-prepare-request.
    */
   advanceToNextLayout() {
     // Don't cycle if we're in a layout override (XMR changeLayout/overlayLayout)
@@ -807,17 +820,12 @@ export class PlayerCore extends EventEmitter {
       return;
     }
 
-    const layoutFiles = this.schedule.getInterleavedLayouts?.() || this.schedule.getCurrentLayouts();
-    log.info(`Advancing schedule: ${layoutFiles.length} layout(s) available, current index ${this._currentLayoutIndex}`);
+    const next = this.getNextLayout();
 
     // ── Never-stop guarantee ────────────────────────────────────────
-    // If no layouts are available at all (every layout is rate-limited
-    // or filtered), replay the current layout as a last resort.
-    // maxPlaysPerHour is respected in all other cases — this only fires
-    // when the alternative would be a blank screen.
-    if (layoutFiles.length === 0) {
+    if (!next) {
       if (this.currentLayoutId) {
-        log.info(`No layouts available (all rate-limited), replaying ${this.currentLayoutId} to avoid blank screen`);
+        log.info(`No layouts in queue, replaying ${this.currentLayoutId} to avoid blank screen`);
         const replayId = this.currentLayoutId;
         this.currentLayoutId = null;
         this.emit('layout-prepare-request', replayId);
@@ -828,65 +836,40 @@ export class PlayerCore extends EventEmitter {
       return;
     }
 
-    // Find next non-blacklisted layout (wraps around, tries all)
-    let layoutFile, layoutId;
-    for (let i = 1; i <= layoutFiles.length; i++) {
-      const idx = (this._currentLayoutIndex + i) % layoutFiles.length;
-      const file = layoutFiles[idx];
-      const id = parseLayoutFile(file);
-
-      if (!this.isLayoutBlacklisted(id)) {
-        this._currentLayoutIndex = idx;
-        layoutFile = file;
-        layoutId = id;
-        break;
-      }
-    }
-
-    // All layouts blacklisted — fall back to replaying current
-    if (!layoutFile) {
-      if (this.currentLayoutId) {
-        log.warn('All layouts blacklisted, replaying current to avoid blank screen');
-        const replayId = this.currentLayoutId;
-        this.currentLayoutId = null;
-        this.emit('layout-prepare-request', replayId);
-      } else {
-        this.emit('no-layouts-scheduled');
-      }
-      return;
-    }
+    const { layoutId, layoutFile } = next;
 
     // Multi-display sync: if this is a sync event and we have a SyncManager,
     // delegate layout transitions to the sync protocol
     if (this.syncManager && this.schedule.isSyncEvent(layoutFile)) {
       if (this.isSyncLead()) {
-        // Lead: coordinate with followers before showing
         log.info(`[Sync] Lead requesting coordinated layout change: ${layoutId}`);
         this.syncManager.requestLayoutChange(layoutId).catch(err => {
           log.error('[Sync] Layout change failed:', err);
-          // Fallback: show layout anyway
           this.emit('layout-prepare-request', layoutId);
         });
         return;
       } else {
-        // Follower: don't advance independently — wait for lead's layout-change signal
         log.info(`[Sync] Follower waiting for lead signal (not advancing independently)`);
         return;
       }
     }
 
     if (layoutId === this.currentLayoutId) {
-      // Same layout (single layout schedule or wrapped back) — trigger replay
       log.info(`Next layout ${layoutId} is same as current, triggering replay`);
-      this.currentLayoutId = null; // Clear to allow re-render
+      this.currentLayoutId = null;
     }
 
-    log.info(`Advancing to layout ${layoutId} (index ${this._currentLayoutIndex}/${layoutFiles.length})`);
+    const { queue } = this.schedule.getScheduleQueue(
+      this._layoutDurations,
+      { dynamicLayouts: this._dynamicLayouts }
+    );
+    const pos = this.schedule._queuePosition;
+    log.info(`Advancing to layout ${layoutId} (queue pos ${pos}/${queue.length})`);
     this.emit('layout-prepare-request', layoutId);
   }
 
   /**
-   * Go back to the previous layout in the schedule (round-robin, wraps around).
+   * Go back to the previous layout in the schedule queue (wraps around).
    * Called by platform layer in response to manual navigation (keyboard/remote).
    * Skips sync-manager logic — manual navigation is local only.
    */
@@ -896,23 +879,29 @@ export class PlayerCore extends EventEmitter {
       return;
     }
 
-    const layoutFiles = this.schedule.getCurrentLayouts();
-    if (layoutFiles.length === 0) return;
-
-    // Decrement index (wrap around)
-    const prevIndex = (this._currentLayoutIndex - 1 + layoutFiles.length) % layoutFiles.length;
-
-    const layoutFile = layoutFiles[prevIndex];
-    const layoutId = parseLayoutFile(layoutFile);
-
-    // No-op if it's the same layout (single-layout schedule) — don't restart
-    if (layoutId === this.currentLayoutId) {
-      log.info('Only one layout in schedule, nothing to go back to');
+    const { queue } = this.schedule.getScheduleQueue(
+      this._layoutDurations,
+      { dynamicLayouts: this._dynamicLayouts }
+    );
+    if (queue.length <= 1) {
+      log.info('Single or empty queue, nothing to go back to');
       return;
     }
 
-    this._currentLayoutIndex = prevIndex;
-    log.info(`Going back to layout ${layoutId} (index ${this._currentLayoutIndex}/${layoutFiles.length})`);
+    // Go back 2 positions (current was already popped, so -2 from current pos)
+    this.schedule._queuePosition =
+      (this.schedule._queuePosition - 2 + queue.length) % queue.length;
+    const entry = queue[this.schedule._queuePosition];
+    this.schedule._queuePosition = (this.schedule._queuePosition + 1) % queue.length;
+
+    const layoutId = parseLayoutFile(entry.layoutId);
+
+    if (layoutId === this.currentLayoutId) {
+      log.info('Previous layout is same as current, nothing to go back to');
+      return;
+    }
+
+    log.info(`Going back to layout ${layoutId}`);
     this.emit('layout-prepare-request', layoutId);
   }
 
@@ -1626,7 +1615,7 @@ export class PlayerCore extends EventEmitter {
       try {
         const xlfXml = await this.cache.getFile('layout', layoutId);
         if (xlfXml) {
-          const duration = parseLayoutDuration(xlfXml);
+          const { duration, isDynamic } = parseLayoutDuration(xlfXml);
           // Only set if no runtime-corrected value exists yet.
           // Runtime corrections (from video metadata / probeLayoutDurations) are
           // more accurate than static XLF parsing which estimates videos at 60s.
@@ -1635,6 +1624,9 @@ export class PlayerCore extends EventEmitter {
           }
           if (!this._layoutDurations.has(String(layoutId))) {
             this._layoutDurations.set(String(layoutId), duration);
+          }
+          if (isDynamic) {
+            this._dynamicLayouts.add(file);
           }
           parsed++;
         }
