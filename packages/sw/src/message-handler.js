@@ -488,6 +488,10 @@ export class MessageHandler {
       await this.cacheManager.put(cacheKey, blob, contentType);
       this.log.info('Cached after download:', cacheKey, `(${blob.size} bytes)`);
 
+      // Cache widget resources (.js, .css, fonts) for static serving
+      // Must complete before notifying clients — widgets load immediately after FILE_CACHED
+      await this._cacheStaticResource(fileInfo, blob);
+
       // Notify all clients that file is cached
       const clients = await self.clients.matchAll();
       clients.forEach(client => {
@@ -498,9 +502,6 @@ export class MessageHandler {
           size: blob.size
         });
       });
-
-      // Also cache widget resources (.js, .css, fonts) for static serving
-      this._cacheStaticResource(fileInfo, blob);
 
       // Now safe to remove from active — file is in cache, won't be re-enqueued
       this.downloadManager.queue.removeCompleted(`${fileInfo.type}/${fileInfo.id}`);
@@ -677,7 +678,7 @@ export class MessageHandler {
   /**
    * Cache widget static resources (.js, .css, fonts) alongside the media cache
    */
-  _cacheStaticResource(fileInfo, blob) {
+  async _cacheStaticResource(fileInfo, blob) {
     const filename = fileInfo.path ? (() => {
       try { return new URL(fileInfo.path).searchParams.get('file'); } catch { return null; }
     })() : null;
@@ -685,27 +686,24 @@ export class MessageHandler {
     if (filename && (filename.endsWith('.js') || filename.endsWith('.css') ||
         /\.(otf|ttf|woff2?|eot|svg)$/i.test(filename))) {
 
-      // Fire-and-forget — don't block the main cache flow
-      (async () => {
-        try {
-          const staticCache = await caches.open(this.config.staticCache);
-          const staticKey = `${BASE}/cache/static/${filename}`;
+      try {
+        const staticCache = await caches.open(this.config.staticCache);
+        const staticKey = `${BASE}/cache/static/${filename}`;
 
-          const ext = filename.split('.').pop().toLowerCase();
-          const staticContentType = STATIC_CONTENT_TYPES[ext] || 'application/octet-stream';
+        const ext = filename.split('.').pop().toLowerCase();
+        const staticContentType = STATIC_CONTENT_TYPES[ext] || 'application/octet-stream';
 
-          await Promise.all([
-            staticCache.put(staticKey, new Response(blob.slice(0, blob.size, blob.type), {
-              headers: { 'Content-Type': staticContentType }
-            })),
-            this.cacheManager.put(staticKey, blob.slice(0, blob.size, blob.type), staticContentType)
-          ]);
+        await Promise.all([
+          staticCache.put(staticKey, new Response(blob.slice(0, blob.size, blob.type), {
+            headers: { 'Content-Type': staticContentType }
+          })),
+          this.cacheManager.put(staticKey, blob.slice(0, blob.size, blob.type), staticContentType)
+        ]);
 
-          this.log.info('Also cached as static resource:', filename, `(${staticContentType})`);
-        } catch (e) {
-          this.log.warn('Failed to cache static resource:', filename, e);
-        }
-      })();
+        this.log.info('Also cached as static resource:', filename, `(${staticContentType})`);
+      } catch (e) {
+        this.log.warn('Failed to cache static resource:', filename, e);
+      }
     }
   }
 

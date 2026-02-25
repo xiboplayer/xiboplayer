@@ -13,6 +13,7 @@
  */
 
 import { createLogger } from '@xiboplayer/utils';
+import { rewriteUrlForProxy } from './download-manager.js';
 
 const log = createLogger('Cache');
 const CACHE_NAME = 'xibo-media-v1';
@@ -110,7 +111,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
       if (existing) return; // Already cached
 
       try {
-        const resp = await fetch(originalUrl);
+        const resp = await fetch(rewriteUrlForProxy(originalUrl));
         if (!resp.ok) {
           log.warn(`Failed to fetch static resource: ${filename} (HTTP ${resp.status})`);
           return;
@@ -149,7 +150,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
             if (existingFont) return; // Already cached (by SW or previous widget)
 
             try {
-              const fontResp = await fetch(fontUrl);
+              const fontResp = await fetch(rewriteUrlForProxy(fontUrl));
               if (!fontResp.ok) {
                 log.warn(`Failed to fetch font: ${fontFile} (HTTP ${fontResp.status})`);
                 return;
