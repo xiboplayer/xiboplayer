@@ -558,6 +558,10 @@ export class PlayerCore extends EventEmitter {
         this._startFaultReportingAgent();
       }
 
+      // Recalculate timeline after every collection cycle completes,
+      // even if schedule CRC was unchanged — durations or time may have shifted.
+      this.logUpcomingTimeline();
+
       this.emit('collection-complete');
 
     } catch (error) {
@@ -726,6 +730,16 @@ export class PlayerCore extends EventEmitter {
    * Called by platform when layout ends
    */
   clearCurrentLayout() {
+    // Record actual elapsed duration for timeline accuracy
+    if (this.currentLayoutId && this._lastLayoutChangeTime) {
+      const elapsed = (Date.now() - new Date(this._lastLayoutChangeTime).getTime()) / 1000;
+      if (elapsed > 0) {
+        const layoutFile = `${this.currentLayoutId}.xlf`;
+        this.recordLayoutDuration(layoutFile, Math.round(elapsed));
+        this.recordLayoutDuration(String(this.currentLayoutId), Math.round(elapsed));
+      }
+    }
+
     this.currentLayoutId = null;
     this.emit('layout-cleared');
   }
