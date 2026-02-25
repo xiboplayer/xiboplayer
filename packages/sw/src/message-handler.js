@@ -708,45 +708,16 @@ export class MessageHandler {
   }
 
   /**
-   * Ensure widget resource files have static cache entries
-   * Handles files that were cached before the dual-cache deploy
+   * Ensure widget resource files have static cache entries.
+   *
+   * NOTE: This no longer copies from the media/dependency cache because
+   * dependency files can share the same id (e.g. bundle.min.js and fonts.css
+   * are both dependency/1), causing content corruption. Static resources are
+   * now cached correctly by widget-html.js on the main thread via the proxy.
+   * This method only logs a debug message for traceability.
    */
   async ensureStaticCacheEntry(fileInfo) {
-    const filename = fileInfo.path ? (() => {
-      try { return new URL(fileInfo.path).searchParams.get('file'); } catch { return null; }
-    })() : null;
-
-    if (!filename || !(filename.endsWith('.js') || filename.endsWith('.css') ||
-        /\.(otf|ttf|woff2?|eot|svg)$/i.test(filename))) {
-      return; // Not a widget resource
-    }
-
-    const staticCache = await caches.open(this.config.staticCache);
-    const staticKey = `${BASE}/cache/static/${filename}`;
-
-    // Check if already in static cache
-    const existing = await staticCache.match(staticKey);
-    if (existing) return; // Already populated
-
-    // Read from media cache and copy to static cache
-    const cacheKey = `${BASE}/cache/${fileInfo.type}/${fileInfo.id}`;
-    const cached = await this.cacheManager.get(cacheKey);
-    if (!cached) return;
-
-    const blob = await cached.blob();
-    const ext = filename.split('.').pop().toLowerCase();
-    const staticContentType = STATIC_CONTENT_TYPES[ext] || 'application/octet-stream';
-
-    const staticPathKey = `${BASE}/cache/static/${filename}`;
-
-    await Promise.all([
-      staticCache.put(staticKey, new Response(blob.slice(0, blob.size, blob.type), {
-        headers: { 'Content-Type': staticContentType }
-      })),
-      this.cacheManager.put(staticPathKey, blob.slice(0, blob.size, blob.type), staticContentType)
-    ]);
-
-    this.log.info('Backfilled static cache for:', filename, `(${staticContentType}, ${blob.size} bytes)`);
+    // No-op: static caching is handled by widget-html.js (main thread)
   }
 
   /**
