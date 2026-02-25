@@ -730,18 +730,6 @@ export class PlayerCore extends EventEmitter {
    * Called by platform when layout ends
    */
   clearCurrentLayout() {
-    // Record actual elapsed duration for timeline accuracy — but only if we don't
-    // already have a more accurate value from video metadata / XLF parsing.
-    if (this.currentLayoutId && this._lastLayoutChangeTime) {
-      const elapsed = Math.round((Date.now() - new Date(this._lastLayoutChangeTime).getTime()) / 1000);
-      const layoutFile = `${this.currentLayoutId}.xlf`;
-      const existing = this._layoutDurations.get(layoutFile);
-      if (elapsed > 0 && (!existing || existing <= 60)) {
-        this.recordLayoutDuration(layoutFile, elapsed);
-        this.recordLayoutDuration(String(this.currentLayoutId), elapsed);
-      }
-    }
-
     this.currentLayoutId = null;
     this.emit('layout-cleared');
   }
@@ -1690,6 +1678,10 @@ export class PlayerCore extends EventEmitter {
   recordLayoutDuration(file, duration) {
     const prev = this._layoutDurations.get(file);
     if (prev === duration) return; // No change
+
+    // Never downgrade a known duration — a larger measured value (e.g. from video
+    // metadata) is always more accurate than a smaller XLF/default guess.
+    if (prev && prev > 60 && duration < prev) return;
 
     this._layoutDurations.set(file, duration);
     log.debug(`[Timeline] Duration corrected: layout ${file} ${prev || '?'}s → ${duration}s`);
