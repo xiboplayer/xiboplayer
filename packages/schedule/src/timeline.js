@@ -216,7 +216,9 @@ export function calculateTimeline(schedule, durations, options = {}) {
       continue;
     }
 
-    // Round-robin through playable layouts
+    // Round-robin through playable layouts, interleaving default layout between them
+    // (mirrors getInterleavedLayouts() in the actual player)
+    const defaultFile = schedule.schedule?.default;
     for (let i = 0; i < playable.length && currentTime < to && timeline.length < maxEntries; i++) {
       const file = playable[i];
       let dur = durations.get(file) || defaultDuration;
@@ -250,6 +252,20 @@ export function calculateTimeline(schedule, durations, options = {}) {
       }
 
       currentTime = new Date(endMs);
+
+      // Interleave default layout between scheduled layouts (player does A, D, B, D, C, D)
+      if (defaultFile && playable.length > 1 && currentTime < to && timeline.length < maxEntries) {
+        const defDur = durations.get(defaultFile) || defaultDuration;
+        const defEndMs = currentTime.getTime() + defDur * 1000;
+        timeline.push({
+          layoutFile: defaultFile,
+          startTime: new Date(currentTime),
+          endTime: new Date(defEndMs),
+          duration: defDur,
+          isDefault: true,
+        });
+        currentTime = new Date(defEndMs);
+      }
 
       // Re-evaluate: if playable set changed, re-enter outer loop
       if (hasFullApi) {

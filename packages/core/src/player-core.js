@@ -730,13 +730,15 @@ export class PlayerCore extends EventEmitter {
    * Called by platform when layout ends
    */
   clearCurrentLayout() {
-    // Record actual elapsed duration for timeline accuracy
+    // Record actual elapsed duration for timeline accuracy — but only if we don't
+    // already have a more accurate value from video metadata / XLF parsing.
     if (this.currentLayoutId && this._lastLayoutChangeTime) {
-      const elapsed = (Date.now() - new Date(this._lastLayoutChangeTime).getTime()) / 1000;
-      if (elapsed > 0) {
-        const layoutFile = `${this.currentLayoutId}.xlf`;
-        this.recordLayoutDuration(layoutFile, Math.round(elapsed));
-        this.recordLayoutDuration(String(this.currentLayoutId), Math.round(elapsed));
+      const elapsed = Math.round((Date.now() - new Date(this._lastLayoutChangeTime).getTime()) / 1000);
+      const layoutFile = `${this.currentLayoutId}.xlf`;
+      const existing = this._layoutDurations.get(layoutFile);
+      if (elapsed > 0 && (!existing || existing <= 60)) {
+        this.recordLayoutDuration(layoutFile, elapsed);
+        this.recordLayoutDuration(String(this.currentLayoutId), elapsed);
       }
     }
 
