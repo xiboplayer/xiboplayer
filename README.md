@@ -15,7 +15,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 
 - **Full Xibo protocol support** — XMDS SOAP v3–v7, REST API, and XMR WebSocket
 - **Rich media rendering** — video (MP4/HLS), images (scaleType, align/valign), audio (with overlay visualization), PDF, text/ticker, web pages, clock, calendar, weather, and all CMS widget types
-- **Offline-first** — Cache API + IndexedDB storage with automatic fallback to cached schedule when network is unavailable
+- **Offline-first** — ContentStore (filesystem via proxy) + IndexedDB storage with automatic fallback to cached schedule when network is unavailable
 - **Parallel chunk downloads** — large files (100MB+) split into 50MB chunks, header+trailer first for instant MP4 playback start
 - **Layout preloading** — 2-layout pool pre-builds upcoming layouts at 75% of current duration for instant zero-gap transitions
 - **Campaign scheduling** — priority-based campaigns, daily/weekly/monthly dayparting with midnight-crossing, geo-fencing, and criteria evaluation

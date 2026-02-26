@@ -1,17 +1,15 @@
 /**
  * CacheManager - Dependant tracking and cache lifecycle
  *
- * After the cache unification, all downloads and file retrieval go through
- * the Service Worker (via CacheProxy). This class retains:
+ * After the storage unification, all downloads and file retrieval go through
+ * the proxy's ContentStore (via StoreClient/DownloadClient). This class retains:
  * - Dependant tracking (which layouts reference which media)
  * - Cache key generation
- * - Full cache clearing
  */
 
 import { createLogger } from '@xiboplayer/utils';
 
 const log = createLogger('Cache');
-const CACHE_NAME = 'xibo-media-v1';
 
 // Dynamic base path for multi-variant deployment (pwa, pwa-xmds, pwa-xlr)
 const BASE = (typeof window !== 'undefined')
@@ -80,10 +78,9 @@ export class CacheManager {
   }
 
   /**
-   * Clear all cached files
+   * Clear all cached files via proxy
    */
   async clearAll() {
-    await caches.delete(CACHE_NAME);
     this.dependants.clear();
   }
 }

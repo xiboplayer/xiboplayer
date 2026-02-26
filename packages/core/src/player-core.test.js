@@ -53,8 +53,9 @@ describe('PlayerCore', () => {
     };
 
     mockCache = {
-      requestDownload: vi.fn(() => Promise.resolve()),
-      getFile: vi.fn(() => Promise.resolve(new Blob(['test'])))
+      get: vi.fn(() => Promise.resolve(new Blob(['test']))),
+      has: vi.fn(() => Promise.resolve(false)),
+      list: vi.fn(() => Promise.resolve([])),
     };
 
     mockSchedule = {

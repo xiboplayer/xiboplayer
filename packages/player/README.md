@@ -31,7 +31,7 @@ npm install @xiboplayer/player
 ```javascript
 import { PlayerCore } from '@xiboplayer/core';
 import { RendererLite } from '@xiboplayer/renderer';
-import { CacheManager } from '@xiboplayer/cache';
+import { StoreClient, DownloadClient } from '@xiboplayer/cache';
 
 // All packages available
 ```

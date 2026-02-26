@@ -2,7 +2,7 @@
  * Cache Manager Tests
  *
  * Tests for the slimmed-down CacheManager: dependant tracking, getCacheKey,
- * and clearAll. Download/IndexedDB methods have been removed (handled by SW).
+ * and clearAll. Storage is handled by ContentStore via proxy REST endpoints.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -10,36 +10,8 @@ import { CacheManager } from './cache.js';
 
 describe('CacheManager', () => {
   let manager;
-  let mockCache;
 
   beforeEach(async () => {
-    // Mock Cache API
-    mockCache = {
-      _storage: new Map(),
-      async match(key) {
-        const keyStr = typeof key === 'string' ? key : key.toString();
-        const entry = this._storage.get(keyStr);
-        if (!entry) return undefined;
-        return new Response(entry.body, { headers: entry.headers });
-      },
-      async put(key, response) {
-        const keyStr = typeof key === 'string' ? key : key.toString();
-        const bodyText = await response.text();
-        const headers = {};
-        response.headers.forEach((value, name) => { headers[name] = value; });
-        this._storage.set(keyStr, { body: bodyText, headers });
-      },
-      async delete(key) {
-        const keyStr = typeof key === 'string' ? key : key.toString();
-        return this._storage.delete(keyStr);
-      }
-    };
-
-    global.caches = {
-      async open() { return mockCache; },
-      async delete() { mockCache._storage.clear(); }
-    };
-
     manager = new CacheManager();
   });
 
@@ -155,7 +127,7 @@ describe('CacheManager', () => {
   });
 
   describe('clearAll()', () => {
-    it('should clear caches and dependants', async () => {
+    it('should clear dependants', async () => {
       manager.addDependant('media1', 'layout1');
       manager.addDependant('media2', 'layout2');
 

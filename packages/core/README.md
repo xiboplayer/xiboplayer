@@ -26,7 +26,7 @@ const player = new PlayerCore({
   transport,   // XMDS or REST transport from @xiboplayer/xmds
   schedule,    // Schedule instance from @xiboplayer/schedule
   renderer,    // Renderer instance from @xiboplayer/renderer
-  cache,       // CacheProxy instance from @xiboplayer/cache
+  cache,       // StoreClient + DownloadClient from @xiboplayer/cache
 });
 
 player.on('download-request', ({ layoutOrder, files }) => {

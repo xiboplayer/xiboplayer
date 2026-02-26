@@ -5,7 +5,7 @@
  * orphaned media that is no longer needed. Logs a summary every collection
  * cycle. Only evicts when storage pressure exceeds a configurable threshold.
  *
- * Works entirely through CacheProxy (postMessage to SW) — no IndexedDB,
+ * Works entirely through StoreClient (REST to proxy) — no IndexedDB,
  * no direct Cache API access.
  */
 
@@ -27,7 +27,7 @@ function formatBytes(bytes) {
 
 export class CacheAnalyzer {
   /**
-   * @param {import('./cache-proxy.js').CacheProxy} cache - CacheProxy instance
+   * @param {import('./store-client.js').StoreClient} cache - StoreClient instance
    * @param {object} [options]
    * @param {number} [options.threshold=80] - Storage usage % above which eviction triggers
    */
@@ -43,7 +43,7 @@ export class CacheAnalyzer {
    * @returns {Promise<object>} Analysis report
    */
   async analyze(requiredFiles) {
-    const cachedFiles = await this.cache.getAllFiles();
+    const cachedFiles = await this.cache.list();
     const storage = await this._getStorageEstimate();
 
     // Build set of required file IDs (as strings for consistent comparison)
@@ -64,6 +64,10 @@ export class CacheAnalyzer {
         } else {
           orphaned.push(file);
         }
+      } else if (file.type === 'static') {
+        // Static files (bundle.min.js, fonts.css, fonts, images) are shared widget
+        // dependencies — never orphan them, they're referenced from widget HTML
+        required.push(file);
       } else {
         orphaned.push(file);
       }
@@ -141,7 +145,7 @@ export class CacheAnalyzer {
 
   /**
    * Evict orphaned files (oldest first) until targetBytes are freed.
-   * Delegates deletion to CacheProxy.deleteFiles() which routes to SW.
+   * Delegates deletion to StoreClient.remove() which routes to proxy.
    *
    * @param {Array} orphanedFiles - Files to evict, sorted oldest-first
    * @param {number} targetBytes - Bytes to free
@@ -161,7 +165,7 @@ export class CacheAnalyzer {
 
     try {
       const filesToDelete = toEvict.map(f => ({ type: f.type, id: f.id }));
-      await this.cache.deleteFiles(filesToDelete);
+      await this.cache.remove(filesToDelete);
 
       for (const f of toEvict) {
         log.info(`  Evicted: ${f.type}/${f.id} (${formatBytes(f.size || 0)})`);

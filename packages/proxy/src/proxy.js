@@ -12,8 +12,90 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import cors from 'cors';
+import { ContentStore } from './content-store.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
+
+/**
+ * Serve a chunked file from ContentStore with Range support.
+ * Reads only the chunks needed for the requested range.
+ */
+function serveChunkedFile(req, res, store, key, meta, contentType) {
+  const totalSize = meta.size || 0;
+  const chunkSize = meta.chunkSize;
+  const numChunks = meta.numChunks;
+  const rangeHeader = req.headers.range;
+
+  if (!totalSize || !chunkSize || !numChunks) {
+    return res.status(500).json({ error: 'Incomplete chunk metadata' });
+  }
+
+  let start = 0;
+  let end = totalSize - 1;
+  let isRange = false;
+
+  if (rangeHeader) {
+    const parts = rangeHeader.replace(/bytes=/, '').split('-');
+    start = parseInt(parts[0], 10);
+    end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+    isRange = true;
+  }
+
+  const responseLen = end - start + 1;
+  const startChunk = Math.floor(start / chunkSize);
+  const endChunk = Math.floor(end / chunkSize);
+
+  res.status(isRange ? 206 : 200);
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', responseLen);
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (isRange) {
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+  }
+
+  // Stream chunks sequentially
+  let bytesWritten = 0;
+  let currentChunk = startChunk;
+
+  const writeNextChunk = () => {
+    if (currentChunk > endChunk || bytesWritten >= responseLen) {
+      res.end();
+      return;
+    }
+
+    const chunkStart = currentChunk * chunkSize;
+    const chunkEnd = Math.min(chunkStart + chunkSize - 1, totalSize - 1);
+
+    // Calculate the byte range within this chunk
+    const readStart = currentChunk === startChunk ? start - chunkStart : 0;
+    const readEnd = currentChunk === endChunk ? end - chunkStart : chunkEnd - chunkStart;
+
+    const stream = store.getChunkReadStream(key, currentChunk, {
+      start: readStart, end: readEnd,
+    });
+
+    if (!stream) {
+      // Chunk not available yet (progressive download)
+      res.status(404).end();
+      return;
+    }
+
+    currentChunk++;
+    stream.on('data', (chunk) => {
+      bytesWritten += chunk.length;
+      res.write(chunk);
+    });
+    stream.on('end', writeNextChunk);
+    stream.on('error', (err) => {
+      console.error(`[ContentStore] Chunk stream error: ${err.message}`);
+      if (!res.headersSent) res.status(500).end();
+      else res.end();
+    });
+  };
+
+  writeNextChunk();
+}
 
 /**
  * Create a configured Express app with CORS proxy routes and PWA static serving.
@@ -26,9 +108,10 @@ const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'co
  * @param {string} [options.cmsConfig.cmsKey] — CMS server key
  * @param {string} [options.cmsConfig.displayName] — display name for registration
  * @param {string} [options.configFilePath] — absolute path to config.json (for POST /config writeback)
+ * @param {string} [options.dataDir] — absolute path to data directory (for ContentStore storage)
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath } = {}) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir } = {}) {
   const app = express();
 
   app.use(cors({
@@ -151,6 +234,14 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
     }
   });
 
+  // ─── ContentStore initialization ──────────────────────────────────
+  let store = null;
+  if (dataDir) {
+    store = new ContentStore(path.join(dataDir, 'media'));
+    store.init();
+    console.log(`[Proxy] ContentStore enabled: ${path.join(dataDir, 'media')}`);
+  }
+
   // ─── File Download Proxy ───────────────────────────────────────────
   app.get('/file-proxy', async (req, res) => {
     try {
@@ -176,12 +267,176 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       });
       res.setHeader('Access-Control-Allow-Origin', '*');
       const buffer = await response.arrayBuffer();
+
+      // Save to store if storeKey is provided
+      if (store && req.query.storeKey) {
+        try {
+          const storeKey = req.query.storeKey;
+          const chunkIndex = req.query.chunkIndex;
+          const contentType = response.headers.get('content-type') || 'application/octet-stream';
+
+          if (chunkIndex !== undefined) {
+            const meta = {
+              contentType,
+              md5: req.query.md5 || null,
+              chunked: true,
+            };
+            // Add chunk geometry from query params
+            if (req.query.numChunks) meta.numChunks = parseInt(req.query.numChunks);
+            if (req.query.chunkSize) meta.chunkSize = parseInt(req.query.chunkSize);
+            // Add size info if available from Content-Range header
+            const contentRange = response.headers.get('content-range');
+            if (contentRange) {
+              const totalMatch = contentRange.match(/\/(\d+)/);
+              if (totalMatch) meta.size = parseInt(totalMatch[1]);
+            }
+            store.putChunk(storeKey, parseInt(chunkIndex), Buffer.from(buffer), meta);
+            console.log(`[ContentStore] Stored chunk ${chunkIndex}: ${storeKey} (${buffer.byteLength} bytes)`);
+          } else {
+            store.put(storeKey, Buffer.from(buffer), {
+              contentType, size: buffer.byteLength, md5: req.query.md5 || null,
+            });
+            console.log(`[ContentStore] Stored: ${storeKey} (${buffer.byteLength} bytes)`);
+          }
+        } catch (storeErr) {
+          console.error('[ContentStore] Write error (non-fatal):', storeErr.message);
+        }
+      }
+
       res.send(Buffer.from(buffer));
       console.log(`[FileProxy] ${response.status} (${buffer.byteLength} bytes)`);
     } catch (error) {
       console.error('[FileProxy] Error:', error.message);
       res.status(500).json({ error: 'File proxy error', message: error.message });
     }
+  });
+
+  // ─── ContentStore — Serve files ────────────────────────────────────
+  // GET /store/:type/* — serve stored file with Range support
+  app.get('/store/:type/{*splat}', (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+
+    let key, info;
+    try {
+      key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
+      info = store.has(key);
+    } catch (err) {
+      console.error(`[ContentStore] GET lookup error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
+      return res.status(500).end();
+    }
+    if (!info.exists) return res.status(404).end();
+
+    const meta = info.metadata || {};
+    const contentType = meta.contentType || 'application/octet-stream';
+
+    if (info.chunked) {
+      // Chunked file — serve via assembled chunk reads
+      return serveChunkedFile(req, res, store, key, meta, contentType);
+    }
+
+    // Whole file — serve with Range support via fs.createReadStream
+    const filePath = store.getPath(key);
+    if (!filePath) return res.status(404).end();
+
+    const fileSize = meta.size || fs.statSync(filePath).size;
+    const rangeHeader = req.headers.range;
+
+    if (rangeHeader) {
+      const parts = rangeHeader.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkLen = end - start + 1;
+
+      res.status(206);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', chunkLen);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      const stream = store.getReadStream(key, { start, end });
+      stream.pipe(res);
+    } else {
+      res.status(200);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', fileSize);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      const stream = store.getReadStream(key);
+      stream.pipe(res);
+    }
+  });
+
+  // HEAD /store/:type/* — existence + size check
+  app.head('/store/:type/{*splat}', (req, res) => {
+    if (!store) return res.status(501).end();
+
+    try {
+      const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
+      const info = store.has(key);
+      if (!info.exists) return res.status(404).end();
+
+      const meta = info.metadata || {};
+      res.setHeader('Content-Length', meta.size || 0);
+      res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.status(200).end();
+    } catch (err) {
+      console.error(`[ContentStore] HEAD error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
+      res.status(500).end();
+    }
+  });
+
+  // PUT /store/:type/* — store arbitrary content
+  app.put('/store/:type/{*splat}', express.raw({ limit: '50mb', type: '*/*' }), (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+
+    const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
+    const contentType = req.headers['content-type'] || 'application/octet-stream';
+    store.put(key, req.body, { contentType, size: req.body.length });
+    console.log(`[ContentStore] PUT: ${key} (${req.body.length} bytes)`);
+    res.json({ ok: true });
+  });
+
+  // POST /store/delete — delete files from store
+  app.post('/store/delete', express.json(), (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+
+    const { files } = req.body;
+    if (!files || !Array.isArray(files)) {
+      return res.status(400).json({ error: 'files array required' });
+    }
+
+    let deleted = 0;
+    for (const file of files) {
+      const key = `${file.type}/${file.id}`;
+      if (store.delete(key)) {
+        deleted++;
+        console.log(`[ContentStore] Deleted: ${key}`);
+      }
+    }
+
+    res.json({ success: true, deleted, total: files.length });
+  });
+
+  // POST /store/mark-complete — mark chunked download as complete
+  app.post('/store/mark-complete', express.json(), (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+
+    const { storeKey } = req.body;
+    if (!storeKey) return res.status(400).json({ error: 'storeKey required' });
+
+    store.markComplete(storeKey);
+    console.log(`[ContentStore] Marked complete: ${storeKey}`);
+    res.json({ success: true });
+  });
+
+  // GET /store/list — list all stored files
+  app.get('/store/list', (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+    res.json({ files: store.list() });
   });
 
   // ─── CMS config injection helper ──────────────────────────────────
@@ -237,6 +492,26 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
     res.type('html').send(injected);
   }
 
+  // ─── Serve cached static resources via Express (bypasses SW) ──────
+  // html2canvas and other non-SW contexts request /player/cache/static/*
+  // directly from Express. Route these to ContentStore so they don't 404.
+  app.get('/player/cache/static/{*splat}', (req, res) => {
+    if (!store) return res.status(404).end();
+    const filename = [req.params.splat].flat().pop();
+    const key = `static/${filename}`;
+    const info = store.has(key);
+    if (!info.exists) return res.status(404).type('text').send('Not found');
+    const meta = info.metadata || {};
+    const contentType = meta.contentType || 'application/octet-stream';
+    const filePath = store.getPath(key);
+    if (!filePath) return res.status(404).type('text').send('Not found');
+    const fileSize = meta.size || fs.statSync(filePath).size;
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', fileSize);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    store.getReadStream(key).pipe(res);
+  });
+
   // Always serve index.html through sendIndexHtml so config injection
   // works dynamically (POST /config can enable it at runtime).
   app.get('/player/', (req, res) => sendIndexHtml(res));
@@ -278,8 +553,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath } = {}) {
-  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath, dataDir });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {

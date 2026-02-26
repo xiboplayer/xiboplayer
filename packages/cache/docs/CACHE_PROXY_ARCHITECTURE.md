@@ -1,451 +1,248 @@
-# CacheProxy Architecture - Unified Cache Interface
+# StoreClient + DownloadClient Architecture
 
 ## Overview
 
-The CacheProxy provides a unified interface for file caching and downloading that works seamlessly with both Service Worker and direct cache implementations. This abstraction enables platform-independent code and automatic backend selection.
+The cache package provides two client classes that separate storage concerns from download concerns:
+
+- **StoreClient** — pure REST client for reading/writing content in the ContentStore (filesystem)
+- **DownloadClient** — Service Worker postMessage client for managing background downloads
+
+No Cache API is used anywhere. All content is stored on the filesystem via the proxy's ContentStore.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ Client Code (PWA, XLR, Mobile, etc.)                │
-│ - Uses CacheProxy for all file operations           │
-│ - No knowledge of backend implementation             │
-│ - Minimal integration code                           │
+│ Client Code (PWA, Electron, Chromium)               │
+│ - StoreClient for storage operations                │
+│ - DownloadClient for download management            │
 └─────────────────────────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────┐
-│ CacheProxy Module (Shared Interface)                │
-│ - Detects environment (Service Worker vs Direct)    │
-│ - Provides unified API: get/download/cache files    │
-│ - No client code changes needed                     │
-└─────────────────────────────────────────────────────┘
-                        ↓
-        ┌───────────────┴───────────────┐
-        ↓                               ↓
+        │                               │
+        ▼                               ▼
 ┌─────────────────┐           ┌─────────────────┐
-│ Service Worker  │           │ Direct Cache    │
-│ Backend         │           │ Backend         │
+│ StoreClient     │           │ DownloadClient  │
+│ (REST)          │           │ (SW postMessage)│
 │                 │           │                 │
-│ - Downloads in  │           │ - cache.js      │
-│   background    │           │ - IndexedDB     │
-│ - Caches files  │           │ - Blocking      │
-│ - Serves via    │           │   downloads     │
-│   fetch         │           │                 │
-└─────────────────┘           └─────────────────┘
+│ has(type, id)   │           │ download(files) │
+│ get(type, id)   │           │ prioritize()    │
+│ put(type, id)   │           │ getProgress()   │
+│ remove(files)   │           │                 │
+│ list()          │           │                 │
+└────────┬────────┘           └────────┬────────┘
+         │                             │
+         ▼                             ▼
+┌─────────────────┐           ┌─────────────────┐
+│ Proxy REST API  │           │ Service Worker  │
+│ /store/:type/*  │           │ DownloadManager │
+│                 │           │ RequestHandler  │
+│ GET, HEAD, PUT  │           │ MessageHandler  │
+│ POST /delete    │           │                 │
+│ GET /list       │           │                 │
+└────────┬────────┘           └─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│ ContentStore    │
+│ (filesystem)    │
+│                 │
+│ media/*.bin     │
+│ layout/*.bin    │
+│ widget/*.bin    │
+│ static/*.bin    │
+└─────────────────┘
 ```
 
 ## Components
 
-### 1. CacheProxy (Main Interface)
+### 1. StoreClient (REST)
 
-**Location**: `packages/core/src/cache-proxy.js`
+**Location**: `packages/cache/src/store-client.js`
 
-**Purpose**: Auto-detects backend and provides unified API
+**Purpose**: Pure REST client for content storage operations. No Service Worker dependency — works immediately with just `fetch()`.
 
 **API**:
 ```javascript
-class CacheProxy {
-  async init()
-  async getFile(type: string, id: string): Promise<Blob|null>
-  async requestDownload(files: FileInfo[]): Promise<void>
-  async isCached(type: string, id: string): Promise<boolean>
-  getBackendType(): string // 'service-worker' | 'direct'
-  isUsingServiceWorker(): boolean
+class StoreClient {
+  async has(type, id)                    // HEAD /store/:type/:id → { exists, size }
+  async get(type, id)                    // GET /store/:type/:id → Blob | null
+  async put(type, id, body, contentType) // PUT /store/:type/:id
+  async remove(files)                    // POST /store/delete
+  async list()                           // GET /store/list → Array<FileInfo>
 }
 ```
 
 **Usage**:
 ```javascript
-import { CacheProxy } from '@core/cache-proxy.js';
+import { StoreClient } from '@xiboplayer/cache';
 
-// Initialize
-const proxy = new CacheProxy(cacheManager);
-await proxy.init();
+const store = new StoreClient();
 
-// Get file (works with both backends)
-const blob = await proxy.getFile('media', '123');
+// Check if file exists
+const { exists, size } = await store.has('media', '123');
 
-// Request downloads
-await proxy.requestDownload([
-  { id: '1', type: 'media', path: 'https://...', md5: '...' }
-]);
+// Store widget HTML
+await store.put('widget', '472/221/190', htmlBlob, 'text/html');
 
-// Check cache
-const cached = await proxy.isCached('layout', '456');
+// Get file
+const blob = await store.get('media', '123');
+
+// List all cached files
+const files = await store.list();
 ```
 
-### 2. ServiceWorkerBackend
+### 2. DownloadClient (SW postMessage)
 
-**Purpose**: Routes requests to Service Worker
+**Location**: `packages/cache/src/download-client.js`
 
-**Responsibilities**:
-- Detects Service Worker availability
-- Uses postMessage for downloads
-- Uses fetch for file retrieval
-- Non-blocking downloads (background)
+**Purpose**: Communicates with the Service Worker's DownloadManager via postMessage to manage background downloads.
 
-**Implementation Details**:
+**API**:
 ```javascript
-class ServiceWorkerBackend {
-  async getFile(type, id) {
-    // Fetch from /player/cache/{type}/{id}
-    // Service Worker intercepts and serves from cache
-  }
-
-  async requestDownload(files) {
-    // postMessage to Service Worker
-    // Downloads happen in background
-    // Returns immediately
-  }
+class DownloadClient {
+  async init()                           // Wait for SW ready
+  async download(files)                  // SW DOWNLOAD_FILES
+  async prioritize(type, id)             // SW PRIORITIZE_DOWNLOAD
+  async prioritizeLayout(mediaIds)       // SW PRIORITIZE_LAYOUT_FILES
+  async getProgress()                    // SW GET_DOWNLOAD_PROGRESS
 }
 ```
 
-### 3. DirectCacheBackend
-
-**Purpose**: Fallback when Service Worker unavailable
-
-**Responsibilities**:
-- Uses cache.js directly
-- Blocking downloads
-- IndexedDB metadata storage
-- Browser Cache API for files
-
-**Implementation Details**:
+**Usage**:
 ```javascript
-class DirectCacheBackend {
-  async getFile(type, id) {
-    // Call cacheManager.getCachedFile()
-    // Direct Cache API access
-  }
+import { DownloadClient } from '@xiboplayer/cache';
 
-  async requestDownload(files) {
-    // Sequential downloads
-    // Blocks until complete
-    // Fallback for non-Service Worker environments
-  }
-}
+const downloads = new DownloadClient();
+await downloads.init();
+
+// Request background downloads
+await downloads.download(files);
+
+// Prioritize a file needed for the current layout
+await downloads.prioritize('media', '12');
+
+// Check download progress
+const progress = await downloads.getProgress();
 ```
 
-## Backend Selection
+## REST API Routes (Proxy)
 
-CacheProxy automatically selects the best backend:
+The proxy server (`packages/proxy/src/proxy.js`) exposes these endpoints backed by ContentStore:
 
-```javascript
-async init() {
-  // Try Service Worker first
-  if (navigator.serviceWorker?.controller) {
-    this.backend = new ServiceWorkerBackend();
-    this.backendType = 'service-worker';
-  } else {
-    // Fallback to direct cache
-    this.backend = new DirectCacheBackend(cacheManager);
-    this.backendType = 'direct';
-  }
-}
-```
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/store/:type/:id` | Serve file (Range support) |
+| `HEAD` | `/store/:type/:id` | Existence + size check |
+| `PUT` | `/store/:type/:id` | Store file |
+| `POST` | `/store/delete` | Delete files |
+| `POST` | `/store/mark-complete` | Mark chunked download complete |
+| `GET` | `/store/list` | List all cached files |
 
-### Selection Criteria
+### ContentStore (Filesystem)
 
-| Condition | Backend | Reason |
-|-----------|---------|--------|
-| Service Worker active | ServiceWorkerBackend | Better performance, non-blocking |
-| Service Worker not active | DirectCacheBackend | Compatibility, works everywhere |
-| Service Worker failed | DirectCacheBackend | Graceful degradation |
+**Location**: `packages/proxy/src/content-store.js`
 
-## Integration Example
-
-### Before (Without CacheProxy)
-
-```javascript
-// Complex logic with manual fallback
-const serviceWorkerActive = navigator.serviceWorker?.controller;
-
-if (serviceWorkerActive) {
-  try {
-    await sendFilesToServiceWorker(files);
-  } catch (error) {
-    for (const file of files) {
-      await cacheManager.downloadFile(file);
-    }
-  }
-} else {
-  for (const file of files) {
-    await cacheManager.downloadFile(file);
-  }
-}
-
-// Separate media retrieval
-const response = await cacheManager.getCachedResponse('media', fileId);
-const blob = await response.blob();
-```
-
-### After (With CacheProxy)
-
-```javascript
-// Simple, unified interface
-await cacheProxy.requestDownload(files);
-
-// Consistent file retrieval
-const blob = await cacheProxy.getFile('media', fileId);
-```
-
-**Benefits**:
-- 75% less code
-- Automatic backend selection
-- No error handling duplication
-- Platform-independent
-
-## Performance Characteristics
-
-### Service Worker Backend
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Download latency | ~100ms | postMessage + enqueue |
-| File retrieval | ~10ms | Fetch intercept |
-| Blocking | No | Downloads in background |
-| Concurrency | 4 files | Configurable |
-
-### Direct Cache Backend
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Download latency | Varies | Depends on file size |
-| File retrieval | ~5ms | Direct cache access |
-| Blocking | Yes | Sequential downloads |
-| Concurrency | 1 file | No parallelism |
-
-## Service Worker Download Flow
+The ContentStore manages files on disk with metadata:
 
 ```
-Client                CacheProxy            Service Worker
+~/.config/xiboplayer/{electron,chromium}/content-store/
+├── media/
+│   ├── 12.bin          # Video file
+│   ├── 12.meta.json    # { contentType, size, cachedAt, md5 }
+│   ├── 34.bin          # Image file
+│   └── 34.meta.json
+├── layout/
+│   ├── 472.bin         # XLF layout XML
+│   └── 472.meta.json
+├── widget/
+│   ├── 472/221/190.bin # Widget HTML
+│   └── 472/221/190.meta.json
+└── static/
+    ├── bundle.min.js.bin
+    ├── fonts.css.bin
+    ├── Aileron-Heavy.otf.bin
+    └── ...
+```
+
+## Download Flow
+
+### Service Worker Download
+
+```
+Client                DownloadClient       Service Worker
   │                       │                       │
-  │ requestDownload()     │                       │
-  │─────────────────────> │                       │
+  │ download(files)       │                       │
+  │──────────────────────>│                       │
   │                       │ postMessage           │
   │                       │ (DOWNLOAD_FILES)      │
-  │                       │─────────────────────> │
+  │                       │──────────────────────>│
   │                       │                       │
   │                       │                       │ enqueue files
-  │                       │                       │ start downloads
+  │                       │                       │ download from CMS
+  │                       │                       │ PUT /store/:type/:id
   │                       │                       │
   │                       │ acknowledge           │
-  │                       │ <─────────────────────│
+  │                       │<──────────────────────│
   │ return (immediate)    │                       │
-  │ <─────────────────────│                       │
+  │<──────────────────────│                       │
   │                       │                       │
-  │ ... continue work ... │                       │ ... downloading ...
+  │ ... continue work ... │                       │
   │                       │                       │
-  │ getFile('media', '1') │                       │
-  │─────────────────────> │                       │
-  │                       │ fetch /cache/media/1  │
-  │                       │─────────────────────> │
-  │                       │                       │
-  │                       │                       │ if cached: serve
-  │                       │                       │ if downloading: wait
-  │                       │                       │ if not found: 404
-  │                       │                       │
-  │                       │ <─────────────────────│
-  │ <─────────────────────│                       │
-  │ blob                  │                       │
+  │ store.has('media','1')│                       │
+  │──────────────────────>│                       │
+  │                       │ HEAD /store/media/1   │
+  │                       │──────────────────────>│
+  │                       │<──────────────────────│
+  │<──────────────────────│                       │
+  │ { exists: true }      │                       │
 ```
 
-## Direct Cache Download Flow
+### Widget HTML Storage
 
-```
-Client                CacheProxy            Cache.js
-  │                       │                       │
-  │ requestDownload()     │                       │
-  │─────────────────────> │                       │
-  │                       │ downloadFile() x N    │
-  │                       │─────────────────────> │
-  │                       │                       │ fetch file
-  │                       │                       │ verify MD5
-  │                       │                       │ cache in Cache API
-  │                       │                       │ save metadata to IDB
-  │                       │                       │
-  │                       │ <─────────────────────│
-  │ return (after all     │                       │
-  │  downloads complete)  │                       │
-  │ <─────────────────────│                       │
-```
+Widget HTML is processed on the main thread by `cacheWidgetHtml()`:
+
+1. Fetch widget HTML from CMS (`getResource`)
+2. Inject `<base>` tag for relative path resolution
+3. Rewrite CMS signed URLs → local `/player/cache/static/*` paths
+4. Fetch and store static dependencies (bundle.min.js, fonts.css, fonts)
+5. Store widget HTML via `PUT /store/widget/{layoutId}/{regionId}/{mediaId}`
+
+Static resources are stored before widget HTML to prevent race conditions when the iframe loads.
 
 ## Error Handling
 
-CacheProxy handles errors gracefully:
+| Scenario | StoreClient | DownloadClient |
+|----------|-------------|----------------|
+| Network failure | `fetch()` throws | SW retries internally |
+| File not found | `has()` → `{ exists: false }` | N/A |
+| Proxy down | `fetch()` throws | SW queues for retry |
+| SW not ready | N/A | `init()` waits for activation |
 
-```javascript
-try {
-  await cacheProxy.requestDownload(files);
-} catch (error) {
-  // Backend-specific error
-  // Already logged by backend
-  // Fallback handled automatically
-}
-```
+## Performance
 
-### Error Scenarios
+### StoreClient
 
-| Scenario | Service Worker | Direct Cache |
-|----------|----------------|--------------|
-| Network failure | Retry in SW | Throw error |
-| File not found | 404 on fetch | null on get |
-| MD5 mismatch | Log warning, continue | Log warning, continue |
-| SW not available | Auto-switch to Direct | N/A |
+| Operation | Latency | Notes |
+|-----------|---------|-------|
+| `has()` | ~2ms | HEAD request to local proxy |
+| `get()` | ~5ms | GET from filesystem |
+| `put()` | ~10ms | Write to filesystem |
+| `list()` | ~20ms | Scan all type directories |
 
-## Testing
+### DownloadClient
 
-### Unit Tests
+| Operation | Latency | Notes |
+|-----------|---------|-------|
+| `download()` | ~100ms | postMessage + enqueue |
+| `prioritize()` | ~50ms | Reorder queue |
+| `getProgress()` | ~50ms | Query active downloads |
 
-```javascript
-// Test backend detection
-it('should use Service Worker when available', async () => {
-  const proxy = new CacheProxy(cacheManager);
-  await proxy.init();
-  expect(proxy.getBackendType()).toBe('service-worker');
-});
-
-// Test fallback
-it('should fallback to direct cache', async () => {
-  // Mock SW not available
-  const proxy = new CacheProxy(cacheManager);
-  await proxy.init();
-  expect(proxy.getBackendType()).toBe('direct');
-});
-```
-
-### Integration Tests
-
-```javascript
-// Test file download
-it('should download and cache files', async () => {
-  const files = [{ id: '1', type: 'media', path: 'https://...' }];
-  await proxy.requestDownload(files);
-
-  const blob = await proxy.getFile('media', '1');
-  expect(blob).toBeTruthy();
-  expect(blob.size).toBeGreaterThan(0);
-});
-```
-
-## Migration Guide
-
-### For Existing Platforms
-
-1. **Import CacheProxy**:
-   ```javascript
-   import { CacheProxy } from '@core/cache-proxy.js';
-   ```
-
-2. **Initialize**:
-   ```javascript
-   const cacheProxy = new CacheProxy(cacheManager);
-   await cacheProxy.init();
-   ```
-
-3. **Replace download code**:
-   ```javascript
-   // Old:
-   await cacheManager.downloadFile(file);
-
-   // New:
-   await cacheProxy.requestDownload([file]);
-   ```
-
-4. **Replace file retrieval**:
-   ```javascript
-   // Old:
-   const response = await cacheManager.getCachedResponse('media', id);
-   const blob = await response.blob();
-
-   // New:
-   const blob = await cacheProxy.getFile('media', id);
-   ```
-
-## Widget Data Download Flow
-
-Widget data for RSS feeds and dataset widgets is handled server-side. The CMS enriches
-the RequiredFiles response with absolute download URLs for widget data files. These are
-downloaded through the normal CacheProxy/Service Worker pipeline alongside regular media,
-rather than being fetched client-side by the player. This ensures widget data is available
-offline and benefits from the same parallel chunk download and caching infrastructure.
-
-Widget HTML served from cache uses a dynamic `<base>` tag pointing to the Service Worker
-scope path, ensuring relative URLs within widget HTML resolve correctly regardless of the
-player's deployment path.
-
-### For New Platforms
-
-Simply use CacheProxy from the start:
-
-```javascript
-class MyPlayer {
-  async init() {
-    // Initialize CacheProxy
-    this.cache = new CacheProxy(cacheManager);
-    await this.cache.init();
-
-    // Use unified API
-    const files = await this.xmds.requiredFiles();
-    await this.cache.requestDownload(files);
-
-    const blob = await this.cache.getFile('media', '123');
-  }
-}
-```
-
-## Future Enhancements
-
-### Planned Features
-
-1. **Smart Backend Switching**:
-   - Monitor Service Worker health
-   - Auto-switch if SW becomes unresponsive
-   - Fallback to direct cache on errors
-
-2. **Progress Tracking**:
-   ```javascript
-   proxy.on('download-progress', (progress) => {
-     console.log(`Downloaded ${progress.loaded}/${progress.total}`);
-   });
-   ```
-
-3. **Cache Invalidation**:
-   ```javascript
-   await proxy.invalidate('media', '123');
-   await proxy.invalidateAll();
-   ```
-
-4. **Prefetching**:
-   ```javascript
-   await proxy.prefetch(['media/1', 'layout/2']);
-   ```
-
-## Benefits
-
-### For Developers
-
-1. **Simpler Code**: 75% reduction in cache-related code
-2. **Automatic Optimization**: Best backend selected automatically
-3. **Platform Independence**: Same code works everywhere
-4. **Better Testing**: Mock backends for unit tests
-
-### For Users
-
-1. **Better Performance**: Service Worker when available
-2. **Better Compatibility**: Fallback when SW unavailable
-3. **Transparent**: No difference in functionality
-4. **Reliable**: Graceful degradation on errors
+Downloads run with configurable concurrency (default 6 on high-RAM devices).
 
 ## Summary
 
-CacheProxy provides a clean abstraction layer that:
-- ✅ Automatically selects best backend
-- ✅ Provides unified API across platforms
-- ✅ Enables non-blocking downloads with Service Worker
-- ✅ Gracefully falls back to direct cache
-- ✅ Simplifies platform-specific code
-- ✅ Makes testing easier
+- **StoreClient**: Pure REST, no SW dependency, works immediately
+- **DownloadClient**: SW postMessage, non-blocking background downloads
+- **ContentStore**: Filesystem storage, no Cache API anywhere
+- **Types**: media/, layout/, widget/, static/
 
-**Result**: Platform-independent cache code that just works.
+**Result**: Single storage backend (filesystem), two clean client interfaces, zero Cache API usage.

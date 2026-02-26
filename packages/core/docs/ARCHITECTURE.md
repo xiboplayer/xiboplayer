@@ -180,21 +180,21 @@ class XmdsClient {
 5. Executes commands on player
 ```
 
-#### cache.js - Download Manager
+#### Cache Package — StoreClient + DownloadClient
 
 **Responsibilities:**
-- Download media files from CMS
+- Download media files from CMS (via DownloadClient → Service Worker)
 - Verify checksums (MD5)
-- Store in Cache API
-- Manage cache size
+- Store in ContentStore (filesystem via proxy REST API)
+- Stale media detection and eviction (CacheAnalyzer)
 
-**Cache structure:**
+**ContentStore structure:**
 ```
-Cache: xibo-media-v1
-├── /cache/media/image123.jpg
-├── /cache/media/video456.mp4
-├── /cache/media/document789.pdf
-└── /cache/layout-html/42
+~/.config/xiboplayer/{electron,chromium}/content-store/
+├── media/12.bin             (images, videos)
+├── layout/472.bin           (XLF layout XML)
+├── widget/472/221/190.bin   (widget HTML)
+└── static/bundle.min.js.bin (widget resources)
 ```
 
 #### schedule.js - Schedule Interpreter
@@ -272,34 +272,24 @@ HTML:
 }
 ```
 
-### Service Worker (sw.js)
+### Service Worker (sw-main.js)
 
 **Responsibilities:**
-- Cache all static assets (HTML, JS, CSS)
-- Cache media files
+- Intercept fetch requests and route to proxy's ContentStore
+- Manage background downloads via DownloadManager
+- Handle widget HTML and static resource serving
 - Enable offline operation
-- Update cache on new versions
 
-**Caching strategy:**
-```javascript
-// Static assets: Cache-first
-self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('/assets/')) {
-    event.respondWith(
-      caches.match(event.request)
-        .then(response => response || fetch(event.request))
-    );
-  }
-});
-
-// HTML pages: Network-first (for updates)
-if (event.request.url.match(/\\.html$/)) {
-  event.respondWith(
-    fetch(event.request)
-      .catch(() => caches.match(event.request))
-  );
-}
+**Request routing:**
 ```
+fetch('/player/pwa/cache/media/123')
+  → Service Worker intercepts
+  → Routes to proxy: GET /store/media/123
+  → Proxy serves from ContentStore (filesystem)
+  → Response returned to client
+```
+
+Static pages (index.html, setup.html) pass through to Express.
 
 ## Platform Wrappers
 
@@ -529,9 +519,9 @@ JavaScript sequencer:
 - Accessible to same-origin JavaScript
 - Not encrypted (CMS key exposed to anyone with file system access)
 
-**Cache API:**
-- Stores downloaded media
-- Same-origin only
+**ContentStore:**
+- Stores downloaded media on filesystem
+- Local to the device
 - Not encrypted
 
 **Recommendations for production:**
@@ -568,7 +558,7 @@ if (media.type === 'pdf') {
 
 **Media files:**
 - Pre-fetch on collection cycle
-- Persist in Cache API
+- Persist in ContentStore (filesystem)
 - No network requests during playback
 
 ### Memory Management

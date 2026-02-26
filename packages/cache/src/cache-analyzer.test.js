@@ -2,7 +2,7 @@
  * CacheAnalyzer Tests
  *
  * Tests for stale media detection, storage health reporting, and eviction logic.
- * Mock follows the CacheProxy interface (getAllFiles, deleteFiles).
+ * Mock follows the StoreClient interface (list, remove).
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -13,12 +13,12 @@ describe('CacheAnalyzer', () => {
   let mockCache;
 
   beforeEach(() => {
-    // Mock CacheProxy with in-memory file store
+    // Mock StoreClient with in-memory file store
     const files = new Map();
 
     mockCache = {
-      getAllFiles: vi.fn(async () => [...files.values()]),
-      deleteFiles: vi.fn(async (filesToDelete) => ({
+      list: vi.fn(async () => [...files.values()]),
+      remove: vi.fn(async (filesToDelete) => ({
         deleted: filesToDelete.length,
         total: filesToDelete.length,
       })),
@@ -214,8 +214,8 @@ describe('CacheAnalyzer', () => {
       expect(report.evicted.length).toBeGreaterThan(0);
       // Should evict oldest first
       expect(report.evicted[0].id).toBe('old');
-      // deleteFiles should be called on the cache proxy
-      expect(mockCache.deleteFiles).toHaveBeenCalled();
+      // remove should be called on the store client
+      expect(mockCache.remove).toHaveBeenCalled();
 
       vi.unstubAllGlobals();
     });

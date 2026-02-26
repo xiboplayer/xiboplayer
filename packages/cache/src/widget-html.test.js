@@ -9,8 +9,8 @@
  *   1. CMS getResource returns HTML with signed URLs for bundle.min.js, fonts.css
  *   2. SW download manager may cache this raw HTML before the main thread processes it
  *   3. cacheWidgetHtml must rewrite CMS URLs → /cache/static/ and fetch the resources
- *   4. Widget iframe loads, SW serves bundle.min.js and fonts.css from static cache
- *   5. bundle.min.js runs getWidgetData → $.ajax("193.json") → SW serves from media cache
+ *   4. Widget iframe loads, SW serves bundle.min.js and fonts.css from ContentStore
+ *   5. bundle.min.js runs getWidgetData → $.ajax("193.json") → SW serves from store
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -23,10 +23,6 @@ const SIGNED_PARAMS = 'displayId=152&type=P&itemId=1&X-Amz-Algorithm=AWS4-HMAC-S
 
 /**
  * Simulates actual CMS RSS ticker widget HTML (layout 472, region 223, widget 193).
- * The CMS generates this via getResource — it includes:
- * - Signed URLs for bundle.min.js and fonts.css (must be rewritten)
- * - Relative data URL "193.json" resolved via <base> tag
- * - Interactive Control (xiboIC) with hostAddress pointing at CMS
  */
 function makeRssTickerHtml() {
   return `<!DOCTYPE html>
@@ -79,49 +75,60 @@ function makeClockWidgetHtml() {
 </html>`;
 }
 
-// --- Mock Cache API ---
+// --- Mock: track PUT /store/... calls via fetch() ---
 
-const cacheStore = new Map();
-const mockCache = {
-  put: vi.fn(async (url, response) => {
-    const key = typeof url === 'string' ? url : url.toString();
-    const text = await response.clone().text();
-    cacheStore.set(key, text);
-  }),
-  match: vi.fn(async (key) => {
-    const url = typeof key === 'string' ? key : (key.url || key.toString());
-    const text = cacheStore.get(url);
-    return text ? new Response(text) : undefined;
-  }),
-};
-
+/** Map of storeKey → body text, populated by the fetch mock */
+const storeContents = new Map();
 const fetchedUrls = [];
-global.fetch = vi.fn(async (url) => {
-  fetchedUrls.push(url);
-  if (url.includes('bundle.min.js')) {
-    return new Response('var xiboIC = { init: function(){} };', { status: 200 });
-  }
-  if (url.includes('fonts.css')) {
-    return new Response(`@font-face { font-family: "Poppins"; src: url("${CMS_BASE}/pwa/file?file=Poppins-Regular.ttf&${SIGNED_PARAMS}"); }`, { status: 200 });
-  }
-  if (url.includes('.ttf') || url.includes('.woff')) {
-    return new Response(new Blob([new Uint8Array(100)]), { status: 200 });
-  }
-  return new Response('', { status: 404 });
-});
 
-global.caches = {
-  open: vi.fn(async () => mockCache),
-};
+function createFetchMock() {
+  return vi.fn(async (url, opts) => {
+    fetchedUrls.push(url);
+
+    // PUT /store/... — store content
+    if (opts?.method === 'PUT' && url.startsWith('/store/')) {
+      const body = typeof opts.body === 'string' ? opts.body : await opts.body?.text?.() || '';
+      // Use full URL path as key (e.g. /store/widget/472/223/193)
+      storeContents.set(url, body);
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+
+    // HEAD /store/... — check existence
+    if (opts?.method === 'HEAD' && url.startsWith('/store/')) {
+      return new Response(null, { status: 404 }); // nothing pre-stored
+    }
+
+    // Proxy fetch for CMS resources
+    if (url.includes('bundle.min.js')) {
+      return new Response('var xiboIC = { init: function(){} };', { status: 200 });
+    }
+    if (url.includes('fonts.css')) {
+      return new Response(`@font-face { font-family: "Poppins"; src: url("${CMS_BASE}/pwa/file?file=Poppins-Regular.ttf&${SIGNED_PARAMS}"); }`, { status: 200 });
+    }
+    if (url.includes('.ttf') || url.includes('.woff')) {
+      return new Response(new Blob([new Uint8Array(100)]), { status: 200 });
+    }
+    return new Response('', { status: 404 });
+  });
+}
 
 // --- Tests ---
 
 describe('cacheWidgetHtml', () => {
   beforeEach(() => {
-    cacheStore.clear();
-    vi.clearAllMocks();
+    storeContents.clear();
     fetchedUrls.length = 0;
+    vi.clearAllMocks();
+    global.fetch = createFetchMock();
   });
+
+  // Helper: get stored widget HTML (first widget entry)
+  function getStoredWidget() {
+    for (const [key, value] of storeContents) {
+      if (key.startsWith('/store/widget/')) return value;
+    }
+    return undefined;
+  }
 
   // --- Base tag injection ---
 
@@ -130,7 +137,7 @@ describe('cacheWidgetHtml', () => {
       const html = '<html><head><title>Widget</title></head><body>content</body></html>';
       await cacheWidgetHtml('472', '223', '193', html);
 
-      const stored = cacheStore.values().next().value;
+      const stored = getStoredWidget();
       expect(stored).toContain('<base href=');
       expect(stored).toContain('/cache/media/">');
     });
@@ -139,7 +146,7 @@ describe('cacheWidgetHtml', () => {
       const html = '<div>no head tag</div>';
       await cacheWidgetHtml('472', '223', '193', html);
 
-      const stored = cacheStore.values().next().value;
+      const stored = getStoredWidget();
       expect(stored).toContain('<base href=');
     });
   });
@@ -150,7 +157,7 @@ describe('cacheWidgetHtml', () => {
     it('rewrites bundle.min.js and fonts.css signed URLs', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
-      const stored = cacheStore.values().next().value;
+      const stored = getStoredWidget();
       expect(stored).not.toContain(CMS_BASE);
       expect(stored).toContain('/cache/static/bundle.min.js');
       expect(stored).toContain('/cache/static/fonts.css');
@@ -159,7 +166,7 @@ describe('cacheWidgetHtml', () => {
     it('preserves the data URL (193.json) for SW interception', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
-      const stored = cacheStore.values().next().value;
+      const stored = getStoredWidget();
       // 193.json is relative — resolved by <base> tag, not rewritten
       expect(stored).toContain('"193.json"');
     });
@@ -167,7 +174,7 @@ describe('cacheWidgetHtml', () => {
     it('rewrites xiboIC hostAddress from CMS to local path', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
-      const stored = cacheStore.values().next().value;
+      const stored = getStoredWidget();
       expect(stored).not.toContain(`hostAddress: "${CMS_BASE}"`);
       expect(stored).toContain('/ic"');
     });
@@ -181,11 +188,11 @@ describe('cacheWidgetHtml', () => {
       expect(fontsFetched).toBe(true);
     });
 
-    it('stores processed HTML at correct cache key', async () => {
+    it('stores processed HTML at correct store key', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
-      const keys = [...cacheStore.keys()];
-      const widgetKey = keys.find(k => k.includes('/cache/widget/472/223/193'));
+      const keys = [...storeContents.keys()];
+      const widgetKey = keys.find(k => k.includes('/store/widget/472/223/193'));
       expect(widgetKey).toBeTruthy();
     });
 
@@ -204,18 +211,18 @@ describe('cacheWidgetHtml', () => {
     it('rewrites CMS URLs and preserves relative PDF path', async () => {
       await cacheWidgetHtml('472', '221', '190', makePdfWidgetHtml());
 
-      const stored = cacheStore.values().next().value;
+      const stored = getStoredWidget();
       expect(stored).not.toContain(CMS_BASE);
       expect(stored).toContain('/cache/static/bundle.min.js');
       // PDF data attribute "11.pdf" is relative — resolved by <base> tag
       expect(stored).toContain('"11.pdf"');
     });
 
-    it('stores at correct widget cache key with layout/region/media IDs', async () => {
+    it('stores at correct widget store key with layout/region/media IDs', async () => {
       await cacheWidgetHtml('472', '221', '190', makePdfWidgetHtml());
 
-      const keys = [...cacheStore.keys()];
-      expect(keys.some(k => k.includes('/cache/widget/472/221/190'))).toBe(true);
+      const keys = [...storeContents.keys()];
+      expect(keys.some(k => k.includes('/store/widget/472/221/190'))).toBe(true);
     });
   });
 
@@ -225,7 +232,7 @@ describe('cacheWidgetHtml', () => {
     it('rewrites xmds.php signed URLs to local cache paths', async () => {
       await cacheWidgetHtml('1', '1', '1', makeClockWidgetHtml());
 
-      const stored = cacheStore.values().next().value;
+      const stored = getStoredWidget();
       expect(stored).not.toContain('xmds.php');
       expect(stored).toContain('/cache/static/bundle.min.js');
       expect(stored).toContain('/cache/static/fonts.css');
@@ -237,10 +244,11 @@ describe('cacheWidgetHtml', () => {
   describe('idempotency', () => {
     it('does not add duplicate <base> tags on re-processing', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
-      const firstPass = cacheStore.values().next().value;
+      const firstPass = getStoredWidget();
 
+      storeContents.clear();
       await cacheWidgetHtml('472', '223', '193', firstPass);
-      const secondPass = cacheStore.values().next().value;
+      const secondPass = getStoredWidget();
 
       expect(secondPass).toBe(firstPass);
     });
@@ -248,10 +256,11 @@ describe('cacheWidgetHtml', () => {
     it('does not add duplicate CSS fix tags on re-processing', async () => {
       const html = '<html><head></head><body></body></html>';
       await cacheWidgetHtml('472', '223', '193', html);
-      const firstPass = cacheStore.values().next().value;
+      const firstPass = getStoredWidget();
 
+      storeContents.clear();
       await cacheWidgetHtml('472', '223', '193', firstPass);
-      const secondPass = cacheStore.values().next().value;
+      const secondPass = getStoredWidget();
 
       const baseCount = (secondPass.match(/<base /g) || []).length;
       const styleCount = (secondPass.match(/object-position:center center/g) || []).length;
@@ -270,7 +279,7 @@ describe('cacheWidgetHtml', () => {
       // Main thread finds it in cache and re-processes
       await cacheWidgetHtml('472', '223', '193', rawCmsHtml);
 
-      const stored = cacheStore.values().next().value;
+      const stored = getStoredWidget();
       // CMS URLs must be rewritten even though HTML came from cache
       expect(stored).not.toContain(CMS_BASE);
       expect(stored).toContain('/cache/static/bundle.min.js');
@@ -283,15 +292,15 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '221', '190', makePdfWidgetHtml());
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
-      const keys = [...cacheStore.keys()];
-      const pdfKey = keys.find(k => k.includes('/cache/widget/472/221/190'));
-      const rssKey = keys.find(k => k.includes('/cache/widget/472/223/193'));
+      const keys = [...storeContents.keys()];
+      const pdfKey = keys.find(k => k.includes('/store/widget/472/221/190'));
+      const rssKey = keys.find(k => k.includes('/store/widget/472/223/193'));
       expect(pdfKey).toBeTruthy();
       expect(rssKey).toBeTruthy();
 
       // Both should have CMS URLs rewritten
-      expect(cacheStore.get(pdfKey)).not.toContain(CMS_BASE);
-      expect(cacheStore.get(rssKey)).not.toContain(CMS_BASE);
+      expect(storeContents.get(pdfKey)).not.toContain(CMS_BASE);
+      expect(storeContents.get(rssKey)).not.toContain(CMS_BASE);
     });
   });
 });

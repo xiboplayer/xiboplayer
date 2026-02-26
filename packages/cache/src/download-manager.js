@@ -40,6 +40,7 @@ const RETRY_DELAY_MS = 500; // Fast: 500ms, 1s, 1.5s → total ~3s
 const GETDATA_MAX_RETRIES = 4;
 const GETDATA_RETRY_DELAYS = [15_000, 30_000, 60_000, 120_000]; // 15s, 30s, 60s, 120s
 const GETDATA_REENQUEUE_DELAY_MS = 60_000; // Re-add to queue after 60s if all retries fail
+const GETDATA_MAX_REENQUEUES = 5; // Max times a getData can be re-enqueued before permanent failure
 const URGENT_CONCURRENCY = 2; // Slots when urgent chunk is active (bandwidth focus)
 const FETCH_TIMEOUT_MS = 600_000; // 10 minutes — 100MB chunk at ~2 Mbps
 const HEAD_TIMEOUT_MS = 15_000; // 15 seconds for HEAD requests
@@ -108,7 +109,7 @@ export function isUrlExpired(url, graceSeconds = 30) {
  * the proxy server (Chromium kiosk or Electron).
  * Detection: SW/window on localhost (any port) = proxy mode.
  */
-export function rewriteUrlForProxy(url) {
+export function toProxyUrl(url) {
   if (!url.startsWith('http')) return url;
   const loc = typeof self !== 'undefined' ? self.location : undefined;
   if (!loc || loc.hostname !== 'localhost') return url;
@@ -142,7 +143,24 @@ export class DownloadTask {
     if (isUrlExpired(url)) {
       throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
     }
-    return rewriteUrlForProxy(url);
+    let proxyUrl = toProxyUrl(url);
+
+    // Append store key params so the proxy can save to ContentStore
+    if (proxyUrl.startsWith('/file-proxy')) {
+      const storeKey = `${this.fileInfo.type || 'media'}/${this.fileInfo.id}`;
+      proxyUrl += `&storeKey=${encodeURIComponent(storeKey)}`;
+      if (this.chunkIndex != null) {
+        proxyUrl += `&chunkIndex=${this.chunkIndex}`;
+        if (this._parentFile) {
+          proxyUrl += `&numChunks=${this._parentFile.totalChunks}`;
+          proxyUrl += `&chunkSize=${this._parentFile.options.chunkSize || 104857600}`;
+        }
+      }
+      if (this.fileInfo.md5) {
+        proxyUrl += `&md5=${encodeURIComponent(this.fileInfo.md5)}`;
+      }
+    }
+    return proxyUrl;
   }
 
   async start() {
@@ -233,7 +251,17 @@ export class FileDownload {
     if (isUrlExpired(url)) {
       throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
     }
-    return rewriteUrlForProxy(url);
+    let proxyUrl = toProxyUrl(url);
+
+    // Append store key for ContentStore (same as DownloadTask)
+    if (proxyUrl.startsWith('/file-proxy')) {
+      const storeKey = `${this.fileInfo.type || 'media'}/${this.fileInfo.id}`;
+      proxyUrl += `&storeKey=${encodeURIComponent(storeKey)}`;
+      if (this.fileInfo.md5) {
+        proxyUrl += `&md5=${encodeURIComponent(this.fileInfo.md5)}`;
+      }
+    }
+    return proxyUrl;
   }
 
   wait() {
@@ -578,6 +606,9 @@ export class DownloadQueue {
 
     // When paused, processQueue() is a no-op (used during barrier setup)
     this.paused = false;
+
+    // Track getData re-enqueue timers so clear() can cancel them
+    this._reenqueueTimers = new Set();
   }
 
   static stableKey(fileInfo) {
@@ -875,14 +906,23 @@ export class DownloadQueue {
         // getData (widget data): defer re-enqueue instead of permanent failure.
         // CMS "cache not ready" resolves when the XTR task runs (30-120s).
         if (task.isGetData) {
-          log.warn(`[DownloadQueue] getData ${key} failed all retries, scheduling re-enqueue in ${GETDATA_REENQUEUE_DELAY_MS / 1000}s`);
-          setTimeout(() => {
+          task._reenqueueCount = (task._reenqueueCount || 0) + 1;
+          if (task._reenqueueCount > GETDATA_MAX_REENQUEUES) {
+            log.error(`[DownloadQueue] getData ${key} exceeded ${GETDATA_MAX_REENQUEUES} re-enqueues, failing permanently`);
+            this.processQueue();
+            task._parentFile.onTaskFailed(task, err);
+            return;
+          }
+          log.warn(`[DownloadQueue] getData ${key} failed all retries (attempt ${task._reenqueueCount}/${GETDATA_MAX_REENQUEUES}), scheduling re-enqueue in ${GETDATA_REENQUEUE_DELAY_MS / 1000}s`);
+          const timerId = setTimeout(() => {
+            this._reenqueueTimers.delete(timerId);
             task.state = 'pending';
             task._parentFile.state = 'downloading';
             this.queue.push(task);
             log.info(`[DownloadQueue] getData ${key} re-enqueued for retry`);
             this.processQueue();
           }, GETDATA_REENQUEUE_DELAY_MS);
+          this._reenqueueTimers.add(timerId);
           this.processQueue();
           return;
         }
@@ -941,6 +981,9 @@ export class DownloadQueue {
     this.running = 0;
     this._prepareQueue = [];
     this._preparingCount = 0;
+    // Cancel any pending getData re-enqueue timers
+    for (const id of this._reenqueueTimers) clearTimeout(id);
+    this._reenqueueTimers.clear();
   }
 }
 

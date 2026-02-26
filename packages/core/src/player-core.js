@@ -1607,7 +1607,7 @@ export class PlayerCore extends EventEmitter {
     for (const file of allFiles) {
       const layoutId = parseLayoutFile(file);
       try {
-        const xlfXml = await this.cache.getFile('layout', layoutId);
+        const xlfXml = await this.cache.get('layout', layoutId);
         if (xlfXml) {
           const { duration, isDynamic } = parseLayoutDuration(xlfXml);
           // Only set if no runtime-corrected value exists yet.

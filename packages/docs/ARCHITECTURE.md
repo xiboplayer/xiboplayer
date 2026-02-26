@@ -7,7 +7,7 @@ Technical architecture of the Xibo Player SDK.
 Build a **platform-independent, modular player** that:
 - Separates core logic from platform-specific code
 - Works across PWA, Electron, Android WebView, and webOS Cordova
-- Uses browser-native APIs (Cache API, IndexedDB, Service Worker, Web Animations)
+- Uses browser-native APIs (IndexedDB, Service Worker, Web Animations) + filesystem ContentStore via proxy
 - Avoids framework bloat (no React, Vue, or Angular)
 - Matches or exceeds upstream player performance
 - Supports both SOAP and REST CMS transports
@@ -40,17 +40,17 @@ Build a **platform-independent, modular player** that:
         ├───────────────────────────┬───────────────────────┬──────────────────┐
         │                           │                       │                  │
 ┌───────┴──────────┐  ┌────────────┴────────┐  ┌──────────┴──────┐  ┌────────┴───────┐
-│  XmdsClient      │  │  ScheduleManager    │  │  CacheManager   │  │  StatsCollector │
-│  (371 lines)     │  │  (346 lines)        │  │  (729 lines)    │  │  (633 lines)    │
-│  + RestClient    │  │  + Interrupts       │  │  + CacheProxy   │  │  + LogReporter  │
-│  (332 lines)     │  │  (298 lines)        │  │  (463 lines)    │  │  (541 lines)    │
-│                  │  │  + Overlays         │  │  + DlManager    │  │                 │
-│ SOAP + REST      │  │  (155 lines)        │  │  (424 lines)    │  │ Proof-of-play   │
-│ Dual transport   │  │                     │  │                 │  │ Fault reporting  │
-│ All 10 methods   │  │ Dayparting          │  │ Parallel chunks │  │ Log submission   │
+│  XmdsClient      │  │  ScheduleManager    │  │  StoreClient    │  │  StatsCollector │
+│  (371 lines)     │  │  (346 lines)        │  │  + DlClient     │  │  (633 lines)    │
+│  + RestClient    │  │  + Interrupts       │  │  + DlManager    │  │  + LogReporter  │
+│  (332 lines)     │  │  (298 lines)        │  │  (424 lines)    │  │  (541 lines)    │
+│                  │  │  + Overlays         │  │                 │  │                 │
+│ SOAP + REST      │  │  (155 lines)        │  │                 │  │ Proof-of-play   │
+│ Dual transport   │  │                     │  │  REST → proxy   │  │ Fault reporting  │
+│ All 10 methods   │  │ Dayparting          │  │ ContentStore    │  │ Log submission   │
 │ ETag caching     │  │ maxPlaysPerHour     │  │ MD5 validation  │  │ Aggregation     │
-│ CRC32 skip       │  │ Campaigns           │  │ Font rewriting  │  │ IndexedDB       │
-│                  │  │ ShareOfVoice        │  │ Dependants      │  │                 │
+│ CRC32 skip       │  │ Campaigns           │  │ Parallel dl     │  │ IndexedDB       │
+│                  │  │ ShareOfVoice        │  │ MD5 validation  │  │                 │
 └──────────────────┘  └─────────────────────┘  └─────────────────┘  └─────────────────┘
         │
         ├──────────────────────┬──────────────────────┐
@@ -75,8 +75,8 @@ Build a **platform-independent, modular player** that:
 | `@xiboplayer/core` | `state.js` | 54 | Centralized player state with EventEmitter |
 | `@xiboplayer/core` | `data-connectors.js` | 198 | DataConnectorManager with polling |
 | `@xiboplayer/renderer` | `renderer-lite.js` | 2,119 | XLF renderer: element reuse, transitions, HLS, PDF, IC server |
-| `@xiboplayer/cache` | `cache.js` | 729 | CacheManager: parallel chunks, MD5, font rewriting |
-| `@xiboplayer/cache` | `cache-proxy.js` | 463 | CacheProxy: delegates to CacheManager or SW |
+| `@xiboplayer/cache` | `store-client.js` | — | StoreClient: REST client for ContentStore (has/get/put/remove/list) |
+| `@xiboplayer/cache` | `download-client.js` | — | DownloadClient: SW postMessage client for background downloads |
 | `@xiboplayer/cache` | `download-manager.js` | 424 | DownloadManager: 4-chunk parallel, dynamic sizing |
 | `@xiboplayer/schedule` | `schedule.js` | 346 | ScheduleManager: dayparting, campaigns, maxPlaysPerHour |
 | `@xiboplayer/schedule` | `interrupts.js` | 298 | InterruptScheduler: share-of-voice interleaving |
@@ -183,28 +183,34 @@ Instead of running a local HTTP server (like Arexibo's tiny_http on port 9696), 
 ```
 Network down:
   -> XMDS calls fail -> PlayerCore uses IndexedDB-cached schedule/settings/requiredFiles
-  -> Media requests -> Service Worker serves from Cache API
+  -> Media requests -> Service Worker routes to proxy ContentStore (filesystem)
   -> Stats/logs -> Queued in IndexedDB, submitted when network returns
   -> Player continues rendering with last known schedule
 ```
 
 ## Storage Architecture
 
-### Cache API (Binary Files)
+### ContentStore (Filesystem via Proxy)
 
-Served by the Service Worker for fetch-intercepted access:
+All binary content is stored on the filesystem via the proxy's ContentStore.
+The Service Worker intercepts fetch requests and routes them to `/store/*` REST endpoints.
 
 ```
-Cache: xibo-media
-├── /media/{id}              -> Media files (images, videos)
-├── /widget/{widgetId}       -> Widget HTML (getWidgetHtml responses)
-├── /font/{fontFile}         -> Font files (referenced by CSS)
-└── /static/{path}           -> Static player assets
-
-Cache: xibo-static
-├── /player/pwa/index.html   -> Player shell
-└── /player/pwa/assets/*     -> JS/CSS bundles
+~/.config/xiboplayer/{electron,chromium}/content-store/
+├── media/
+│   ├── 12.bin              -> Media files (images, videos)
+│   └── 12.meta.json        -> { contentType, size, cachedAt, md5 }
+├── layout/
+│   └── 472.bin             -> XLF layout XML
+├── widget/
+│   └── 472/221/190.bin     -> Widget HTML
+└── static/
+    ├── bundle.min.js.bin   -> Widget JS bundle
+    ├── fonts.css.bin        -> Font CSS
+    └── Aileron-Heavy.otf.bin -> Font files
 ```
+
+No Cache API is used anywhere. Zero `caches.open()` calls.
 
 ### IndexedDB (Structured Data)
 
@@ -240,7 +246,7 @@ Database: xibo-player
 | Module system | ES modules | Native browser support |
 | HTTP client | `fetch()` + fetchWithRetry wrapper | Built-in, promise-based, configurable retry |
 | XML parsing | `DOMParser` | Built-in, namespace-aware |
-| Storage | Cache API + IndexedDB | Built-in PWA APIs, offline-first |
+| Storage | ContentStore (filesystem via proxy) + IndexedDB | Durable filesystem storage, offline-first |
 | Offline | Service Worker | Built-in, intercepts all fetches |
 | MD5 hashing | spark-md5 | Tiny (4KB), ArrayBuffer support |
 | PDF rendering | PDF.js (lazy-loaded) | Industry standard, canvas-based |
@@ -298,8 +304,8 @@ See `packages/renderer/docs/RENDERER_COMPARISON.md` for detailed renderer compar
 - **RSA keys**: Generated via Web Crypto API (RSA-1024), sent in RegisterDisplay, rotatable via XMR rekey command
 
 ### Storage Security
-- All storage (Cache API, IndexedDB, localStorage) is same-origin scoped
-- Service Worker only caches same-origin requests
+- All storage (ContentStore filesystem, IndexedDB, localStorage) is local to the device
+- Service Worker only routes same-origin requests to the proxy
 - No external requests except to configured CMS and XMR addresses
 
 ### Content Isolation
@@ -320,7 +326,7 @@ See `packages/renderer/docs/RENDERER_COMPARISON.md` for detailed renderer compar
 
 ### Required APIs
 - ES2020 (async/await, optional chaining, nullish coalescing)
-- Cache API, IndexedDB, Service Workers
+- IndexedDB, Service Workers
 - Web Animations API
 - Screen Wake Lock API (optional, for kiosk mode)
 - fetch() with AbortController
@@ -334,7 +340,7 @@ Direct browser access. Install as PWA via "Add to Home Screen". Full offline cap
 Wrap with Electron shell. PlayerCore + RendererLite reused; platform layer provides native screenshot (webContents.capturePage), file system cache, and native kiosk mode.
 
 ### Android WebView
-Load in Android WebView with JavaScript and DOM storage enabled. Same Service Worker and Cache API. Platform layer provides Android-specific wake lock and screenshot.
+Load in Android WebView with JavaScript and DOM storage enabled. Same Service Worker and ContentStore architecture. Platform layer provides Android-specific wake lock and screenshot.
 
 ### webOS Cordova
 Load in Cordova WebView. XMR service runs separately as Node.js process (ZeroMQ bridge). Platform layer handles webOS-specific display management.

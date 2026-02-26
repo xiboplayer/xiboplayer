@@ -10,30 +10,30 @@ The Xibo PWA player uses a standalone Service Worker that handles all file downl
 
 ### Core Components
 
-The Service Worker consists of 5 main classes:
+The Service Worker consists of 4 main classes (CacheManager was removed — all storage goes through the proxy's ContentStore):
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Service Worker                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │DownloadQueue │  │CacheManager  │  │MessageHandler│  │
-│  │- concurrency │  │- Cache API   │  │- postMessage │  │
-│  │- queue mgmt  │  │- get/put/del │  │- commands    │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-│         │                  │                   │         │
-│         ▼                  ▼                   ▼         │
+│  ┌──────────────┐  ┌──────────────┐                     │
+│  │DownloadQueue │  │MessageHandler│                     │
+│  │- concurrency │  │- postMessage │                     │
+│  │- queue mgmt  │  │- commands    │                     │
+│  └──────────────┘  └──────────────┘                     │
+│         │                   │                            │
+│         ▼                   ▼                            │
 │  ┌──────────────┐  ┌──────────────────────────────────┐ │
 │  │DownloadTask  │  │      RequestHandler              │ │
 │  │- chunks      │  │      - fetch events              │ │
-│  │- MD5 verify  │  │      - serve from cache          │ │
-│  │- waiters     │  │      - wait for downloads        │ │
+│  │- MD5 verify  │  │      - route to /store/*         │ │
+│  │- PUT /store  │  │      - wait for downloads        │ │
 │  └──────────────┘  └──────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
          │                           │
          ▼                           ▼
     ┌────────┐                ┌──────────┐
-    │  CMS   │                │  Client  │
-    │Network │                │(main.ts) │
+    │  CMS   │                │  Proxy   │
+    │Network │                │/store/*  │
     └────────┘                └──────────┘
 ```
 
@@ -85,35 +85,29 @@ const blob = await task.wait();  // Resolves when download completes
 - Files < 100MB: Single request
 - Files > 100MB: 50MB chunks, 4 concurrent
 
-### Class 3: CacheManager
+### ContentStore (Proxy)
 
-Wraps the Cache API with type-aware cache keys.
+All storage goes through the proxy's ContentStore via REST endpoints. No Cache API is used.
 
-**Purpose**: Manages the browser's Cache API for storing downloaded files.
-
-**Key Features**:
-- Type-aware cache keys (`/cache/media/5` vs `/cache/layout/5`)
-- Simple get/put/delete interface
-- Automatic cache initialization
-
-**Cache Key Format**:
+**Store Key Format**:
 ```
-/cache/{type}/{id}
+/store/{type}/{id}
 
 Examples:
-- /cache/media/123     (media file ID 123)
-- /cache/layout/456    (layout file ID 456)
-- /cache/widget/1/2/3  (widget HTML for layout 1, region 2, media 3)
+- /store/media/123     (media file ID 123)
+- /store/layout/456    (layout file ID 456)
+- /store/widget/1/2/3  (widget HTML for layout 1, region 2, media 3)
+- /store/static/bundle.min.js  (widget resource)
 ```
 
-**Methods**:
-- `init()` - Initialize cache
-- `get(cacheKey)` - Get cached file (returns Response or null)
-- `put(cacheKey, blob, contentType)` - Store file in cache
-- `delete(cacheKey)` - Delete file from cache
-- `clear()` - Clear all cached files
+**REST Endpoints**:
+- `GET /store/:type/:id` — serve file (Range support)
+- `HEAD /store/:type/:id` — existence + size check
+- `PUT /store/:type/:id` — store file
+- `POST /store/delete` — delete files
+- `GET /store/list` — list all cached files
 
-### Class 4: RequestHandler
+### Class 3: RequestHandler
 
 Handles fetch events from the browser.
 
@@ -124,16 +118,16 @@ Handles fetch events from the browser.
 fetch('/player/cache/media/123')
          │
          ▼
-  ┌─────────────────┐
-  │ Is it cached?   │
-  └─────────────────┘
+  ┌──────────────────────┐
+  │ Fetch from /store/*  │
+  └──────────────────────┘
          │
-    Yes  │  No
+   200   │  404
     ┌────┴────┐
     ▼         ▼
 ┌────────┐  ┌─────────────────────┐
 │ Serve  │  │ Is it downloading?  │
-│ cache  │  └─────────────────────┘
+│  file  │  └─────────────────────┘
 └────────┘         │
              Yes   │   No
             ┌──────┴────────┐
@@ -157,7 +151,7 @@ fetch('/player/cache/media/123')
 - Media files (/player/cache/media/*)
 - Layout files (/player/cache/layout/*)
 
-### Class 5: MessageHandler
+### Class 4: MessageHandler
 
 Handles postMessage communication from client.
 
@@ -323,8 +317,8 @@ async downloadFile(fileInfo) {
 
 ### Memory Efficiency
 
-- Chunks reassembled before caching (not kept in memory)
-- Cache API handles storage (no RAM bloat)
+- Chunks streamed to ContentStore via PUT (not kept in memory)
+- Filesystem handles storage (no RAM bloat)
 - Blob URLs created on-demand (not upfront)
 
 ## Testing
@@ -332,11 +326,11 @@ async downloadFile(fileInfo) {
 ### Manual Testing
 
 1. **Clear cache**:
-   ```javascript
-   // Browser console
-   await caches.delete('xibo-media-v1');
-   await caches.delete('xibo-static-v1');
-   localStorage.clear();
+   ```bash
+   # Clear ContentStore (Electron)
+   rm -rf ~/.config/xiboplayer/electron/content-store/
+   # Clear ContentStore (Chromium)
+   rm -rf ~/.config/xiboplayer/chromium/content-store/
    ```
 
 2. **Reload player**:
@@ -466,7 +460,7 @@ const CONCURRENT_CHUNKS = 4;  // Parallel chunks per file
 ## Related Documentation
 
 - `../../renderer/docs/PERFORMANCE_OPTIMIZATIONS.md` - Performance details
-- `../../cache/src/cache.js` - Fallback cache manager
+- `../../cache/docs/CACHE_PROXY_ARCHITECTURE.md` - StoreClient + DownloadClient architecture
 
 ## Version History
 
@@ -481,11 +475,11 @@ const CONCURRENT_CHUNKS = 4;  // Parallel chunks per file
 
 The standalone Service Worker architecture provides:
 
-✅ **No HTTP 202 deadlocks** - Service Worker waits internally, returns actual files
-✅ **Parallel downloads** - 4 concurrent files, 4 concurrent chunks per file
-✅ **Clean separation** - Player client doesn't know about download details
-✅ **Backward compatible** - Falls back to cache.js if Service Worker not active
-✅ **XLR compatible** - Handles XMDS media requests
-✅ **Video seeking** - Supports Range requests for scrubbing
+- **No HTTP 202 deadlocks** — Service Worker waits internally, returns actual files
+- **Parallel downloads** — configurable concurrent files (6 on high-RAM devices)
+- **Clean separation** — StoreClient (REST) for storage, DownloadClient (postMessage) for downloads
+- **Durable storage** — ContentStore on filesystem, survives browser cache eviction
+- **XLR compatible** — Handles XMDS media requests
+- **Video seeking** — Supports Range requests via proxy
 
-**Result**: 100% feature parity with existing implementation, 4-10x faster downloads, no deadlocks!
+**Result**: Single storage backend (filesystem), no Cache API, no deadlocks.
