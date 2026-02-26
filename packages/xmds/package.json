@@ -6,7 +6,9 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./xmds": "./src/xmds.js"
+    "./xmds-client": "./src/xmds-client.js",
+    "./rest-client": "./src/rest-client.js",
+    "./schedule-parser": "./src/schedule-parser.js"
   },
   "scripts": {
     "test": "vitest run",

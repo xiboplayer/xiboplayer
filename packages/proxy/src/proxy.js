@@ -10,6 +10,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'node:stream';
 import express from 'express';
 import cors from 'cors';
 import { ContentStore } from './content-store.js';
@@ -243,6 +244,9 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
   }
 
   // ─── File Download Proxy ───────────────────────────────────────────
+  // Streams CMS responses to disk + client simultaneously — zero buffering.
+  // Previous version used response.arrayBuffer() which held entire chunks
+  // in memory, causing ~3 GB heap growth on large media downloads.
   app.get('/file-proxy', async (req, res) => {
     try {
       const cmsUrl = req.query.cms;
@@ -265,49 +269,94 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
           res.setHeader(key, value);
         }
       });
+      // Forward Content-Length for streaming (skipped by SKIP_HEADERS)
+      const upstreamLength = response.headers.get('content-length');
+      if (upstreamLength) res.setHeader('Content-Length', upstreamLength);
       res.setHeader('Access-Control-Allow-Origin', '*');
-      const buffer = await response.arrayBuffer();
 
-      // Save to store if storeKey is provided
-      if (store && req.query.storeKey) {
-        try {
-          const storeKey = req.query.storeKey;
-          const chunkIndex = req.query.chunkIndex;
-          const contentType = response.headers.get('content-type') || 'application/octet-stream';
-
-          if (chunkIndex !== undefined) {
-            const meta = {
-              contentType,
-              md5: req.query.md5 || null,
-              chunked: true,
-            };
-            // Add chunk geometry from query params
-            if (req.query.numChunks) meta.numChunks = parseInt(req.query.numChunks);
-            if (req.query.chunkSize) meta.chunkSize = parseInt(req.query.chunkSize);
-            // Add size info if available from Content-Range header
-            const contentRange = response.headers.get('content-range');
-            if (contentRange) {
-              const totalMatch = contentRange.match(/\/(\d+)/);
-              if (totalMatch) meta.size = parseInt(totalMatch[1]);
-            }
-            store.putChunk(storeKey, parseInt(chunkIndex), Buffer.from(buffer), meta);
-            console.log(`[ContentStore] Stored chunk ${chunkIndex}: ${storeKey} (${buffer.byteLength} bytes)`);
-          } else {
-            store.put(storeKey, Buffer.from(buffer), {
-              contentType, size: buffer.byteLength, md5: req.query.md5 || null,
-            });
-            console.log(`[ContentStore] Stored: ${storeKey} (${buffer.byteLength} bytes)`);
-          }
-        } catch (storeErr) {
-          console.error('[ContentStore] Write error (non-fatal):', storeErr.message);
-        }
+      if (!response.body) {
+        res.end();
+        return;
       }
 
-      res.send(Buffer.from(buffer));
-      console.log(`[FileProxy] ${response.status} (${buffer.byteLength} bytes)`);
+      const fetchStream = Readable.fromWeb(response.body);
+
+      if (store && req.query.storeKey) {
+        // Stream to disk AND client simultaneously
+        const storeKey = req.query.storeKey;
+        const chunkIndex = req.query.chunkIndex;
+        const contentType = response.headers.get('content-type') || 'application/octet-stream';
+        const meta = { contentType, md5: req.query.md5 || null };
+
+        if (chunkIndex !== undefined) {
+          meta.chunked = true;
+          if (req.query.numChunks) meta.numChunks = parseInt(req.query.numChunks);
+          if (req.query.chunkSize) meta.chunkSize = parseInt(req.query.chunkSize);
+          const contentRange = response.headers.get('content-range');
+          if (contentRange) {
+            const totalMatch = contentRange.match(/\/(\d+)/);
+            if (totalMatch) meta.size = parseInt(totalMatch[1]);
+          }
+        }
+
+        const { writeStream, commit, abort } = store.createTempWrite(
+          storeKey, chunkIndex !== undefined ? parseInt(chunkIndex) : null
+        );
+
+        let bytesWritten = 0;
+        let aborted = false;
+
+        // Clean up on client disconnect
+        req.on('close', () => {
+          if (!res.writableFinished) {
+            aborted = true;
+            fetchStream.destroy();
+            writeStream.destroy();
+            abort();
+          }
+        });
+
+        fetchStream.on('data', (chunk) => {
+          bytesWritten += chunk.length;
+          writeStream.write(chunk);
+          res.write(chunk);
+        });
+
+        fetchStream.on('end', () => {
+          writeStream.end(() => {
+            if (aborted) return;
+            try {
+              if (chunkIndex === undefined) meta.size = bytesWritten;
+              commit(meta);
+              console.log(`[ContentStore] Stored${chunkIndex !== undefined ? ` chunk ${chunkIndex}` : ''}: ${storeKey} (${bytesWritten} bytes)`);
+            } catch (err) {
+              console.error('[ContentStore] Commit error (non-fatal):', err.message);
+            }
+          });
+          res.end();
+          console.log(`[FileProxy] ${response.status} (${bytesWritten} bytes)`);
+        });
+
+        fetchStream.on('error', (err) => {
+          console.error('[FileProxy] Stream error:', err.message);
+          writeStream.destroy();
+          abort();
+          if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
+          else res.end();
+        });
+      } else {
+        // No store needed — stream directly to client (zero memory)
+        fetchStream.pipe(res);
+        fetchStream.on('error', (err) => {
+          console.error('[FileProxy] Stream error:', err.message);
+          if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
+          else res.end();
+        });
+        console.log(`[FileProxy] ${response.status} streaming`);
+      }
     } catch (error) {
       console.error('[FileProxy] Error:', error.message);
-      res.status(500).json({ error: 'File proxy error', message: error.message });
+      if (!res.headersSent) res.status(500).json({ error: 'File proxy error', message: error.message });
     }
   });
 

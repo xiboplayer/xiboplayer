@@ -232,6 +232,55 @@ export class ContentStore {
     fs.writeFileSync(metaPath, JSON.stringify(meta));
   }
 
+  /**
+   * Create a temp write stream for streaming data to disk.
+   * Returns a WriteStream and a commit() function that atomically
+   * renames the temp file and writes metadata.
+   *
+   * @param {string} key
+   * @param {number|null} chunkIndex — null for whole file, number for chunk
+   * @returns {{ writeStream: fs.WriteStream, commit: (metadata: object) => void }}
+   */
+  createTempWrite(key, chunkIndex) {
+    let finalPath, tmpPath;
+    if (chunkIndex != null) {
+      finalPath = this._chunkPath(key, chunkIndex);
+    } else {
+      finalPath = this._filePath(key);
+    }
+    tmpPath = finalPath + '.tmp';
+    fs.mkdirSync(path.dirname(finalPath), { recursive: true });
+    const writeStream = fs.createWriteStream(tmpPath);
+
+    const commit = (metadata) => {
+      fs.renameSync(tmpPath, finalPath);
+      if (chunkIndex != null) {
+        // Write/update chunk metadata
+        const metaPath = this._chunkMetaPath(key);
+        const existing = fs.existsSync(metaPath)
+          ? JSON.parse(fs.readFileSync(metaPath, 'utf8'))
+          : {};
+        const merged = { ...existing, ...metadata, updatedAt: Date.now() };
+        if (!merged.createdAt) merged.createdAt = Date.now();
+        fs.writeFileSync(metaPath, JSON.stringify(merged));
+      } else {
+        const metaPath = path.join(this.storeDir, keyToRelative(key) + '.meta.json');
+        fs.writeFileSync(metaPath, JSON.stringify({
+          size: metadata.size || 0,
+          contentType: metadata.contentType || 'application/octet-stream',
+          md5: metadata.md5 || null,
+          createdAt: Date.now(),
+        }));
+      }
+    };
+
+    const abort = () => {
+      try { fs.unlinkSync(tmpPath); } catch {}
+    };
+
+    return { writeStream, commit, abort };
+  }
+
   // ── Delete operations ─────────────────────────────────────────────
 
   /**
