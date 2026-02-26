@@ -17,6 +17,7 @@ export default defineConfig({
       '**/dist/**',
       'packages/cms-testing/tests/e2e/**',
       'packages/cms-testing/tests/api/**',
+      'packages/pwa/playwright-tests/**',
       '**/*.integration.test.*'
     ],
     coverage: {

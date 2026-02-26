@@ -1,5 +1,0 @@
-node_modules/
-dist/
-pnpm-workspace.yaml
-.pnpmfile.cjs
-pnpm-lock.yaml

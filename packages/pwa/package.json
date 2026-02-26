@@ -13,18 +13,18 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@xiboplayer/cache": "0.5.12",
-    "@xiboplayer/core": "0.5.12",
-    "@xiboplayer/crypto": "0.5.12",
-    "@xiboplayer/renderer": "0.5.12",
-    "@xiboplayer/schedule": "0.5.12",
-    "@xiboplayer/settings": "0.5.12",
-    "@xiboplayer/stats": "0.5.12",
-    "@xiboplayer/sw": "0.5.12",
-    "@xiboplayer/sync": "0.5.12",
-    "@xiboplayer/utils": "0.5.12",
-    "@xiboplayer/xmds": "0.5.12",
-    "@xiboplayer/xmr": "0.5.12",
+    "@xiboplayer/cache": "workspace:*",
+    "@xiboplayer/core": "workspace:*",
+    "@xiboplayer/crypto": "workspace:*",
+    "@xiboplayer/renderer": "workspace:*",
+    "@xiboplayer/schedule": "workspace:*",
+    "@xiboplayer/settings": "workspace:*",
+    "@xiboplayer/stats": "workspace:*",
+    "@xiboplayer/sw": "workspace:*",
+    "@xiboplayer/sync": "workspace:*",
+    "@xiboplayer/utils": "workspace:*",
+    "@xiboplayer/xmds": "workspace:*",
+    "@xiboplayer/xmr": "workspace:*",
     "html2canvas": "^1.4.1",
     "nanoevents": "^9.0.0",
     "xml2js": "^0.6.2"
@@ -36,11 +36,11 @@
     "vite": "^5.4.11"
   },
   "author": "Pau Aliagas <linuxnow@gmail.com>",
-  "packageManager": "pnpm@10.7.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xibo-players/xiboplayer-pwa.git"
+    "url": "git+https://github.com/xibo-players/xiboplayer.git",
+    "directory": "packages/pwa"
   },
   "homepage": "https://xiboplayer.org"
 }
