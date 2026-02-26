@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/stats",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "description": "Proof of play tracking, stats reporting, and CMS logging",
   "type": "module",
   "main": "./src/index.js",

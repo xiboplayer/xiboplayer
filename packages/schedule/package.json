@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/schedule",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "description": "Complete scheduling solution: campaigns, dayparting, interrupts, and overlays",
   "type": "module",
   "main": "./src/index.js",

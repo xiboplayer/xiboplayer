@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/crypto",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "description": "RSA key management for Xibo Player XMR registration",
   "type": "module",
   "main": "./src/index.js",
