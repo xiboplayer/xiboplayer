@@ -155,23 +155,19 @@ export class LayoutTranslator {
       if (!raw && lastError) {
         log.warn('All retries failed, checking for cached widget HTML...');
 
-        // Try to get cached widget HTML directly from Cache API
+        // Try to get cached widget HTML from ContentStore via proxy
         try {
-          const cachedKey = `/cache/widget/${layoutId}/${regionId}/${id}.html`;
-          const cache = await caches.open('xibo-media-v1');
-          const cached = await cache.match(new Request(window.location.origin + '/player' + cachedKey));
-
-          if (cached) {
-            raw = await cached.text();
-            options.widgetCacheKey = cachedKey;
-            log.info(`Using cached widget HTML (${raw.length} chars) - CMS update pending`);
+          const resp = await fetch(`/store/widget/${layoutId}/${regionId}/${id}`);
+          if (resp.ok) {
+            raw = await resp.text();
+            options.widgetCacheKey = `/cache/widget/${layoutId}/${regionId}/${id}`;
+            log.info(`Using stored widget HTML (${raw.length} chars) - CMS update pending`);
           } else {
-            log.error(`No cached version available for widget ${id}`);
-            // Show minimal placeholder that doesn't look like an error
+            log.error(`No stored version available for widget ${id}`);
             raw = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:18px;">Content updating...</div>`;
           }
-        } catch (cacheError) {
-          log.error('Cache fallback failed:', cacheError);
+        } catch (storeError) {
+          log.error('Store fallback failed:', storeError);
           raw = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:18px;">Content updating...</div>`;
         }
       }
@@ -330,9 +326,14 @@ Object.keys(regions).forEach(id => {
   playRegion(id);
 });
 
+// Track active timers per region so layout teardown can cancel them
+const regionTimers = {};
+
 function playRegion(id) {
   const region = regions[id];
   if (!region || region.media.length === 0) return;
+
+  regionTimers[id] = [];
 
   // If only one media item, just show it and don't cycle (arexibo behavior)
   if (region.media.length === 1) {
@@ -349,15 +350,21 @@ function playRegion(id) {
     if (media.start) media.start();
 
     const duration = media.duration || 10;
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
       if (media.stop) media.stop();
       currentIndex = (currentIndex + 1) % region.media.length;
       playNext();
     }, duration * 1000);
+    regionTimers[id].push(timerId);
   }
 
   playNext();
 }
+
+// Cleanup function — called before layout teardown
+window._stopAllRegions = function() {
+  Object.values(regionTimers).forEach(timers => timers.forEach(t => clearTimeout(t)));
+};
 </script>
 </body>
 </html>`;
@@ -815,6 +822,9 @@ ${mediaJS}
             }
           }
 
+          // Store live timer array on element for cleanup (not JSON — stays current)
+          container._pageTimers = pageTimers;
+
           // Start cycling
           await cyclePage();
 
@@ -827,9 +837,6 @@ ${mediaJS}
             container.style.opacity = '1';
           }
 
-          // Store timers for cleanup
-          container.dataset.pageTimers = JSON.stringify(pageTimers.map(t => t));
-
         } catch (error) {
           console.error('[PDF] Render failed:', error);
           container.innerHTML = '<div style="color:white;padding:20px;text-align:center;">Failed to load PDF</div>';
@@ -841,12 +848,10 @@ ${mediaJS}
         const region = document.getElementById('region_${regionId}');
         const container = document.getElementById('${pdfContainerId}');
         if (container) {
-          // Clear page cycling timers
-          const timers = container.dataset.pageTimers;
-          if (timers) {
-            try {
-              JSON.parse(timers).forEach(t => clearTimeout(t));
-            } catch (e) {}
+          // Clear page cycling timers (live array, always current)
+          if (container._pageTimers) {
+            container._pageTimers.forEach(t => clearTimeout(t));
+            container._pageTimers.length = 0;
           }
 
           const transOut = ${transOut};
