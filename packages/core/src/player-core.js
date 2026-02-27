@@ -490,7 +490,6 @@ export class PlayerCore extends EventEmitter {
           this._executedCommands.clear();
           this.updateDataConnectors();
           this._offlineSave('schedule', schedule);
-          this.logUpcomingTimeline();
         } else if (checkSchedule) {
           log.info('Schedule CRC unchanged, skipping');
         }
