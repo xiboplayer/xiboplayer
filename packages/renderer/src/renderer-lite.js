@@ -2764,8 +2764,10 @@ export class RendererLite {
     // Wait for widgets to be ready then start layout timer
     this.startLayoutTimerWhenReady(layoutId, preloaded.layout);
 
-    // Schedule next preload
-    this._scheduleNextLayoutPreload(preloaded.layout);
+    // Schedule next preload (unless updateLayoutDuration already did it)
+    if (!this.preloadTimer) {
+      this._scheduleNextLayoutPreload(preloaded.layout);
+    }
 
     this.log.info(`Swapped to preloaded layout ${layoutId} (instant transition)`);
   }
