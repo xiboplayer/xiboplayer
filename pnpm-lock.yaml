@@ -266,6 +266,9 @@ importers:
       '@xiboplayer/cache':
         specifier: workspace:*
         version: link:../cache
+      '@xiboplayer/utils':
+        specifier: workspace:*
+        version: link:../utils
     devDependencies:
       vitest:
         specifier: ^2.0.0
