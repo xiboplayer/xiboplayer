@@ -1766,6 +1766,9 @@ export class RendererLite {
       return;
     }
 
+    // Don't start next widget if layout has already ended (race with layout timer)
+    if (this.layoutEndEmitted) return;
+
     region.currentIndex = nextIndex;
     playNext();
   }
