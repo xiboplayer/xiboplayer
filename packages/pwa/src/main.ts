@@ -12,7 +12,7 @@ import { StoreClient, DownloadClient } from '@xiboplayer/cache';
 // @ts-ignore - JavaScript module
 import { PlayerCore } from '@xiboplayer/core';
 // @ts-ignore - JavaScript module
-import { createLogger, isDebug, registerLogSink } from '@xiboplayer/utils';
+import { createLogger, registerLogSink } from '@xiboplayer/utils';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
 import { TimelineOverlay, isTimelineVisible } from './timeline-overlay.js';
 import { SetupOverlay } from './setup-overlay.js';
@@ -220,14 +220,18 @@ class PwaPlayer {
     });
 
     // Initialize download progress overlay (configurable debug feature)
+    // Respect controls.keyboard.debugOverlays — if disabled, don't restore overlays
+    const controls = this.getControls();
+    const debugOverlaysEnabled = (controls.keyboard || {}).debugOverlays === true;
+
     const overlayConfig = getDefaultOverlayConfig();
-    if (overlayConfig.enabled) {
+    if (overlayConfig.enabled && debugOverlaysEnabled) {
       this.downloadOverlay = new DownloadOverlay(overlayConfig);
       log.info('Download overlay enabled (hover bottom-right corner)');
     }
 
     // Timeline overlay — created on first T key press (or if previously visible)
-    if (isTimelineVisible()) {
+    if (isTimelineVisible() && debugOverlaysEnabled) {
       this.timelineOverlay = new TimelineOverlay(true, (layoutId) => this.skipToLayout(layoutId));
     }
 
@@ -605,19 +609,9 @@ class PwaPlayer {
       log.warn(`XMR misconfigured: ${info.message}`);
     });
 
-    // React to CMS log level changes — toggle download overlay at runtime
+    // Log level changes from CMS (overlays are controlled by config.controls, not log level)
     this.core.on('log-level-changed', () => {
-      const debugNow = isDebug();
-      log.info(`Log level changed, debug=${debugNow}`);
-
-      if (debugNow && !this.downloadOverlay) {
-        this.downloadOverlay = new DownloadOverlay(getDefaultOverlayConfig());
-        log.info('Download overlay enabled (log level → DEBUG)');
-      } else if (!debugNow && this.downloadOverlay) {
-        this.downloadOverlay.destroy();
-        this.downloadOverlay = null;
-        log.info('Download overlay disabled (log level above DEBUG)');
-      }
+      log.info(`Log level changed`);
     });
 
     // Overlay layout push from XMR

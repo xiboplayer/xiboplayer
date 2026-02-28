@@ -339,7 +339,7 @@ export class ContentStore {
 
   /**
    * List all stored files with metadata.
-   * @returns {Array<{ key: string, type: string, id: string, size: number, chunked: boolean }>}
+   * @returns {Array<{ key: string, type: string, id: string, size: number, cachedAt: number, chunked: boolean }>}
    */
   list() {
     const files = [];
@@ -360,6 +360,7 @@ export class ContentStore {
           files.push({
             key: `${type}/${id}`, type, id,
             size: meta?.size || 0,
+            cachedAt: meta?.createdAt || 0,
             chunked: true,
             complete: meta?.complete || false,
           });
@@ -370,6 +371,7 @@ export class ContentStore {
           files.push({
             key: `${type}/${id}`, type, id,
             size: meta?.size || fs.statSync(path.join(typePath, entry.name)).size,
+            cachedAt: meta?.createdAt || 0,
             chunked: false,
             complete: true,
           });
