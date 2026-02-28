@@ -515,8 +515,8 @@ ${mediaJS}
             video.play();
           }
         };
+        video._retryOnCache = retryOnCache;
         window.addEventListener('media-cached', retryOnCache);
-        video.dataset.cacheListener = 'attached';
 
         region.innerHTML = '';
         region.appendChild(video);
@@ -536,6 +536,11 @@ ${mediaJS}
         const region = document.getElementById('region_${regionId}');
         const video = document.querySelector('#region_${regionId} video');
         if (video) {
+          // Remove global media-cached listener to prevent leak
+          if (video._retryOnCache) {
+            window.removeEventListener('media-cached', video._retryOnCache);
+            video._retryOnCache = null;
+          }
           const transOut = ${transOut};
           if (transOut && window.Transitions) {
             const regionRect = region.getBoundingClientRect();

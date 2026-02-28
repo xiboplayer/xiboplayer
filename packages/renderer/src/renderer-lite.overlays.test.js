@@ -486,8 +486,9 @@ describe('RendererLite - Overlay Rendering', () => {
     it('should track blob URLs per overlay layout', async () => {
       await renderer.renderOverlay(overlayXLF, 200, 10);
 
-      // Blob URLs should be tracked
-      expect(renderer.layoutBlobUrls.has(200) || renderer.layoutBlobUrls.size === 0).toBe(true);
+      // Blob URLs should be tracked (under overlay ID 200, or fallback key 0 if
+      // currentLayoutId wasn't set, or empty if no blob URLs were created)
+      expect(renderer.layoutBlobUrls.has(200) || renderer.layoutBlobUrls.has(0) || renderer.layoutBlobUrls.size === 0).toBe(true);
     });
   });
 });

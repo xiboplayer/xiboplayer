@@ -642,13 +642,17 @@ export class RendererLite {
    * @param {string} blobUrl - Blob URL to track
    */
   trackBlobUrl(blobUrl) {
-    if (!this.currentLayoutId) return;
+    const layoutId = this.currentLayoutId || 0;
 
-    if (!this.layoutBlobUrls.has(this.currentLayoutId)) {
-      this.layoutBlobUrls.set(this.currentLayoutId, new Set());
+    if (!layoutId) {
+      this.log.warn('trackBlobUrl called without currentLayoutId, tracking under key 0');
     }
 
-    this.layoutBlobUrls.get(this.currentLayoutId).add(blobUrl);
+    if (!this.layoutBlobUrls.has(layoutId)) {
+      this.layoutBlobUrls.set(layoutId, new Set());
+    }
+
+    this.layoutBlobUrls.get(layoutId).add(blobUrl);
   }
 
   /**
@@ -1369,15 +1373,16 @@ export class RendererLite {
         return Promise.resolve();
       }
       return new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          this.log.warn(`Image ready timeout for widget ${widget.id}`);
-          resolve();
-        }, READY_TIMEOUT);
         const onLoad = () => {
           imgEl.removeEventListener('load', onLoad);
           clearTimeout(timer);
           resolve();
         };
+        const timer = setTimeout(() => {
+          imgEl.removeEventListener('load', onLoad);
+          this.log.warn(`Image ready timeout for widget ${widget.id}`);
+          resolve();
+        }, READY_TIMEOUT);
         imgEl.addEventListener('load', onLoad);
       });
     }
@@ -1592,8 +1597,30 @@ export class RendererLite {
       videoEl.srcObject = null;
     }
 
+    // Destroy HLS.js instance to free worker + buffers
+    if (videoEl?._hlsInstance) {
+      videoEl._hlsInstance.destroy();
+      videoEl._hlsInstance = null;
+    }
+
+    // Remove event listeners to prevent accumulation across widget cycles
+    if (videoEl?._eventCleanup) {
+      for (const [event, handler] of videoEl._eventCleanup) {
+        videoEl.removeEventListener(event, handler);
+      }
+      videoEl._eventCleanup = null;
+    }
+
     const audioEl = widgetElement.querySelector('audio');
     if (audioEl && widget.options.loop !== '1') audioEl.pause();
+
+    // Remove audio event listeners
+    if (audioEl?._eventCleanup) {
+      for (const [event, handler] of audioEl._eventCleanup) {
+        audioEl.removeEventListener(event, handler);
+      }
+      audioEl._eventCleanup = null;
+    }
 
     // Stop audio overlays attached to this widget
     this._stopAudioOverlays(widget.id);
@@ -1892,22 +1919,20 @@ export class RendererLite {
     video.controls = false; // Hidden by default — toggle with V key in PWA
     video.playsInline = true; // Prevent fullscreen on mobile
 
+    // Get media URL from cache (already pre-fetched!) or fetch on-demand
+    const fileId = parseInt(widget.fileId || widget.id);
+
     // Handle video end - pause on last frame instead of showing black
     // Widget cycling will restart the video via updateMediaElement()
-    video.addEventListener('ended', () => {
+    const onEnded = () => {
       if (widget.options.loop === '1') {
-        // For looping videos: seek back to start but stay paused on first frame
-        // This avoids black frames - shows first frame until widget cycles
         video.currentTime = 0;
         this.log.info(`Video ${fileId} ended - reset to start, waiting for widget cycle to replay`);
       } else {
-        // For non-looping videos: stay paused on last frame
         this.log.info(`Video ${fileId} ended - paused on last frame`);
       }
-    });
-
-    // Get media URL from cache (already pre-fetched!) or fetch on-demand
-    const fileId = parseInt(widget.fileId || widget.id);
+    };
+    video.addEventListener('ended', onEnded);
     let videoSrc = this.mediaUrlCache.get(fileId);
 
     if (!videoSrc && this.options.getMediaUrl) {
@@ -1958,49 +1983,49 @@ export class RendererLite {
     // loadedmetadata fires (e.g. video was preloaded for next layout), we must
     // NOT update the current layout's duration with a different layout's video.
     const createdForLayoutId = this.currentLayoutId;
-    video.addEventListener('loadedmetadata', () => {
+    const onLoadedMetadata = () => {
       const videoDuration = Math.floor(video.duration);
       this.log.info(`Video ${fileId} duration detected: ${videoDuration}s`);
 
-      // Always update widget duration — it's the widget's own data, safe
-      // even if this video was preloaded for a different layout.
       if (widget.duration === 0 || widget.useDuration === 0) {
         widget.duration = videoDuration;
         this.log.info(`Updated widget ${widget.id} duration to ${videoDuration}s (useDuration=0)`);
 
-        // Only recalculate current layout's timer if this video belongs to it.
-        // Preloaded layouts will pick up the corrected widget.duration when
-        // they start playing (via updateLayoutDuration() in swapToPreloadedLayout).
         if (this.currentLayoutId === createdForLayoutId) {
           this.updateLayoutDuration();
         } else {
           this.log.info(`Video ${fileId} duration set but layout timer not updated (preloaded for layout ${createdForLayoutId}, current is ${this.currentLayoutId})`);
         }
       }
-    });
+    };
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
 
-    // Debug video loading
-    video.addEventListener('loadeddata', () => {
+    const onLoadedData = () => {
       this.log.info('Video loaded and ready:', fileId);
-    });
+    };
+    video.addEventListener('loadeddata', onLoadedData);
 
-    // Handle video errors
-    video.addEventListener('error', (e) => {
+    const onError = () => {
       const error = video.error;
       const errorCode = error?.code;
       const errorMessage = error?.message || 'Unknown error';
-
-      // Log all video errors for debugging, but never show to users
-      // These are often transient codec warnings that don't prevent playback
       this.log.warn(`Video error (non-fatal, logged only): ${fileId}, code: ${errorCode}, time: ${video.currentTime.toFixed(1)}s, message: ${errorMessage}`);
+    };
+    video.addEventListener('error', onError);
 
-      // Do NOT emit error events - video errors are logged but not surfaced to UI
-      // Video will either recover (transient decode error) or fail completely (handled elsewhere)
-    });
-
-    video.addEventListener('playing', () => {
+    const onPlaying = () => {
       this.log.info('Video playing:', fileId);
-    });
+    };
+    video.addEventListener('playing', onPlaying);
+
+    // Store listener references for cleanup in _hideWidget()
+    video._eventCleanup = [
+      ['ended', onEnded],
+      ['loadedmetadata', onLoadedMetadata],
+      ['loadeddata', onLoadedData],
+      ['error', onError],
+      ['playing', onPlaying],
+    ];
 
     this.log.info('Video element created:', fileId, video.src);
 
@@ -2100,18 +2125,19 @@ export class RendererLite {
     audio.src = audioSrc;
 
     // Handle audio end - similar to video ended handling
-    audio.addEventListener('ended', () => {
+    const onAudioEnded = () => {
       if (widget.options.loop === '1') {
         audio.currentTime = 0;
         this.log.info(`Audio ${fileId} ended - reset to start, waiting for widget cycle to replay`);
       } else {
         this.log.info(`Audio ${fileId} ended - playback complete`);
       }
-    });
+    };
+    audio.addEventListener('ended', onAudioEnded);
 
     // Detect audio duration for dynamic layout timing (when useDuration=0)
     const audioCreatedForLayoutId = this.currentLayoutId;
-    audio.addEventListener('loadedmetadata', () => {
+    const onAudioLoadedMetadata = () => {
       const audioDuration = Math.floor(audio.duration);
       this.log.info(`Audio ${fileId} duration detected: ${audioDuration}s`);
 
@@ -2125,13 +2151,22 @@ export class RendererLite {
           this.log.info(`Audio ${fileId} duration set but layout timer not updated (preloaded for layout ${audioCreatedForLayoutId}, current is ${this.currentLayoutId})`);
         }
       }
-    });
+    };
+    audio.addEventListener('loadedmetadata', onAudioLoadedMetadata);
 
     // Handle audio errors
-    audio.addEventListener('error', () => {
+    const onAudioError = () => {
       const error = audio.error;
       this.log.warn(`Audio error (non-fatal): ${fileId}, code: ${error?.code}, message: ${error?.message || 'Unknown'}`);
-    });
+    };
+    audio.addEventListener('error', onAudioError);
+
+    // Store listener references for cleanup in _hideWidget()
+    audio._eventCleanup = [
+      ['ended', onAudioEnded],
+      ['loadedmetadata', onAudioLoadedMetadata],
+      ['error', onAudioError],
+    ];
 
     // Visual feedback
     const icon = document.createElement('div');
@@ -2298,12 +2333,17 @@ export class RendererLite {
       const cyclePage = async () => {
         indicator.textContent = `${currentPage} / ${totalPages}`;
 
-        // Fade out old canvas
+        // Fade out old canvas and release its buffer
         const oldCanvas = container.querySelector('.pdf-page');
         if (oldCanvas) {
           oldCanvas.style.transition = 'opacity 0.3s';
           oldCanvas.style.opacity = '0';
-          setTimeout(() => oldCanvas.remove(), 300);
+          setTimeout(() => {
+            // Zero-size the canvas to release GPU/CPU bitmap memory
+            oldCanvas.width = 0;
+            oldCanvas.height = 0;
+            oldCanvas.remove();
+          }, 300);
         }
 
         // Render and show new page
