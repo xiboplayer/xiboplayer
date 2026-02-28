@@ -1,9 +1,9 @@
-# PWA Player Status - v0.4.1
+# PWA Player Status - v0.5.16
 
 ## Current Status: PRODUCTION READY
 
 **Feature Parity:** ~98% vs upstream Xibo players
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-28
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
 
 ## What Works
@@ -124,9 +124,9 @@ All 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already
 ## Test Suite
 
 ```
-Tests:  1263 passed | 7 skipped (1270 total)
-Files:  31 test files (all passed)
-Time:   ~9s
+Tests:  1295 passed | 7 skipped (1302 total)
+Files:  33 test files (all passed)
+Time:   ~12s
 ```
 
 ## Performance

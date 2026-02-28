@@ -21,24 +21,23 @@ Lightweight PWA Xibo digital signage player built on the [`@xiboplayer` SDK](htt
 - **Log batching** — aggregated log submission aligned with CMS spec
 - **Screenshots** — html2canvas-based capture for non-Electron browsers, Electron uses `capturePage()`
 - **Screen Wake Lock** — prevents display from sleeping during playback
-- **Configurable log levels** — `DEBUG`, `INFO`, `WARNING`, `ERROR`, `NONE` (via URL param or CMS settings)
+- **Configurable log levels** — `DEBUG`, `INFO`, `WARNING`, `ERROR`, `NONE` (via URL param or CMS settings; log levels only affect verbosity, not overlays)
 
 ## Keyboard Shortcuts
 
-All overlays and controls are hidden by default for clean kiosk operation.
+All keyboard shortcuts and mouse hover are **disabled by default** for secure kiosk operation. Enable them via `controls` in the host player's `config.json` (Electron or Chromium). The config is injected into localStorage by `@xiboplayer/proxy`.
 
-| Key | Action |
-|-----|--------|
-| `T` | Toggle timeline overlay — shows upcoming scheduled layouts with conflict indicators |
-| `D` | Toggle download overlay — shows media download progress |
-| `V` | Toggle video controls — show/hide native browser controls on all videos |
-| `→` / `PageDown` | Skip to next layout |
-| `←` / `PageUp` | Go to previous layout |
-| `Space` | Pause / resume playback |
-| `S` | Open setup overlay — CMS key gate, then full reconfiguration form |
-| `R` | Revert to scheduled layout (when manually overridden) |
-
-Timeline overlay also supports **click-to-skip** — click any layout in the timeline to jump directly to it.
+| Key | Group | Action |
+|-----|-------|--------|
+| `D` | `debugOverlays` | Toggle download progress overlay |
+| `T` | `debugOverlays` | Toggle timeline overlay (click-to-skip supported) |
+| `S` | `setupKey` | Toggle CMS setup screen |
+| `V` | `videoControls` | Toggle native `<video>` controls |
+| `→` / `PageDown` | `playbackControl` | Skip to next layout |
+| `←` / `PageUp` | `playbackControl` | Skip to previous layout |
+| `Space` | `playbackControl` | Pause / resume playback |
+| `R` | `playbackControl` | Revert to scheduled layout |
+| Media keys | `playbackControl` | Next/prev/pause/play (MediaSession API) |
 
 ## Auto-authorize via CMS API (optional)
 
@@ -84,7 +83,7 @@ When using the Electron or Chromium shells, add the credentials to `config.json`
 
 ## Debug Overlays
 
-Three toggleable overlays provide real-time insight into player operation without leaving the playback screen. All are hidden by default for clean kiosk operation — press the corresponding key to toggle.
+Three toggleable overlays provide real-time insight into player operation without leaving the playback screen. All are disabled by default — enable `controls.keyboard.debugOverlays` in the host player's `config.json`, then press the corresponding key to toggle. Overlays are independent of log level — `DEBUG` logging does not enable overlays.
 
 ### Timeline Overlay (`T`)
 
