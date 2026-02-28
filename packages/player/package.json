@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/player",
-  "version": "0.5.19",
+  "version": "0.5.20",
   "private": true,
   "description": "Meta package - installs all Xibo Player packages",
   "type": "module",
