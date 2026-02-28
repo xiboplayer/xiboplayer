@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/cache",
-  "version": "0.5.18",
+  "version": "0.5.19",
   "description": "Offline caching and download management with parallel chunk downloads",
   "type": "module",
   "main": "./src/index.js",
