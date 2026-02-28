@@ -1,4 +1,4 @@
-# PWA Player Status - v0.5.16
+# PWA Player Status - v0.5.19
 
 ## Current Status: PRODUCTION READY
 
@@ -30,7 +30,7 @@
 
 ### Layout Rendering (RendererLite)
 - Full XLF parsing with layout scaling and centering
-- Image, video, audio, text, clock, webpage, embedded, PDF, HLS, dataset widgets
+- Image, video, audio, text, clock, webpage, embedded, PDF (multi-page cycling), HLS, dataset widgets
 - Fade and fly transitions (8 compass directions)
 - Element reuse pattern (pre-create all, toggle visibility)
 - Parallel media prefetch (Promise.all)
@@ -95,6 +95,8 @@
 - CMS log level control
 - Download window support
 - Screenshot interval configuration
+- Configurable log level (config.json logLevel)
+- SSL certificate relaxation (relaxSslCerts config option)
 - Wake Lock API (screen sleep prevention)
 - Centralized PlayerState
 
@@ -159,8 +161,8 @@ pnpm test
 pnpm test --filter @xiboplayer/core
 pnpm test --filter @xiboplayer/renderer
 
-# Build PWA (from xiboplayer-pwa repo)
-pnpm run build
+# Build PWA (from monorepo root)
+pnpm --filter @xiboplayer/pwa build
 ```
 
 ## Browser Compatibility

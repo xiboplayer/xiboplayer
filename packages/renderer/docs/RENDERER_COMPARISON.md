@@ -1,6 +1,6 @@
 # Renderer Comparison: XLR vs Arexibo vs RendererLite
 
-**Date**: 2026-02-06
+**Date**: 2026-02-28
 **Purpose**: Comprehensive feature comparison to identify gaps and validate implementation
 
 ---
@@ -35,6 +35,7 @@
 | Text/HTML | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
 | Ticker | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
 | PDF | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
+| PDF multi-page cycling | ❌ No | ❌ No | ✅ Yes | ✅ Timed transitions |
 | Webpage (iframe) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
 | Clock | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
 | Weather | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Complete |
