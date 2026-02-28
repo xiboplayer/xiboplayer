@@ -1598,6 +1598,11 @@ export class RendererLite {
     // Stop audio overlays attached to this widget
     this._stopAudioOverlays(widget.id);
 
+    // Stop PDF page cycling timers
+    if (widgetElement._pdfCleanup) {
+      widgetElement._pdfCleanup();
+    }
+
     return { widget, animPromise };
   }
 
@@ -2255,29 +2260,78 @@ export class RendererLite {
       pdfUrl = `${window.location.origin}/player/cache/media/${widget.options.uri}`;
     }
 
-    // Render PDF
+    // Render PDF with multi-page cycling
     try {
       const loadingTask = window.pdfjsLib.getDocument(pdfUrl);
       const pdf = await loadingTask.promise;
-      const page = await pdf.getPage(1); // Render first page
+      const totalPages = pdf.numPages;
+      const duration = widget.duration || 60;
+      const timePerPage = (duration * 1000) / totalPages;
+      this.log.info(`[pdf] PDF loaded: ${totalPages} pages, ${duration}s duration, ${(timePerPage / 1000).toFixed(1)}s/page`);
 
-      const viewport = page.getViewport({ scale: 1 });
-      const scale = Math.min(
-        region.width / viewport.width,
-        region.height / viewport.height
-      );
-      const scaledViewport = page.getViewport({ scale });
+      // Render a single page to a canvas, scaled to fit the region
+      const renderPage = async (pageNum) => {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = Math.min(region.width / viewport.width, region.height / viewport.height);
+        const scaledViewport = page.getViewport({ scale });
 
-      const canvas = document.createElement('canvas');
-      canvas.width = scaledViewport.width;
-      canvas.height = scaledViewport.height;
-      canvas.style.display = 'block';
-      canvas.style.margin = 'auto';
+        const canvas = document.createElement('canvas');
+        canvas.className = 'pdf-page';
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+        canvas.style.cssText = 'display:block;margin:auto;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);';
 
-      const context = canvas.getContext('2d');
-      await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+        const context = canvas.getContext('2d');
+        await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+        return canvas;
+      };
 
-      container.appendChild(canvas);
+      // Page indicator (bottom-right)
+      const indicator = document.createElement('div');
+      indicator.style.cssText = 'position:absolute;bottom:8px;right:12px;color:rgba(255,255,255,0.6);font:12px system-ui;z-index:1;';
+      container.appendChild(indicator);
+
+      let currentPage = 1;
+      const pageTimers = [];
+
+      const cyclePage = async () => {
+        indicator.textContent = `${currentPage} / ${totalPages}`;
+
+        // Fade out old canvas
+        const oldCanvas = container.querySelector('.pdf-page');
+        if (oldCanvas) {
+          oldCanvas.style.transition = 'opacity 0.3s';
+          oldCanvas.style.opacity = '0';
+          setTimeout(() => oldCanvas.remove(), 300);
+        }
+
+        // Render and show new page
+        const canvas = await renderPage(currentPage);
+        canvas.style.opacity = '0';
+        container.appendChild(canvas);
+        // Trigger reflow then fade in
+        canvas.offsetHeight; // eslint-disable-line no-unused-expressions
+        canvas.style.transition = 'opacity 0.3s';
+        canvas.style.opacity = '1';
+
+        // Schedule next page
+        if (totalPages > 1) {
+          const timer = setTimeout(() => {
+            currentPage = currentPage >= totalPages ? 1 : currentPage + 1;
+            cyclePage();
+          }, timePerPage);
+          pageTimers.push(timer);
+        }
+      };
+
+      await cyclePage();
+
+      // Store cleanup function on container for when widget is removed
+      container._pdfCleanup = () => {
+        pageTimers.forEach(t => clearTimeout(t));
+        pageTimers.length = 0;
+      };
 
     } catch (error) {
       this.log.error('PDF render failed:', error);
