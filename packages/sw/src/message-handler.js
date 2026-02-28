@@ -6,7 +6,7 @@
  * orchestrates downloads and notifies clients when files are ready.
  */
 
-import { LayoutTaskBuilder, BARRIER, toProxyUrl } from '@xiboplayer/cache/download-manager';
+import { LayoutTaskBuilder, BARRIER, toProxyUrl, setCmsOrigin } from '@xiboplayer/cache/download-manager';
 import { formatBytes, BASE } from './sw-utils.js';
 import { createLogger } from '@xiboplayer/utils';
 import { extractMediaIdsFromXlf } from './xlf-parser.js';
@@ -70,6 +70,11 @@ export class MessageHandler {
 
       case 'GET_ALL_FILES':
         return await this.handleGetAllFiles();
+
+      case 'SET_CMS_ORIGIN':
+        setCmsOrigin(data.origin);
+        this.log.info('CMS origin set:', data.origin);
+        return { success: true };
 
       default:
         this.log.warn('Unknown message type:', type);

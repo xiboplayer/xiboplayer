@@ -196,12 +196,15 @@ describe('cacheWidgetHtml', () => {
       expect(widgetKey).toBeTruthy();
     });
 
-    it('caches font files referenced in fonts.css', async () => {
+    it('stores fonts.css as a blob (font rewriting handled by proxy)', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
-      // fonts.css contains url("...Poppins-Regular.ttf") which should be fetched
-      const fontFetched = fetchedUrls.some(u => u.includes('Poppins-Regular.ttf'));
-      expect(fontFetched).toBe(true);
+      // fonts.css should be fetched and stored, but font files inside it
+      // are NOT parsed/fetched here — the proxy rewrites CSS font URLs
+      const cssFetched = fetchedUrls.some(u => u.includes('fonts.css'));
+      expect(cssFetched).toBe(true);
+      const cssStored = [...storeContents.keys()].some(k => k.includes('fonts.css'));
+      expect(cssStored).toBe(true);
     });
   });
 

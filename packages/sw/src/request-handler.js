@@ -8,6 +8,7 @@
 
 import { BASE } from './sw-utils.js';
 import { createLogger } from '@xiboplayer/utils';
+import { toProxyUrl } from '@xiboplayer/cache/download-manager';
 
 export class RequestHandler {
   /**
@@ -72,9 +73,9 @@ export class RequestHandler {
         proxyResp.body?.cancel();
       } catch (_) {}
 
-      // Not stored — pass through to CMS
-      this.log.info('XMDS file not stored, passing through:', filename);
-      return fetch(event.request);
+      // Not stored — fetch via local proxy (avoids CORS blocks)
+      this.log.info('XMDS file not stored, fetching via proxy:', filename);
+      return fetch(toProxyUrl(event.request.url));
     }
 
     // Handle static widget resources (rewritten URLs from widget HTML)
@@ -205,7 +206,7 @@ export class RequestHandler {
     this.log.info('Fetching widget resource from CMS:', filename);
     const fetchPromise = (async () => {
       try {
-        const response = await fetch(event.request);
+        const response = await fetch(toProxyUrl(event.request.url));
         if (response.ok) {
           // Store in ContentStore for future use
           const ext = filename.split('.').pop().toLowerCase();

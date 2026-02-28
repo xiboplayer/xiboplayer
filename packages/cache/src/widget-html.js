@@ -4,9 +4,11 @@
  * Handles:
  * - <base> tag injection for relative path resolution
  * - CMS signed URL → local store path rewriting
- * - CSS font URL rewriting and font file caching
  * - Interactive Control hostAddress rewriting
  * - CSS object-position fix for CMS template alignment
+ *
+ * Note: CSS font URL rewriting is handled by the proxy layer (proxy.js)
+ * so all consumers (main thread, SW) receive pre-processed CSS.
  *
  * Runs on the main thread (needs window.location for URL construction).
  * Stores content via PUT /store/... — no Cache API needed.
@@ -117,61 +119,8 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
           'svg': 'image/svg+xml'
         }[ext] || 'application/octet-stream';
 
-        // For CSS files, rewrite font URLs and store referenced font files
-        if (ext === 'css') {
-          let cssText = await resp.text();
-          const fontResources = [];
-          const fontUrlRegex = /url\((['"]?)(https?:\/\/[^'")\s]+\?[^'")\s]*file=([^&'")\s]+\.(?:woff2?|ttf|otf|eot|svg))[^'")\s]*)\1\)/gi;
-          cssText = cssText.replace(fontUrlRegex, (_match, quote, fullUrl, fontFilename) => {
-            fontResources.push({ filename: fontFilename, originalUrl: fullUrl });
-            log.info(`Rewrote font URL in CSS: ${fontFilename}`);
-            return `url(${quote}${BASE}/cache/static/${encodeURIComponent(fontFilename)}${quote})`;
-          });
-
-          const cssResp = await fetch(`/store/static/${filename}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'text/css' },
-            body: cssText,
-          });
-          cssResp.body?.cancel();
-          log.info(`Stored CSS with ${fontResources.length} rewritten font URLs: ${filename}`);
-
-          // Fetch and store referenced font files
-          await Promise.all(fontResources.map(async ({ filename: fontFile, originalUrl: fontUrl }) => {
-            // Check if already stored
-            try {
-              const headResp = await fetch(`/store/static/${encodeURIComponent(fontFile)}`, { method: 'HEAD' });
-              if (headResp.ok) return;
-            } catch { /* proceed */ }
-
-            try {
-              const fontResp = await fetch(toProxyUrl(fontUrl));
-              if (!fontResp.ok) {
-                fontResp.body?.cancel();
-                log.warn(`Failed to fetch font: ${fontFile} (HTTP ${fontResp.status})`);
-                return;
-              }
-              const fontBlob = await fontResp.blob();
-              const fontExt = fontFile.split('.').pop().toLowerCase();
-              const fontContentType = {
-                'otf': 'font/otf', 'ttf': 'font/ttf',
-                'woff': 'font/woff', 'woff2': 'font/woff2',
-                'eot': 'application/vnd.ms-fontobject',
-                'svg': 'image/svg+xml'
-              }[fontExt] || 'application/octet-stream';
-
-              const fontPutResp = await fetch(`/store/static/${encodeURIComponent(fontFile)}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': fontContentType },
-                body: fontBlob,
-              });
-              fontPutResp.body?.cancel();
-              log.info(`Stored font: ${fontFile} (${fontContentType}, ${fontBlob.size} bytes)`);
-            } catch (fontErr) {
-              log.warn(`Failed to store font: ${fontFile}`, fontErr);
-            }
-          }));
-        } else {
+        // CSS files are already rewritten by the proxy — store like any other file
+        {
           const blob = await resp.blob();
           const staticResp = await fetch(`/store/static/${filename}`, {
             method: 'PUT',

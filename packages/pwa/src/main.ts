@@ -109,6 +109,18 @@ class PwaPlayer {
     await downloads.init();  // Waits for Service Worker to be ready and controlling
     log.info('Cache clients ready — StoreClient + DownloadClient');
 
+    // Tell toProxyUrl() and the SW which origin is the CMS so external URLs aren't proxied
+    if (config.cmsUrl) {
+      const cmsOrigin = new URL(config.cmsUrl).origin;
+      // @ts-ignore - JavaScript module
+      const { setCmsOrigin } = await import('@xiboplayer/cache');
+      setCmsOrigin(cmsOrigin);
+      navigator.serviceWorker?.controller?.postMessage({
+        type: 'SET_CMS_ORIGIN',
+        data: { origin: cmsOrigin },
+      });
+    }
+
     // Create renderer
     const container = document.getElementById('player-container');
     if (!container) {

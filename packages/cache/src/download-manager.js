@@ -45,6 +45,18 @@ const URGENT_CONCURRENCY = 2; // Slots when urgent chunk is active (bandwidth fo
 const FETCH_TIMEOUT_MS = 600_000; // 10 minutes — 100MB chunk at ~2 Mbps
 const HEAD_TIMEOUT_MS = 15_000; // 15 seconds for HEAD requests
 
+// CMS origin for proxy filtering — set via setCmsOrigin() at init
+let _cmsOrigin = null;
+
+/**
+ * Set the CMS origin so toProxyUrl() only proxies CMS URLs.
+ * External URLs (CDNs, Google Fonts, geolocation APIs) pass through unchanged.
+ * @param {string} origin - e.g. 'https://cms.example.com'
+ */
+export function setCmsOrigin(origin) {
+  _cmsOrigin = origin;
+}
+
 /**
  * Infer Content-Type from file path extension.
  * Used when we skip HEAD (size already known from RequiredFiles).
@@ -114,8 +126,9 @@ export function toProxyUrl(url) {
   const loc = typeof self !== 'undefined' ? self.location : undefined;
   if (!loc || loc.hostname !== 'localhost') return url;
   const parsed = new URL(url);
-  const cmsOrigin = parsed.origin;
-  return `/file-proxy?cms=${encodeURIComponent(cmsOrigin)}&url=${encodeURIComponent(parsed.pathname + parsed.search)}`;
+  // Only proxy URLs belonging to the CMS server; external URLs pass through
+  if (_cmsOrigin && parsed.origin !== _cmsOrigin) return url;
+  return `/file-proxy?cms=${encodeURIComponent(parsed.origin)}&url=${encodeURIComponent(parsed.pathname + parsed.search)}`;
 }
 
 /**

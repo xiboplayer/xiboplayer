@@ -295,6 +295,67 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
         return;
       }
 
+      // ── CSS font URL rewriting ──────────────────────────────────────
+      // CSS files are tiny (~1KB) — buffer, rewrite CMS font URLs to local
+      // /player/pwa/cache/static/ paths, fetch+store the font files, then
+      // send rewritten CSS.  This fixes CORS errors when fonts.css contains
+      // absolute CMS URLs that the browser can't fetch cross-origin.
+      const upstreamContentType = response.headers.get('content-type') || '';
+      const isCss = upstreamContentType.includes('text/css') || fileUrl.endsWith('.css');
+
+      if (isCss) {
+        const cssBuffer = Buffer.from(await response.arrayBuffer());
+        let cssText = cssBuffer.toString('utf-8');
+
+        const FONT_URL_RE = /url\((['"]?)(https?:\/\/[^'")\s]+\?[^'")\s]*file=([^&'")\s]+\.(?:woff2?|ttf|otf|eot|svg))[^'")\s]*)\1\)/gi;
+        const fontJobs = [];
+
+        cssText = cssText.replace(FONT_URL_RE, (_m, quote, fullUrl, fontFilename) => {
+          fontJobs.push({ filename: fontFilename, url: fullUrl });
+          console.log(`[FileProxy] Rewrote font URL: ${fontFilename}`);
+          return `url(${quote}/player/pwa/cache/static/${encodeURIComponent(fontFilename)}${quote})`;
+        });
+
+        // Fetch and store font files in background (non-blocking)
+        for (const { filename: fontFile, url: fontUrl } of fontJobs) {
+          if (store) {
+            const fontStoreKey = `static/${encodeURIComponent(fontFile)}`;
+            if (store.has(fontStoreKey).exists) continue; // already stored
+            fetch(fontUrl, { headers: { 'User-Agent': `XiboPlayer/${appVersion}` } })
+              .then(r => r.ok ? r.arrayBuffer() : null)
+              .then(buf => {
+                if (!buf) return;
+                const fontExt = fontFile.split('.').pop().toLowerCase();
+                const fontContentType = {
+                  otf: 'font/otf', ttf: 'font/ttf',
+                  woff: 'font/woff', woff2: 'font/woff2',
+                  eot: 'application/vnd.ms-fontobject', svg: 'image/svg+xml',
+                }[fontExt] || 'application/octet-stream';
+                store.put(fontStoreKey, Buffer.from(buf), {
+                  contentType: fontContentType, size: buf.byteLength,
+                });
+                console.log(`[FileProxy] Stored font: ${fontFile} (${buf.byteLength} bytes)`);
+              })
+              .catch(e => console.warn(`[FileProxy] Font fetch failed: ${fontFile}`, e.message));
+          }
+        }
+
+        // Store rewritten CSS if storeKey provided
+        const rewrittenBuf = Buffer.from(cssText, 'utf-8');
+        if (store && req.query.storeKey) {
+          store.put(req.query.storeKey, rewrittenBuf, {
+            contentType: 'text/css', size: rewrittenBuf.length,
+          });
+          console.log(`[FileProxy] Stored rewritten CSS: ${req.query.storeKey} (${rewrittenBuf.length} bytes)`);
+        }
+
+        res.setHeader('Content-Type', 'text/css');
+        res.setHeader('Content-Length', rewrittenBuf.length);
+        res.send(rewrittenBuf);
+        console.log(`[FileProxy] ${response.status} CSS rewritten (${fontJobs.length} font URLs, ${rewrittenBuf.length} bytes)`);
+        return;
+      }
+
       const fetchStream = Readable.fromWeb(response.body);
 
       if (store && req.query.storeKey) {
