@@ -418,6 +418,13 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
         let bytesWritten = 0;
         let aborted = false;
 
+        // Prevent unhandled stream errors from crashing the process
+        writeStream.on('error', (err) => {
+          if (!aborted) logStore.error('Write stream error:', err.message);
+          aborted = true;
+          abort();
+        });
+
         // Clean up on client disconnect
         req.on('close', () => {
           if (!res.writableFinished) {
@@ -429,12 +436,14 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
         });
 
         fetchStream.on('data', (chunk) => {
+          if (aborted) return;
           bytesWritten += chunk.length;
           writeStream.write(chunk);
           res.write(chunk);
         });
 
         fetchStream.on('end', () => {
+          if (aborted) return;
           writeStream.end(() => {
             if (aborted) return;
             try {
