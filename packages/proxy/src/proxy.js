@@ -135,17 +135,13 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
  * @param {object} options
  * @param {string} options.pwaPath  — absolute path to PWA dist directory
  * @param {string} [options.appVersion='0.0.0'] — version string for User-Agent header
- * @param {object} [options.cmsConfig] — optional CMS connection params to pre-seed in localStorage
- * @param {string} [options.cmsConfig.cmsUrl] — CMS server URL
- * @param {string} [options.cmsConfig.cmsKey] — CMS server key
- * @param {string} [options.cmsConfig.displayName] — display name for registration
+ * @param {object} [options.pwaConfig] — config fields to pre-seed in PWA localStorage (all non-Electron keys)
  * @param {string} [options.configFilePath] — absolute path to config.json (for POST /config writeback)
  * @param {string} [options.dataDir] — absolute path to data directory (for ContentStore storage)
- * @param {object} [options.playerConfig] — extra config fields to inject into localStorage (e.g. controls)
  * @param {function} [options.onLog] — log sink for cross-process forwarding; receives ({ level, name, args })
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir, playerConfig, onLog } = {}) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog } = {}) {
   const app = express();
 
   // Register cross-process log sink (e.g. Electron main → renderer DevTools)
@@ -163,25 +159,22 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // Make cmsConfig updatable (POST /config can change it at runtime)
-  let currentCmsConfig = cmsConfig ? { ...cmsConfig } : null;
+  // Make pwaConfig updatable (POST /config can change it at runtime)
+  let currentPwaConfig = pwaConfig ? { ...pwaConfig } : null;
 
   // ─── POST /config — write config.json and update in-memory config ────
   app.post('/config', (req, res) => {
     logConfig.info('POST /config received:', JSON.stringify(req.body));
-    const { cmsUrl, cmsKey, displayName, hardwareKey, xmrChannel } = req.body;
+    const { cmsUrl } = req.body;
     if (!cmsUrl) return res.status(400).json({ error: 'cmsUrl is required' });
 
-    // Update in-memory config (takes effect on next page load injection)
-    currentCmsConfig = { cmsUrl, cmsKey: cmsKey || '', displayName: displayName || '' };
+    // Update in-memory config — merge all POSTed fields (takes effect on next page load injection)
+    currentPwaConfig = { ...(currentPwaConfig || {}), ...req.body };
 
     // Write config.json (host-specific path passed as option)
     if (configFilePath) {
-      const configData = { cmsUrl, cmsKey, displayName };
-      if (hardwareKey) configData.hardwareKey = hardwareKey;
-      if (xmrChannel) configData.xmrChannel = xmrChannel;
       fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
-      fs.writeFileSync(configFilePath, JSON.stringify(configData, null, 2));
+      fs.writeFileSync(configFilePath, JSON.stringify(req.body, null, 2));
       logConfig.info(`Wrote config.json: ${configFilePath}`);
     }
 
@@ -614,19 +607,9 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
   // params from the config file, so the PWA skips the setup screen.
   // Uses currentCmsConfig (mutable ref) so POST /config changes take effect.
   function buildConfigScript() {
-    const hasCms = currentCmsConfig && currentCmsConfig.cmsUrl;
-    const hasPlayerConfig = playerConfig && Object.keys(playerConfig).length > 0;
-    if (!hasCms && !hasPlayerConfig) return '';
+    if (!currentPwaConfig || !Object.keys(currentPwaConfig).length) return '';
 
-    const configObj = {
-      ...(hasCms ? {
-        cmsUrl: currentCmsConfig.cmsUrl,
-        cmsKey: currentCmsConfig.cmsKey || '',
-        displayName: currentCmsConfig.displayName || '',
-      } : {}),
-      ...(playerConfig || {}),
-    };
-    const configJson = JSON.stringify(configObj);
+    const configJson = JSON.stringify(currentPwaConfig);
     return `<script>
 (function(){
   try {
@@ -635,16 +618,13 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
     var injected = ${configJson};
     var merged = Object.assign({}, existing, injected);
     localStorage.setItem('xibo_config', JSON.stringify(merged));
-  } catch(e) { logConfig.warn('ConfigInject failed:', e); }
+  } catch(e) { console.warn('ConfigInject failed:', e); }
 })();
 </script>`;
   }
 
-  if (currentCmsConfig && currentCmsConfig.cmsUrl) {
-    logProxy.info(`CMS config injection enabled for ${currentCmsConfig.cmsUrl}`);
-  }
-  if (playerConfig && Object.keys(playerConfig).length > 0) {
-    logProxy.info('Player config injection enabled:', JSON.stringify(playerConfig));
+  if (currentPwaConfig && Object.keys(currentPwaConfig).length > 0) {
+    logProxy.info('PWA config injection enabled:', JSON.stringify(currentPwaConfig));
   }
 
   /**
@@ -731,8 +711,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir, playerConfig, onLog } = {}) {
-  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath, dataDir, playerConfig, onLog });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {
