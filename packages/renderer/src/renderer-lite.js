@@ -2304,23 +2304,22 @@ export class RendererLite {
       const timePerPage = (duration * 1000) / totalPages;
       this.log.info(`[pdf] PDF loaded: ${totalPages} pages, ${duration}s duration, ${(timePerPage / 1000).toFixed(1)}s/page`);
 
-      // Render a single page to a canvas, scaled to fit the region
-      const renderPage = async (pageNum) => {
-        const page = await pdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale: 1 });
-        const scale = Math.min(region.width / viewport.width, region.height / viewport.height);
-        const scaledViewport = page.getViewport({ scale });
+      // Single reused canvas — render each page on-demand, call page.cleanup()
+      // after each render to release PDF.js internal buffers. Sequential rendering
+      // (one page at a time via setTimeout) avoids the "Cannot use the same canvas
+      // during multiple render() operations" error.
+      const page1 = await pdf.getPage(1);
+      const viewport0 = page1.getViewport({ scale: 1 });
+      const scale = Math.min(region.width / viewport0.width, region.height / viewport0.height);
+      page1.cleanup();
 
-        const canvas = document.createElement('canvas');
-        canvas.className = 'pdf-page';
-        canvas.width = scaledViewport.width;
-        canvas.height = scaledViewport.height;
-        canvas.style.cssText = 'display:block;margin:auto;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);';
-
-        const context = canvas.getContext('2d');
-        await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
-        return canvas;
-      };
+      const canvas = document.createElement('canvas');
+      canvas.className = 'pdf-page';
+      canvas.width = Math.floor(viewport0.width * scale);
+      canvas.height = Math.floor(viewport0.height * scale);
+      canvas.style.cssText = 'display:block;margin:auto;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);';
+      const ctx = canvas.getContext('2d');
+      container.appendChild(canvas);
 
       // Page indicator (bottom-right)
       const indicator = document.createElement('div');
@@ -2328,40 +2327,25 @@ export class RendererLite {
       container.appendChild(indicator);
 
       let currentPage = 1;
-      const pageTimers = [];
+      let cycleTimer = null;
+      let stopped = false;
 
       const cyclePage = async () => {
+        if (stopped) return;
         indicator.textContent = `${currentPage} / ${totalPages}`;
 
-        // Fade out old canvas and release its buffer
-        const oldCanvas = container.querySelector('.pdf-page');
-        if (oldCanvas) {
-          oldCanvas.style.transition = 'opacity 0.3s';
-          oldCanvas.style.opacity = '0';
-          setTimeout(() => {
-            // Zero-size the canvas to release GPU/CPU bitmap memory
-            oldCanvas.width = 0;
-            oldCanvas.height = 0;
-            oldCanvas.remove();
-          }, 300);
-        }
+        const page = await pdf.getPage(currentPage);
+        const scaledViewport = page.getViewport({ scale });
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+        page.cleanup(); // Release PDF.js internal page buffers
 
-        // Render and show new page
-        const canvas = await renderPage(currentPage);
-        canvas.style.opacity = '0';
-        container.appendChild(canvas);
-        // Trigger reflow then fade in
-        canvas.offsetHeight; // eslint-disable-line no-unused-expressions
-        canvas.style.transition = 'opacity 0.3s';
-        canvas.style.opacity = '1';
-
-        // Schedule next page
-        if (totalPages > 1) {
-          const timer = setTimeout(() => {
+        // Schedule next page (only after current render completes)
+        if (totalPages > 1 && !stopped) {
+          cycleTimer = setTimeout(() => {
             currentPage = currentPage >= totalPages ? 1 : currentPage + 1;
             cyclePage();
           }, timePerPage);
-          pageTimers.push(timer);
         }
       };
 
@@ -2369,8 +2353,13 @@ export class RendererLite {
 
       // Store cleanup function on container for when widget is removed
       container._pdfCleanup = () => {
-        pageTimers.forEach(t => clearTimeout(t));
-        pageTimers.length = 0;
+        stopped = true;
+        if (cycleTimer) clearTimeout(cycleTimer);
+        cycleTimer = null;
+        canvas.width = 0;
+        canvas.height = 0;
+        pdf.cleanup();
+        pdf.destroy();
       };
 
     } catch (error) {
