@@ -871,7 +871,7 @@ ${mediaJS}
         break;
 
       case 'webpage':
-        const url = media.options.uri;
+        const url = decodeURIComponent(media.options.uri || '');
         startFn = `() => {
         const region = document.getElementById('region_${regionId}');
         const iframe = document.createElement('iframe');

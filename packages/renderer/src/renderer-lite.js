@@ -2305,7 +2305,9 @@ export class RendererLite {
     iframe.style.height = '100%';
     iframe.style.border = 'none';
     iframe.style.opacity = '0';
-    iframe.src = widget.options.uri;
+    // CMS may percent-encode the URI in XLF (e.g. https%3A%2F%2F → https://)
+    const uri = decodeURIComponent(widget.options.uri || '');
+    iframe.src = uri;
 
     return iframe;
   }
