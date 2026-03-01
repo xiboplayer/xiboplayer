@@ -1,28 +1,20 @@
 /**
  * Widget HTML caching tests
  *
- * Tests the URL rewriting and base tag injection that cacheWidgetHtml performs.
- * These are critical for widget rendering — CMS provides HTML with absolute
- * signed URLs that must be rewritten to local cache paths.
- *
- * Real-world scenario (RSS ticker in layout 472, region 223, widget 193):
- *   1. CMS getResource returns HTML with signed URLs for bundle.min.js, fonts.css
- *   2. SW download manager may cache this raw HTML before the main thread processes it
- *   3. cacheWidgetHtml must rewrite CMS URLs → /cache/static/ and fetch the resources
- *   4. Widget iframe loads, SW serves bundle.min.js and fonts.css from ContentStore
- *   5. bundle.min.js runs getWidgetData → $.ajax("193.json") → SW serves from store
+ * Tests the base tag injection and IC hostAddress rewriting.
+ * URL rewriting has been removed — the CMS now serves relative paths,
+ * and the proxy mirror routes serve content at CMS URL paths directly.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { cacheWidgetHtml } from './widget-html.js';
 
-// --- Realistic CMS HTML templates (based on actual CMS output) ---
-
 const CMS_BASE = 'https://displays.superpantalles.com';
 const SIGNED_PARAMS = 'displayId=152&type=P&itemId=1&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260222T000000Z&X-Amz-Expires=1771803983&X-Amz-SignedHeaders=host&X-Amz-Signature=abc123';
 
 /**
- * Simulates actual CMS RSS ticker widget HTML (layout 472, region 223, widget 193).
+ * RSS ticker widget HTML (layout 472, region 223, widget 193).
+ * In v2, CMS serves relative dependency URLs — but legacy tests use absolute.
  */
 function makeRssTickerHtml() {
   return `<!DOCTYPE html>
@@ -30,8 +22,8 @@ function makeRssTickerHtml() {
 <head>
 <meta charset="utf-8">
 <title>RSS Ticker</title>
-<script src="${CMS_BASE}/pwa/file?file=bundle.min.js&fileType=bundle&${SIGNED_PARAMS}"></script>
-<link rel="stylesheet" href="${CMS_BASE}/pwa/file?file=fonts.css&fileType=fontCss&${SIGNED_PARAMS}">
+<script src="/api/v2/player/dependencies/bundle.min.js"></script>
+<link rel="stylesheet" href="/api/v2/player/dependencies/fonts.css">
 <style>.rss-item { padding: 10px; }</style>
 </head>
 <body>
@@ -49,14 +41,14 @@ function getWidgetData() {
 </html>`;
 }
 
-/** PDF widget (layout 472, region 221, widget 190) — simpler, no data URL */
+/** PDF widget — relative paths, no data URL rewriting needed */
 function makePdfWidgetHtml() {
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<script src="${CMS_BASE}/pwa/file?file=bundle.min.js&fileType=bundle&${SIGNED_PARAMS}"></script>
-<link rel="stylesheet" href="${CMS_BASE}/pwa/file?file=fonts.css&fileType=fontCss&${SIGNED_PARAMS}"></link>
+<script src="/api/v2/player/dependencies/bundle.min.js"></script>
+<link rel="stylesheet" href="/api/v2/player/dependencies/fonts.css"></link>
 </head>
 <body>
 <object data="11.pdf" type="application/pdf" width="100%" height="100%"></object>
@@ -64,20 +56,8 @@ function makePdfWidgetHtml() {
 </html>`;
 }
 
-/** Clock widget — uses xmds.php endpoint (older CMS versions) */
-function makeClockWidgetHtml() {
-  return `<html>
-<head>
-<script src="${CMS_BASE}/xmds.php?file=bundle.min.js&${SIGNED_PARAMS}"></script>
-<link rel="stylesheet" href="${CMS_BASE}/xmds.php?file=fonts.css&${SIGNED_PARAMS}">
-</head>
-<body><div class="clock"></div></body>
-</html>`;
-}
-
 // --- Mock: track PUT /store/... calls via fetch() ---
 
-/** Map of storeKey → body text, populated by the fetch mock */
 const storeContents = new Map();
 const fetchedUrls = [];
 
@@ -88,26 +68,10 @@ function createFetchMock() {
     // PUT /store/... — store content
     if (opts?.method === 'PUT' && url.startsWith('/store/')) {
       const body = typeof opts.body === 'string' ? opts.body : await opts.body?.text?.() || '';
-      // Use full URL path as key (e.g. /store/widget/472/223/193)
       storeContents.set(url, body);
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
 
-    // HEAD /store/... — check existence
-    if (opts?.method === 'HEAD' && url.startsWith('/store/')) {
-      return new Response(null, { status: 404 }); // nothing pre-stored
-    }
-
-    // Proxy fetch for CMS resources
-    if (url.includes('bundle.min.js')) {
-      return new Response('var xiboIC = { init: function(){} };', { status: 200 });
-    }
-    if (url.includes('fonts.css')) {
-      return new Response(`@font-face { font-family: "Poppins"; src: url("${CMS_BASE}/pwa/file?file=Poppins-Regular.ttf&${SIGNED_PARAMS}"); }`, { status: 200 });
-    }
-    if (url.includes('.ttf') || url.includes('.woff')) {
-      return new Response(new Blob([new Uint8Array(100)]), { status: 200 });
-    }
     return new Response('', { status: 404 });
   });
 }
@@ -122,10 +86,9 @@ describe('cacheWidgetHtml', () => {
     global.fetch = createFetchMock();
   });
 
-  // Helper: get stored widget HTML (first widget entry)
   function getStoredWidget() {
     for (const [key, value] of storeContents) {
-      if (key.startsWith('/store/widget/')) return value;
+      if (key.startsWith('/store/api/v2/player/widgets/')) return value;
     }
     return undefined;
   }
@@ -133,13 +96,12 @@ describe('cacheWidgetHtml', () => {
   // --- Base tag injection ---
 
   describe('base tag injection', () => {
-    it('injects <base> tag after <head>', async () => {
+    it('injects <base> tag pointing to CMS media mirror path', async () => {
       const html = '<html><head><title>Widget</title></head><body>content</body></html>';
       await cacheWidgetHtml('472', '223', '193', html);
 
       const stored = getStoredWidget();
-      expect(stored).toContain('<base href=');
-      expect(stored).toContain('/cache/media/">');
+      expect(stored).toContain('<base href="/api/v2/player/media/">');
     });
 
     it('injects <base> tag when no <head> tag exists', async () => {
@@ -147,27 +109,25 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', html);
 
       const stored = getStoredWidget();
-      expect(stored).toContain('<base href=');
+      expect(stored).toContain('<base href="/api/v2/player/media/">');
     });
   });
 
-  // --- RSS ticker: layout 472, region 223, widget 193 ---
+  // --- RSS ticker ---
 
   describe('RSS ticker (layout 472 / region 223 / widget 193)', () => {
-    it('rewrites bundle.min.js and fonts.css signed URLs', async () => {
+    it('preserves dependency URLs as-is (no rewriting needed)', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
       const stored = getStoredWidget();
-      expect(stored).not.toContain(CMS_BASE);
-      expect(stored).toContain('/cache/static/bundle.min.js');
-      expect(stored).toContain('/cache/static/fonts.css');
+      expect(stored).toContain('/api/v2/player/dependencies/bundle.min.js');
+      expect(stored).toContain('/api/v2/player/dependencies/fonts.css');
     });
 
-    it('preserves the data URL (193.json) for SW interception', async () => {
+    it('preserves the data URL (193.json) for resolution via base tag', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
       const stored = getStoredWidget();
-      // 193.json is relative — resolved by <base> tag, not rewritten
       expect(stored).toContain('"193.json"');
     });
 
@@ -179,70 +139,53 @@ describe('cacheWidgetHtml', () => {
       expect(stored).toContain('/ic"');
     });
 
-    it('fetches bundle.min.js and fonts.css from CMS for local caching', async () => {
+    it('does NOT fetch any static resources (pipeline handles deps)', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
-      const bundleFetched = fetchedUrls.some(u => u.includes('bundle.min.js'));
-      const fontsFetched = fetchedUrls.some(u => u.includes('fonts.css'));
-      expect(bundleFetched).toBe(true);
-      expect(fontsFetched).toBe(true);
+      // Only the widget HTML PUT should be fetched — no proactive resource fetches
+      const putCalls = fetchedUrls.filter(u => u.startsWith('/store/api/v2/player/widgets/'));
+      expect(putCalls.length).toBe(1);
     });
 
     it('stores processed HTML at correct store key', async () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
       const keys = [...storeContents.keys()];
-      const widgetKey = keys.find(k => k.includes('/store/widget/472/223/193'));
-      expect(widgetKey).toBeTruthy();
-    });
-
-    it('stores fonts.css as a blob (font rewriting handled by proxy)', async () => {
-      await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
-
-      // fonts.css should be fetched and stored, but font files inside it
-      // are NOT parsed/fetched here — the proxy rewrites CSS font URLs
-      const cssFetched = fetchedUrls.some(u => u.includes('fonts.css'));
-      expect(cssFetched).toBe(true);
-      const cssStored = [...storeContents.keys()].some(k => k.includes('fonts.css'));
-      expect(cssStored).toBe(true);
+      expect(keys.some(k => k.includes('/store/api/v2/player/widgets/472/223/193'))).toBe(true);
     });
   });
 
-  // --- PDF widget: layout 472, region 221, widget 190 ---
+  // --- PDF widget ---
 
   describe('PDF widget (layout 472 / region 221 / widget 190)', () => {
-    it('rewrites CMS URLs and preserves relative PDF path', async () => {
+    it('preserves relative PDF path for resolution via base tag', async () => {
       await cacheWidgetHtml('472', '221', '190', makePdfWidgetHtml());
 
       const stored = getStoredWidget();
-      expect(stored).not.toContain(CMS_BASE);
-      expect(stored).toContain('/cache/static/bundle.min.js');
-      // PDF data attribute "11.pdf" is relative — resolved by <base> tag
       expect(stored).toContain('"11.pdf"');
     });
 
-    it('stores at correct widget store key with layout/region/media IDs', async () => {
+    it('stores at correct widget store key', async () => {
       await cacheWidgetHtml('472', '221', '190', makePdfWidgetHtml());
 
       const keys = [...storeContents.keys()];
-      expect(keys.some(k => k.includes('/store/widget/472/221/190'))).toBe(true);
+      expect(keys.some(k => k.includes('/store/api/v2/player/widgets/472/221/190'))).toBe(true);
     });
   });
 
-  // --- Clock widget: xmds.php endpoint (legacy) ---
+  // --- CSS object-position fix ---
 
-  describe('clock widget with xmds.php URLs', () => {
-    it('rewrites xmds.php signed URLs to local cache paths', async () => {
-      await cacheWidgetHtml('1', '1', '1', makeClockWidgetHtml());
+  describe('CSS object-position fix', () => {
+    it('injects object-position CSS fix', async () => {
+      const html = '<html><head></head><body></body></html>';
+      await cacheWidgetHtml('472', '223', '193', html);
 
       const stored = getStoredWidget();
-      expect(stored).not.toContain('xmds.php');
-      expect(stored).toContain('/cache/static/bundle.min.js');
-      expect(stored).toContain('/cache/static/fonts.css');
+      expect(stored).toContain('object-position:center center');
     });
   });
 
-  // --- Idempotency (regression: duplicate base/style tags) ---
+  // --- Idempotency ---
 
   describe('idempotency', () => {
     it('does not add duplicate <base> tags on re-processing', async () => {
@@ -272,38 +215,16 @@ describe('cacheWidgetHtml', () => {
     });
   });
 
-  // --- SW pre-cache scenario (the bug we fixed) ---
+  // --- Multi-region ---
 
-  describe('SW pre-cached raw HTML (regression)', () => {
-    it('processes raw HTML that SW cached without rewriting', async () => {
-      // Simulate: SW downloads getResource HTML and caches it raw
-      const rawCmsHtml = makeRssTickerHtml();
-
-      // Main thread finds it in cache and re-processes
-      await cacheWidgetHtml('472', '223', '193', rawCmsHtml);
-
-      const stored = getStoredWidget();
-      // CMS URLs must be rewritten even though HTML came from cache
-      expect(stored).not.toContain(CMS_BASE);
-      expect(stored).toContain('/cache/static/bundle.min.js');
-      expect(stored).toContain('/cache/static/fonts.css');
-      expect(stored).toContain('<base href=');
-    });
-
-    it('handles different widgets in different regions of same layout', async () => {
-      // Layout 472 has region 221 (PDF) and region 223 (RSS ticker)
+  describe('multi-region layout', () => {
+    it('handles different widgets in different regions', async () => {
       await cacheWidgetHtml('472', '221', '190', makePdfWidgetHtml());
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
       const keys = [...storeContents.keys()];
-      const pdfKey = keys.find(k => k.includes('/store/widget/472/221/190'));
-      const rssKey = keys.find(k => k.includes('/store/widget/472/223/193'));
-      expect(pdfKey).toBeTruthy();
-      expect(rssKey).toBeTruthy();
-
-      // Both should have CMS URLs rewritten
-      expect(storeContents.get(pdfKey)).not.toContain(CMS_BASE);
-      expect(storeContents.get(rssKey)).not.toContain(CMS_BASE);
+      expect(keys.some(k => k.includes('/store/api/v2/player/widgets/472/221/190'))).toBe(true);
+      expect(keys.some(k => k.includes('/store/api/v2/player/widgets/472/223/193'))).toBe(true);
     });
   });
 });

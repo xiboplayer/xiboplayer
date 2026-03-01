@@ -91,10 +91,15 @@ export class MessageHandler {
     }
 
     try {
+      // Convert files to store keys using URL paths
+      const deleteFiles = files.map(f => ({
+        ...f,
+        key: f.path ? f.path.split('?')[0].replace(/^\/+/, '') : `${f.type}/${f.id}`,
+      }));
       const resp = await fetch('/store/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files }),
+        body: JSON.stringify({ files: deleteFiles }),
       });
       const result = await resp.json();
       this.log.info(`Purge complete: ${result.deleted}/${result.total} files deleted`);
@@ -127,7 +132,9 @@ export class MessageHandler {
   /**
    * Handle DOWNLOAD_FILES with XLF-driven media resolution.
    */
-  async handleDownloadFiles({ layoutOrder, files, layoutDependants }) {
+  async handleDownloadFiles(data) {
+    const { layoutOrder, files, layoutDependants } = data;
+
     const dm = this.downloadManager;
     const queue = dm.queue;
     let enqueuedCount = 0;
@@ -140,11 +147,10 @@ export class MessageHandler {
     for (const f of files) {
       if (f.type === 'layout') {
         xlfFiles.set(parseInt(f.id), f);
-      } else if (f.type === 'resource' || f.code === 'fonts.css'
-          || (f.path && (f.path.includes('bundle.min') || f.path.includes('fonts')))) {
+      } else if (f.type === 'static') {
         resources.push(f);
       } else {
-        if (f.path && f.path.includes('getData')) {
+        if (f.path && (f.path.includes('getData') || f.path.includes('/datasets/'))) {
           f.isGetData = true;
         }
         mediaFiles.set(String(f.id), f);
@@ -161,7 +167,10 @@ export class MessageHandler {
       if (!xlfFile?.path) continue;
 
       xlfPromises.push((async () => {
-        const storeKey = `layout/${layoutId}`;
+        // Store key mirrors the CMS URL path
+        const storeKey = xlfFile.path
+          ? xlfFile.path.split('?')[0].replace(/^\/+/, '')
+          : `api/v2/player/media/${layoutId}`;
         // Check if XLF already stored on disk
         let xlfText;
         try {
@@ -190,7 +199,9 @@ export class MessageHandler {
     for (const [layoutId, xlfFile] of xlfFiles) {
       if (layoutOrder.includes(layoutId)) continue;
       xlfPromises.push((async () => {
-        const storeKey = `layout/${layoutId}`;
+        const storeKey = xlfFile.path
+          ? xlfFile.path.split('?')[0].replace(/^\/+/, '')
+          : `api/v2/player/media/${layoutId}`;
         let xlfText;
         try {
           const headResp = await fetch(`/store/${storeKey}`, { method: 'HEAD' });
@@ -220,16 +231,9 @@ export class MessageHandler {
     this.log.info(`Parsed ${layoutMediaMap.size} XLFs`);
 
     // ── Step 2: Enqueue resources ──
-    // Remap store keys: CMS uses type=resource/id=42, but widget HTML references
-    // /cache/static/bundle.min.js — store as static/{filename} so both match.
+    // Dependencies arrive pre-classified as type=static with filename IDs
     const resourceBuilder = new LayoutTaskBuilder(queue);
     for (const file of resources) {
-      const filename = file.code || file.saveAs
-        || new URLSearchParams((file.path || '').split('?')[1] || '').get('file');
-      if (filename) {
-        file.type = 'static';
-        file.id = filename;
-      }
       const enqueued = await this._enqueueFile(dm, resourceBuilder, file, enqueuedTasks);
       if (enqueued) enqueuedCount++;
     }
@@ -331,7 +335,10 @@ export class MessageHandler {
       return false;
     }
 
-    const storeKey = `${file.type}/${file.id}`;
+    // Store key = CMS URL path (strip leading slash, drop query params)
+    const storeKey = file.path
+      ? file.path.split('?')[0].replace(/^\/+/, '')
+      : `${file.type}/${file.id}`;
 
     // Check if already stored on disk via proxy HEAD
     try {
@@ -371,7 +378,9 @@ export class MessageHandler {
     try {
       const blob = await task.wait();
       const fileSize = parseInt(fileInfo.size) || blob.size;
-      const storeKey = `${fileInfo.type}/${fileInfo.id}`;
+      const storeKey = fileInfo.path
+        ? fileInfo.path.split('?')[0].replace(/^\/+/, '')
+        : `${fileInfo.type}/${fileInfo.id}`;
 
       this.log.info('Download complete:', storeKey, `(${formatBytes(fileSize)})`);
 
@@ -399,11 +408,14 @@ export class MessageHandler {
         });
       });
 
-      this.downloadManager.queue.removeCompleted(`${fileInfo.type}/${fileInfo.id}`);
+      this.downloadManager.queue.removeCompleted(storeKey);
       return blob;
     } catch (error) {
       this.log.error('Download failed:', fileInfo.id, error);
-      this.downloadManager.queue.removeCompleted(`${fileInfo.type}/${fileInfo.id}`);
+      const errorStoreKey = fileInfo.path
+        ? fileInfo.path.split('?')[0].replace(/^\/+/, '')
+        : `${fileInfo.type}/${fileInfo.id}`;
+      this.downloadManager.queue.removeCompleted(errorStoreKey);
       throw error;
     }
   }

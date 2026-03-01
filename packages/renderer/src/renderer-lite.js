@@ -40,7 +40,7 @@
  */
 
 import { createNanoEvents } from 'nanoevents';
-import { createLogger, isDebug } from '@xiboplayer/utils';
+import { createLogger, isDebug, PLAYER_API } from '@xiboplayer/utils';
 import { LayoutPool } from './layout-pool.js';
 
 /**
@@ -1521,10 +1521,10 @@ export class RendererLite {
         this.options.getMediaUrl(mediaId).then(url => {
           audio.src = url;
         }).catch(() => {
-          audio.src = `${window.location.origin}/player/cache/media/${audioNode.uri}`;
+          audio.src = `${window.location.origin}${PLAYER_API}/media/${audioNode.uri}`;
         });
       } else if (!audioSrc) {
-        audio.src = `${window.location.origin}/player/cache/media/${audioNode.uri}`;
+        audio.src = `${window.location.origin}${PLAYER_API}/media/${audioNode.uri}`;
       } else {
         audio.src = audioSrc;
       }
@@ -1893,7 +1893,7 @@ export class RendererLite {
     if (!imageSrc && this.options.getMediaUrl) {
       imageSrc = await this.options.getMediaUrl(fileId);
     } else if (!imageSrc) {
-      imageSrc = `${window.location.origin}/player/cache/media/${widget.options.uri}`;
+      imageSrc = `${window.location.origin}${PLAYER_API}/media/${widget.options.uri}`;
     }
 
     img.src = imageSrc;
@@ -1938,7 +1938,7 @@ export class RendererLite {
     if (!videoSrc && this.options.getMediaUrl) {
       videoSrc = await this.options.getMediaUrl(fileId);
     } else if (!videoSrc) {
-      videoSrc = `${window.location.origin}/player/cache/media/${fileId}`;
+      videoSrc = `${window.location.origin}${PLAYER_API}/media/${fileId}`;
     }
 
     // HLS/DASH streaming support
@@ -2119,7 +2119,7 @@ export class RendererLite {
     if (!audioSrc && this.options.getMediaUrl) {
       audioSrc = await this.options.getMediaUrl(fileId);
     } else if (!audioSrc) {
-      audioSrc = `${window.location.origin}/player/cache/media/${fileId}`;
+      audioSrc = `${window.location.origin}${PLAYER_API}/media/${fileId}`;
     }
 
     audio.src = audioSrc;
@@ -2258,7 +2258,14 @@ export class RendererLite {
   }
 
   /**
-   * Render PDF widget
+   * Render PDF widget — single reusable canvas, page-by-page cycling.
+   *
+   * Memory strategy:
+   * - One canvas is created and reused for all pages (no DOM churn)
+   * - Each page is rendered sequentially (avoids concurrent render errors)
+   * - page.cleanup() releases PDF.js internal page buffers after each render
+   * - pdf.destroy() releases the entire document on widget teardown
+   * - Active renderTask is cancelled on cleanup to prevent stale renders
    */
   async renderPdf(widget, region) {
     const container = document.createElement('div');
@@ -2292,7 +2299,7 @@ export class RendererLite {
     if (!pdfUrl && this.options.getMediaUrl) {
       pdfUrl = await this.options.getMediaUrl(fileId);
     } else if (!pdfUrl) {
-      pdfUrl = `${window.location.origin}/player/cache/media/${widget.options.uri}`;
+      pdfUrl = `${window.location.origin}${PLAYER_API}/media/${widget.options.uri}`;
     }
 
     // Render PDF with multi-page cycling
@@ -2304,10 +2311,7 @@ export class RendererLite {
       const timePerPage = (duration * 1000) / totalPages;
       this.log.info(`[pdf] PDF loaded: ${totalPages} pages, ${duration}s duration, ${(timePerPage / 1000).toFixed(1)}s/page`);
 
-      // Single reused canvas — render each page on-demand, call page.cleanup()
-      // after each render to release PDF.js internal buffers. Sequential rendering
-      // (one page at a time via setTimeout) avoids the "Cannot use the same canvas
-      // during multiple render() operations" error.
+      // Measure page size from first page to set up the single reusable canvas
       const page1 = await pdf.getPage(1);
       const viewport0 = page1.getViewport({ scale: 1 });
       const scale = Math.min(region.width / viewport0.width, region.height / viewport0.height);
@@ -2321,23 +2325,37 @@ export class RendererLite {
       const ctx = canvas.getContext('2d');
       container.appendChild(canvas);
 
-      // Page indicator (bottom-right)
+      // Page indicator (bottom-right, v1-style pill)
       const indicator = document.createElement('div');
-      indicator.style.cssText = 'position:absolute;bottom:8px;right:12px;color:rgba(255,255,255,0.6);font:12px system-ui;z-index:1;';
+      indicator.style.cssText = 'position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,0.7);color:white;padding:8px 12px;border-radius:4px;font:14px system-ui;z-index:1;';
       container.appendChild(indicator);
 
       let currentPage = 1;
       let cycleTimer = null;
+      let activeRenderTask = null;
       let stopped = false;
 
+      // Render one page at a time on the single canvas. Sequential scheduling
+      // (setTimeout after render completes) avoids the "Cannot use the same
+      // canvas during multiple render() operations" error from PDF.js.
       const cyclePage = async () => {
         if (stopped) return;
-        indicator.textContent = `${currentPage} / ${totalPages}`;
+        indicator.textContent = `Page ${currentPage} / ${totalPages}`;
 
         const page = await pdf.getPage(currentPage);
         const scaledViewport = page.getViewport({ scale });
+
+        // Clear and render on the reusable canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+        activeRenderTask = page.render({ canvasContext: ctx, viewport: scaledViewport });
+        try {
+          await activeRenderTask.promise;
+        } catch (e) {
+          // RenderingCancelledException is expected when stopped during render
+          if (stopped) return;
+          throw e;
+        }
+        activeRenderTask = null;
         page.cleanup(); // Release PDF.js internal page buffers
 
         // Schedule next page (only after current render completes)
@@ -2351,14 +2369,18 @@ export class RendererLite {
 
       await cyclePage();
 
-      // Store cleanup function on container for when widget is removed
+      // Cleanup: cancel active render, clear timer, release PDF document
       container._pdfCleanup = () => {
         stopped = true;
         if (cycleTimer) clearTimeout(cycleTimer);
         cycleTimer = null;
+        if (activeRenderTask) {
+          activeRenderTask.cancel();
+          activeRenderTask = null;
+        }
+        // Zero canvas dimensions to release GPU backing store
         canvas.width = 0;
         canvas.height = 0;
-        pdf.cleanup();
         pdf.destroy();
       };
 

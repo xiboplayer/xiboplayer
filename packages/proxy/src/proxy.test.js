@@ -68,13 +68,6 @@ describe('createProxyApp', () => {
     expect(res.body).toContain('Missing cms parameter');
   });
 
-  it('returns 400 for /rest-proxy without cms param', async () => {
-    const app = makeApp();
-    const res = await request(app, 'GET', '/rest-proxy');
-    expect(res.status).toBe(400);
-    expect(res.body).toContain('Missing cms parameter');
-  });
-
   it('returns 400 for /file-proxy without cms param', async () => {
     const app = makeApp();
     const res = await request(app, 'GET', '/file-proxy');

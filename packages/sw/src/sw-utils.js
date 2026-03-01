@@ -106,20 +106,6 @@ export function createErrorResponse(message, status = 500) {
 }
 
 /**
- * Cache key builder
- */
-export const CacheKey = {
-  media: (fileId) => `${BASE}/cache/media/${fileId}`,
-  layout: (layoutId) => `${BASE}/cache/layout/${layoutId}`,
-  widget: (layoutId, regionId, widgetId) => `${BASE}/cache/widget/${layoutId}/${regionId}/${widgetId}`,
-  chunk: (baseKey, chunkIndex) => `${baseKey}/chunk-${chunkIndex}`,
-  metadata: (baseKey) => `${baseKey}/metadata`,
-
-  // Normalize key from URL pathname
-  fromPathname: (pathname) => pathname.startsWith(BASE) ? pathname : `${BASE}${pathname}`
-};
-
-/**
  * HTTP Status Codes
  */
 export const HTTP_STATUS = {

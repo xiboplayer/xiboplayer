@@ -8,7 +8,7 @@
 import { RendererLite } from '@xiboplayer/renderer';
 import { StoreClient, DownloadClient } from '@xiboplayer/cache';
 import { PlayerCore } from '@xiboplayer/core';
-import { createLogger, registerLogSink } from '@xiboplayer/utils';
+import { createLogger, registerLogSink, PLAYER_API } from '@xiboplayer/utils';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
 import { TimelineOverlay, isTimelineVisible } from './timeline-overlay.js';
 import { SetupOverlay } from './setup-overlay.js';
@@ -25,7 +25,6 @@ const PLAYER_BASE = new URL('./', window.location.href).pathname.replace(/\/$/, 
 let cacheWidgetHtml: any;
 let scheduleManager: any;
 let config: any;
-let RestClient: any;
 let RestClientV2: any;
 let XmdsClient: any;
 let XmrWrapper: any;
@@ -134,34 +133,32 @@ class PwaPlayer {
         getMediaUrl: async (fileId: number) => {
           log.debug(`getMediaUrl called for media ${fileId}`);
 
-          // Check if file exists in cache (no blob creation - streaming!)
-          const exists = await store.has('media', String(fileId));
+          // Check if file exists in cache via mirror route HEAD
+          const exists = await store.has('api/v2/player', `media/${fileId}`);
 
           if (!exists) {
             log.warn(`Media ${fileId} not in cache`);
             return '';
           }
 
-          // Return direct URL - Service Worker streams via Range requests
-          // This eliminates blob creation delay and reduces memory usage!
-          const streamingUrl = `${PLAYER_BASE}/cache/media/${fileId}`;
+          // Return direct URL — proxy mirror route serves from ContentStore
+          const streamingUrl = `${window.location.origin}${PLAYER_API}/media/${fileId}`;
           log.debug(`Using streaming URL for media ${fileId}: ${streamingUrl}`);
           return streamingUrl;
         },
 
         // Provide widget HTML resolver — check ContentStore via proxy
         getWidgetHtml: async (widget: any) => {
-          const storeKey = `widget/${widget.layoutId}/${widget.regionId}/${widget.id}`;
-          const cacheUrl = `${PLAYER_BASE}/cache/widget/${widget.layoutId}/${widget.regionId}/${widget.id}`;
-          log.debug(`Looking for widget HTML at: ${storeKey}`, widget);
+          const widgetPath = `${PLAYER_API}/widgets/${widget.layoutId}/${widget.regionId}/${widget.id}`;
+          log.debug(`Looking for widget HTML at: ${widgetPath}`, widget);
 
           try {
-            const exists = await store.has('widget', `${widget.layoutId}/${widget.regionId}/${widget.id}`);
+            const exists = await store.has('api/v2/player/widgets', `${widget.layoutId}/${widget.regionId}/${widget.id}`);
             if (exists) {
-              log.debug(`Widget HTML found in store: ${storeKey}, using cache URL for iframe`);
-              return { url: cacheUrl, fallback: widget.raw || '' };
+              log.debug(`Widget HTML found in store, using mirror URL for iframe`);
+              return { url: widgetPath, fallback: widget.raw || '' };
             } else {
-              log.warn(`No widget HTML found in store: ${storeKey}`);
+              log.warn(`No widget HTML found in store: ${widgetPath}`);
             }
           } catch (error) {
             log.error(`Failed to check widget HTML for ${widget.id}:`, error);
@@ -353,7 +350,6 @@ class PwaPlayer {
       SyncManager = syncModule.SyncManager;
       scheduleManager = scheduleModule.scheduleManager;
       config = configModule.config;
-      RestClient = xmdsModule.RestClient;
       RestClientV2 = xmdsModule.RestClientV2;
       XmdsClient = xmdsModule.XmdsClient;
       XmrWrapper = xmrModule.XmrWrapper;
@@ -384,11 +380,10 @@ class PwaPlayer {
         } catch (_) { /* pure PWA — no Electron API */ }
       }
 
-      // Transport auto-detection:
-      //   transport: "rest-v2" → forced v2 REST API
-      //   transport: "rest"    → forced v1 REST API (/pwa/*)
+      // Transport selection:
+      //   transport: "rest-v2" → forced v2 REST API (default)
       //   transport: "xmds"   → forced SOAP
-      //   transport: "auto"   → try v2 → v1 → SOAP (default)
+      //   transport: "auto"   → try v2 → SOAP
       //   /player/pwa-xmds/   → forced SOAP (URL-based override)
       //   ?transport=xmds     → forced SOAP (query param override)
       const cfgTransport = (() => {
@@ -404,26 +399,17 @@ class PwaPlayer {
       if (transport === 'xmds') {
         log.info('Using XMDS/SOAP transport (forced)');
         this.xmds = new XmdsClient(config);
-      } else if (transport === 'rest') {
-        log.info('Using REST v1 transport (forced)');
-        this.xmds = new RestClient(config);
       } else if (transport === 'rest-v2') {
         log.info('Using REST v2 transport (forced)');
         this.xmds = new RestClientV2(config);
       } else {
-        // Auto-detect: try v2 → v1 → SOAP
+        // Auto-detect: try v2 → SOAP
         if (await RestClientV2.isAvailable(config.cmsUrl, { maxRetries: 0 })) {
           this.xmds = new RestClientV2(config);
           log.info('Using REST v2 transport (auto-detected)');
         } else {
-          this.xmds = new RestClient(config);
-          try {
-            await this.xmds.registerDisplay();
-            log.info('Using REST v1 transport (auto-detected)');
-          } catch (e: any) {
-            log.warn('REST unavailable, falling back to XMDS/SOAP:', e.message);
-            this.xmds = new XmdsClient(config);
-          }
+          log.warn('REST v2 unavailable, falling back to XMDS/SOAP');
+          this.xmds = new XmdsClient(config);
         }
       }
 
@@ -580,7 +566,15 @@ class PwaPlayer {
       // Restart overlay polling while downloads are active
       this.downloadOverlay?.startUpdating();
       try {
-        // groupedFiles is { layouts: [{ layoutId, mediaFiles }] }
+        // Push current JWT token to proxy for v2 API downloads
+        const token = this.xmds?._token || null;
+        if (token) {
+          await fetch('/auth-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token }),
+          });
+        }
         await downloads.download(groupedFiles);
         log.info('Download request complete');
       } catch (error) {
@@ -1471,12 +1465,12 @@ class PwaPlayer {
 
   /**
    * Check if all required media files are cached and ready.
-   * Uses StoreClient.has() → HEAD /store/:type/:id to check ContentStore on the proxy.
+   * Uses StoreClient.has() → HEAD /store${PLAYER_API}/media/:id to check ContentStore.
    */
   private async checkAllMediaCached(mediaIds: number[]): Promise<boolean> {
     for (const mediaId of mediaIds) {
       try {
-        const cached = await store.has('media', String(mediaId));
+        const cached = await store.has('api/v2/player', `media/${mediaId}`);
         if (!cached) {
           log.debug(`Media ${mediaId} not yet cached`);
           return false;
@@ -1516,7 +1510,7 @@ class PwaPlayer {
                 const storeId = `${layoutId}/${regionId}/${widgetId}`;
                 let html: string | null = null;
 
-                const existing = await store.get('widget', storeId);
+                const existing = await store.get('api/v2/player/widgets', storeId);
                 if (existing) {
                   html = await existing.text();
                   log.debug(`Found cached widget HTML for ${type} ${widgetId}`);
@@ -1526,12 +1520,11 @@ class PwaPlayer {
                   html = await this.xmds.getResource(layoutId, regionId, widgetId);
                   log.debug(`Retrieved widget HTML for ${type} ${widgetId} from CMS`);
                 }
-                // Always process: injects <base> tag, rewrites CMS signed URLs
-                // to local /cache/static/ paths, and fetches static resources.
+                // Always process: injects <base> tag, rewrites IC hostAddress.
                 // cacheWidgetHtml is idempotent — already-rewritten URLs won't re-match.
                 await cacheWidgetHtml(layoutId, regionId, widgetId, html);
                 // Read back the processed version from ContentStore
-                const processed = await store.get('widget', storeId);
+                const processed = await store.get('api/v2/player/widgets', storeId);
                 if (processed) html = await processed.text();
 
                 // Update raw content in XLF
@@ -1590,11 +1583,11 @@ class PwaPlayer {
           const fileId = mediaEl.getAttribute('fileId');
           if (!fileId) continue;
 
-          const exists = await store.has('media', fileId);
+          const exists = await store.has('api/v2/player', `media/${fileId}`);
           if (!exists) continue;
 
           // Probe metadata only — does NOT download the full video
-          const duration = await this.probeVideoDuration(`${PLAYER_BASE}/cache/media/${fileId}`);
+          const duration = await this.probeVideoDuration(`${window.location.origin}${PLAYER_API}/media/${fileId}`);
           if (duration > 0) {
             videoDurations.set(fileId, duration);
           }

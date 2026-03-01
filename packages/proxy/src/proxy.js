@@ -3,8 +3,8 @@
  *
  * Provides Express middleware that:
  * - Proxies XMDS SOAP requests (/xmds-proxy)
- * - Proxies REST API requests (/rest-proxy)
  * - Proxies file downloads with Range support (/file-proxy)
+ * - Mirrors CMS content at PLAYER_API paths (media, dependencies, widgets)
  * - Serves the PWA player as static files (/player/pwa/)
  */
 
@@ -13,7 +13,7 @@ import path from 'path';
 import { Readable } from 'node:stream';
 import express from 'express';
 import cors from 'cors';
-import { createLogger, registerLogSink } from '@xiboplayer/utils';
+import { createLogger, registerLogSink, PLAYER_API, setPlayerApi } from '@xiboplayer/utils';
 import { ContentStore } from './content-store.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
@@ -23,11 +23,14 @@ function redactUrl(url) {
   return url.replace(/(?<=[?&])(serverKey|hardwareKey|X-Amz-[^=]*)=[^&]*/gi, '$1=***');
 }
 
+// Server-side JWT token for v2 API file downloads.
+// Set once via POST /auth-token, injected into all /file-proxy CMS requests.
+let _bearerToken = null;
+
 // Module-level loggers — one per subsystem, following @xiboplayer/utils conventions.
 // In Node (no window/localStorage), default level is WARNING. Pass 'INFO' explicitly
 // so proxy logs are always visible (these are server-side operational logs).
 const logProxy = createLogger('Proxy', 'INFO');
-const logRest  = createLogger('REST Proxy', 'INFO');
 const logFile  = createLogger('FileProxy', 'INFO');
 const logStore = createLogger('ContentStore', 'INFO');
 const logConfig = createLogger('Config', 'INFO');
@@ -144,6 +147,12 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
 export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog } = {}) {
   const app = express();
 
+  // Override Player API base path if configured (before registering routes)
+  if (pwaConfig?.playerApiBase) {
+    setPlayerApi(pwaConfig.playerApiBase);
+    logProxy.info(`Player API base path: ${PLAYER_API}`);
+  }
+
   // Register cross-process log sink (e.g. Electron main → renderer DevTools)
   if (onLog) registerLogSink(onLog);
 
@@ -218,51 +227,6 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
   });
 
-  // ─── REST API Proxy ────────────────────────────────────────────────
-  app.all('/rest-proxy', async (req, res) => {
-    try {
-      const cmsUrl = req.query.cms;
-      const apiPath = req.query.path;
-      if (!cmsUrl) return res.status(400).json({ error: 'Missing cms parameter' });
-
-      const queryParams = new URLSearchParams(req.query);
-      queryParams.delete('cms');
-      queryParams.delete('path');
-      const queryString = queryParams.toString();
-      const fullUrl = `${cmsUrl}${apiPath || ''}${queryString ? '?' + queryString : ''}`;
-
-      logRest.info(`${req.method} ${redactUrl(fullUrl)}`);
-
-      const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
-      if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
-      if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'];
-      if (req.headers['accept']) headers['Accept'] = req.headers['accept'];
-      if (req.headers['if-none-match']) headers['If-None-Match'] = req.headers['if-none-match'];
-
-      const fetchOptions = { method: req.method, headers };
-      if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
-        if (req.headers['content-type']?.includes('x-www-form-urlencoded') && typeof req.body === 'object') {
-          fetchOptions.body = new URLSearchParams(req.body).toString();
-        } else {
-          fetchOptions.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-        }
-      }
-
-      const response = await fetch(fullUrl, fetchOptions);
-      response.headers.forEach((value, key) => {
-        if (!SKIP_HEADERS.includes(key.toLowerCase())) {
-          res.setHeader(key, value);
-        }
-      });
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      const buffer = await response.arrayBuffer();
-      res.status(response.status).send(Buffer.from(buffer));
-      logRest.info(`${response.status} (${buffer.byteLength} bytes)`);
-    } catch (error) {
-      logRest.error('Error:', error.message);
-      res.status(500).json({ error: 'REST proxy error', message: error.message });
-    }
-  });
 
   // ─── ContentStore initialization ──────────────────────────────────
   let store = null;
@@ -271,6 +235,15 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     store.init();
     logProxy.info(`ContentStore enabled: ${path.join(dataDir, 'media')}`);
   }
+
+  // ─── Auth Token ──────────────────────────────────────────────────
+  // Store JWT token server-side so /file-proxy can inject it into CMS
+  // requests without passing tokens through URLs.
+  app.post('/auth-token', express.json(), (req, res) => {
+    _bearerToken = req.body.token || null;
+    logProxy.info('Auth token', _bearerToken ? 'set' : 'cleared');
+    res.json({ success: true });
+  });
 
   // ─── File Download Proxy ───────────────────────────────────────────
   // Streams CMS responses to disk + client simultaneously — zero buffering.
@@ -286,6 +259,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       logFile.info(`GET ${redactUrl(fullUrl)}`);
 
       const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
+      // Inject stored JWT token for v2 API requests
+      if (_bearerToken && fullUrl.includes(PLAYER_API)) {
+        headers['Authorization'] = `Bearer ${_bearerToken}`;
+      }
       if (req.headers.range) {
         headers['Range'] = req.headers.range;
         logFile.info(`Range: ${req.headers.range}`);
@@ -311,78 +288,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         return;
       }
 
-      // ── CSS font URL rewriting ──────────────────────────────────────
-      // CSS files are tiny (~1KB) — buffer, rewrite CMS font URLs to local
-      // /player/cache/static/ paths, fetch+store the font files, then
-      // send rewritten CSS.  This fixes CORS errors when fonts.css contains
-      // absolute CMS URLs that the browser can't fetch cross-origin.
-      const upstreamContentType = response.headers.get('content-type') || '';
-      // Detect CSS: check Content-Type, file extension, or ?file=*.css query parameter
-      // The CMS serves files via /pwa/file?file=fonts.css&... so fileUrl.endsWith('.css')
-      // fails due to trailing query params (e.g. &X-Amz-Signature=...).
-      const fileParam = new URLSearchParams(fileUrl.split('?')[1] || '').get('file') || '';
-      const isCss = upstreamContentType.includes('text/css')
-        || fileUrl.endsWith('.css')
-        || fileParam.endsWith('.css');
-
-      if (isCss) {
-        const cssBuffer = Buffer.from(await response.arrayBuffer());
-        let cssText = cssBuffer.toString('utf-8');
-
-        // Match any CMS signed URL with a file= query param. Handles both normal
-        // url('...') and truncated CSS (where closing '); is cut off by CMS).
-        const CMS_SIGNED_URL_RE = /https?:\/\/[^\s'")\]]+\?[^\s'")\]]*file=([^&\s'")\]]+)[^\s'")\]]*/g;
-        const fontJobs = [];
-        const FONT_EXTS = /\.(?:woff2?|ttf|otf|eot|svg)$/i;
-
-        cssText = cssText.replace(CMS_SIGNED_URL_RE, (fullUrl, filename) => {
-          if (!FONT_EXTS.test(filename) && !fullUrl.includes('fileType=font')) return fullUrl;
-          fontJobs.push({ filename, url: fullUrl });
-          logFile.info(`Rewrote font URL: ${filename}`);
-          return `/player/cache/static/${encodeURIComponent(filename)}`;
-        });
-
-        // Fetch and store font files BEFORE sending CSS — the iframe renders
-        // immediately after CSS is stored, so fonts must already be available.
-        if (store) {
-          await Promise.all(fontJobs.map(async ({ filename: fontFile, url: fontUrl }) => {
-            const fontStoreKey = `static/${encodeURIComponent(fontFile)}`;
-            if (store.has(fontStoreKey).exists) return; // already stored
-            try {
-              const r = await fetch(fontUrl, { headers: { 'User-Agent': `XiboPlayer/${appVersion}` } });
-              if (!r.ok) return;
-              const buf = await r.arrayBuffer();
-              const fontExt = fontFile.split('.').pop().toLowerCase();
-              const fontContentType = {
-                otf: 'font/otf', ttf: 'font/ttf',
-                woff: 'font/woff', woff2: 'font/woff2',
-                eot: 'application/vnd.ms-fontobject', svg: 'image/svg+xml',
-              }[fontExt] || 'application/octet-stream';
-              store.put(fontStoreKey, Buffer.from(buf), {
-                contentType: fontContentType, size: buf.byteLength,
-              });
-              logFile.info(`Stored font: ${fontFile} (${buf.byteLength} bytes)`);
-            } catch (e) {
-              logFile.warn(`Font fetch failed: ${fontFile}`, e.message);
-            }
-          }));
-        }
-
-        // Store rewritten CSS if storeKey provided
-        const rewrittenBuf = Buffer.from(cssText, 'utf-8');
-        if (store && req.query.storeKey) {
-          store.put(req.query.storeKey, rewrittenBuf, {
-            contentType: 'text/css', size: rewrittenBuf.length,
-          });
-          logFile.info(`Stored rewritten CSS: ${req.query.storeKey} (${rewrittenBuf.length} bytes)`);
-        }
-
-        res.setHeader('Content-Type', 'text/css');
-        res.setHeader('Content-Length', rewrittenBuf.length);
-        res.send(rewrittenBuf);
-        logFile.info(`${response.status} CSS rewritten (${fontJobs.length} font URLs, ${rewrittenBuf.length} bytes)`);
-        return;
-      }
+      // CSS font URL rewriting removed — CMS now serves CSS with relative
+      // paths (/api/v2/player/dependencies/font.otf) that resolve via mirror routes.
 
       const fetchStream = Readable.fromWeb(response.body);
 
@@ -474,17 +381,19 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
   });
 
-  // ─── ContentStore — Serve files ────────────────────────────────────
-  // GET /store/:type/* — serve stored file with Range support
-  app.get('/store/:type/{*splat}', (req, res) => {
+  // ─── serveFromStore — shared serving logic ──────────────────────────
+  /**
+   * Serve a file from ContentStore with Range support, CORS headers, and
+   * chunked file assembly. Used by mirror routes and /store/* routes.
+   */
+  function serveFromStore(req, res, storeKey) {
     if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
 
-    let key, info;
+    let info;
     try {
-      key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
-      info = store.has(key);
+      info = store.has(storeKey);
     } catch (err) {
-      logStore.error(`GET lookup error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
+      logStore.error(`GET lookup error for ${storeKey}:`, err.message);
       return res.status(500).end();
     }
     if (!info.exists) return res.status(404).end();
@@ -493,12 +402,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     const contentType = meta.contentType || 'application/octet-stream';
 
     if (info.chunked) {
-      // Chunked file — serve via assembled chunk reads
-      return serveChunkedFile(req, res, store, key, meta, contentType);
+      return serveChunkedFile(req, res, store, storeKey, meta, contentType);
     }
 
-    // Whole file — serve with Range support via fs.createReadStream
-    const filePath = store.getPath(key);
+    const filePath = store.getPath(storeKey);
     if (!filePath) return res.status(404).end();
 
     const fileSize = meta.size || fs.statSync(filePath).size;
@@ -517,7 +424,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Access-Control-Allow-Origin', '*');
 
-      const stream = store.getReadStream(key, { start, end });
+      const stream = store.getReadStream(storeKey, { start, end });
       stream.pipe(res);
     } else {
       res.status(200);
@@ -526,9 +433,75 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Access-Control-Allow-Origin', '*');
 
-      const stream = store.getReadStream(key);
+      const stream = store.getReadStream(storeKey);
       stream.pipe(res);
     }
+  }
+
+  // ─── CMS Mirror Routes ─────────────────────────────────────────────
+  // Serve content at the same URL paths the CMS uses — no translation needed.
+
+  // Strip leading slash for store key: /api/v2/player → api/v2/player
+  const STORE_PREFIX = PLAYER_API.slice(1);
+
+  // Media: {PLAYER_API}/media/:id
+  app.get(`${PLAYER_API}/media/:id`, (req, res) => {
+    serveFromStore(req, res, `${STORE_PREFIX}/media/${req.params.id}`);
+  });
+  app.head(`${PLAYER_API}/media/:id`, (req, res) => {
+    if (!store) return res.status(501).end();
+    const key = `${STORE_PREFIX}/media/${req.params.id}`;
+    const info = store.has(key);
+    if (!info.exists) return res.status(404).end();
+    const meta = info.metadata || {};
+    res.setHeader('Content-Length', meta.size || 0);
+    res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(200).end();
+  });
+
+  // Widgets: {PLAYER_API}/widgets/:layoutId/:regionId/:mediaId
+  app.get(`${PLAYER_API}/widgets/:layoutId/:regionId/:mediaId`, (req, res) => {
+    const { layoutId, regionId, mediaId } = req.params;
+    serveFromStore(req, res, `${STORE_PREFIX}/widgets/${layoutId}/${regionId}/${mediaId}`);
+  });
+  app.head(`${PLAYER_API}/widgets/:layoutId/:regionId/:mediaId`, (req, res) => {
+    if (!store) return res.status(501).end();
+    const key = `${STORE_PREFIX}/widgets/${req.params.layoutId}/${req.params.regionId}/${req.params.mediaId}`;
+    const info = store.has(key);
+    if (!info.exists) return res.status(404).end();
+    const meta = info.metadata || {};
+    res.setHeader('Content-Length', meta.size || 0);
+    res.setHeader('Content-Type', meta.contentType || 'text/html');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(200).end();
+  });
+
+  // Dependencies: {PLAYER_API}/dependencies/*
+  app.get(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
+    const filename = decodeURIComponent([req.params.splat].flat().pop());
+    serveFromStore(req, res, `${STORE_PREFIX}/dependencies/${filename}`);
+  });
+  app.head(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
+    if (!store) return res.status(501).end();
+    const filename = decodeURIComponent([req.params.splat].flat().pop());
+    const key = `${STORE_PREFIX}/dependencies/${filename}`;
+    const info = store.has(key);
+    if (!info.exists) return res.status(404).end();
+    const meta = info.metadata || {};
+    res.setHeader('Content-Length', meta.size || 0);
+    res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(200).end();
+  });
+
+  // ─── ContentStore — Serve files (legacy + internal) ──────────────────
+  // GET /store/:type/* — serve stored file with Range support
+  app.get('/store/:type/{*splat}', (req, res) => {
+    const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
+    serveFromStore(req, res, key);
   });
 
   // HEAD /store/:type/* — existence + size check
@@ -574,7 +547,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
 
     let deleted = 0;
     for (const file of files) {
-      const key = `${file.type}/${file.id}`;
+      const key = file.key || `${file.type}/${file.id}`;
       if (store.delete(key)) {
         deleted++;
         logStore.info(`Deleted: ${key}`);
@@ -649,26 +622,6 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
     res.type('html').send(injected);
   }
-
-  // ─── Serve cached static resources via Express (bypasses SW) ──────
-  // html2canvas and other non-SW contexts request /player/cache/static/*
-  // directly from Express. Route these to ContentStore so they don't 404.
-  app.get('/player/cache/static/{*splat}', (req, res) => {
-    if (!store) return res.status(404).end();
-    const filename = [req.params.splat].flat().pop();
-    const key = `static/${filename}`;
-    const info = store.has(key);
-    if (!info.exists) return res.status(404).type('text').send('Not found');
-    const meta = info.metadata || {};
-    const contentType = meta.contentType || 'application/octet-stream';
-    const filePath = store.getPath(key);
-    if (!filePath) return res.status(404).type('text').send('Not found');
-    const fileSize = meta.size || fs.statSync(filePath).size;
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', fileSize);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    store.getReadStream(key).pipe(res);
-  });
 
   // Always serve index.html through sendIndexHtml so config injection
   // works dynamically (POST /config can enable it at runtime).
