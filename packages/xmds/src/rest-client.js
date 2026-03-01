@@ -1,13 +1,18 @@
 /**
- * REST transport client for Xibo CMS.
+ * REST transport client for Xibo CMS Player API.
  *
- * Uses the /pwa REST API endpoints with JSON payloads and ETag caching.
- * Lighter than SOAP — ~30% smaller payloads, standard HTTP semantics.
+ * Uses the Player API REST endpoints with JWT auth, resource-oriented URLs,
+ * and native JSON responses (no XML parsing required).
  *
- * Protocol: https://github.com/linuxnow/xibo_players_docs
+ *   - JWT bearer token auth (single POST /auth → token for all requests)
+ *   - Resource-oriented URLs (/displays/{id}/schedule vs /schedule)
+ *   - Native JSON schedule (no client-side XML parsing)
+ *   - Categorized required files (media/layouts/widgets)
+ *   - CDN/reverse proxy compatible (GET with cache headers)
+ *
+ * Same public API as XmdsClient — drop-in replacement.
  */
-import { createLogger, fetchWithRetry } from '@xiboplayer/utils';
-import { parseScheduleResponse } from './schedule-parser.js';
+import { createLogger, fetchWithRetry, PLAYER_API } from '@xiboplayer/utils';
 
 const log = createLogger('REST');
 
@@ -17,9 +22,14 @@ export class RestClient {
     this.schemaVersion = 7;
     this.retryOptions = config.retryOptions || { maxRetries: 2, baseDelayMs: 2000 };
 
+    // JWT auth state
+    this._token = null;
+    this._tokenExpiresAt = 0;
+    this._displayId = null;
+
     // ETag-based HTTP caching
-    this._etags = new Map();         // endpoint → ETag string
-    this._responseCache = new Map(); // endpoint → cached parsed response
+    this._etags = new Map();
+    this._responseCache = new Map();
 
     log.info('Using REST transport');
   }
@@ -28,10 +38,10 @@ export class RestClient {
 
   /**
    * Get the REST API base URL.
-   * Falls back to /pwa path relative to the CMS address.
+   * Falls back to /api/v2/player path relative to the CMS address.
    */
   getRestBaseUrl() {
-    const base = this.config.restApiUrl || `${this.config.cmsUrl}/pwa`;
+    const base = this.config.restApiUrl || `${this.config.cmsUrl}${PLAYER_API}`;
     return base.replace(/\/+$/, '');
   }
 
@@ -46,7 +56,6 @@ export class RestClient {
 
   /**
    * Rewrite an absolute REST URL to go through /rest-proxy.
-   * Preserves all query params from the original URL.
    */
   _rewriteForProxy(urlString) {
     if (!this._isProxyMode() || !urlString.startsWith('http')) return urlString;
@@ -54,28 +63,68 @@ export class RestClient {
     const proxyUrl = new URL('/rest-proxy', window.location.origin);
     proxyUrl.searchParams.set('cms', parsed.origin);
     proxyUrl.searchParams.set('path', parsed.pathname);
-    // Forward all original query params
     for (const [key, value] of parsed.searchParams) {
       proxyUrl.searchParams.set(key, value);
     }
     return proxyUrl.toString();
   }
 
+  // ─── JWT auth ─────────────────────────────────────────────────
+
   /**
-   * Make a REST GET request with optional ETag caching.
-   * Returns the parsed JSON body, or cached data on 304.
+   * Authenticate with the CMS and obtain a JWT token.
+   * Called automatically before the first authenticated request.
+   */
+  async _authenticate() {
+    const url = `${this.getRestBaseUrl()}/auth`;
+
+    log.debug('Authenticating...');
+
+    const response = await fetchWithRetry(this._rewriteForProxy(url), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serverKey: this.config.cmsKey,
+        hardwareKey: this.config.hardwareKey,
+      }),
+    }, this.retryOptions);
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      throw new Error(`Auth failed: ${response.status} ${response.statusText} ${errorBody}`);
+    }
+
+    const data = await response.json();
+    this._token = data.token;
+    this._displayId = data.displayId;
+    // Refresh 60s before expiry to avoid edge-case rejections
+    this._tokenExpiresAt = Date.now() + (data.expiresIn - 60) * 1000;
+
+    log.info(`Authenticated as display ${this._displayId}`);
+  }
+
+  /**
+   * Get a valid JWT token, refreshing if expired or missing.
+   */
+  async _getToken() {
+    if (!this._token || Date.now() >= this._tokenExpiresAt) {
+      await this._authenticate();
+    }
+    return this._token;
+  }
+
+  /**
+   * Make an authenticated GET request with ETag caching.
    */
   async restGet(path, queryParams = {}) {
+    const token = await this._getToken();
     const url = new URL(`${this.getRestBaseUrl()}${path}`);
-    url.searchParams.set('serverKey', this.config.cmsKey);
-    url.searchParams.set('hardwareKey', this.config.hardwareKey);
-    url.searchParams.set('v', String(this.schemaVersion));
     for (const [key, value] of Object.entries(queryParams)) {
       url.searchParams.set(key, String(value));
     }
 
     const cacheKey = path;
-    const headers = {};
+    const headers = { 'Authorization': `Bearer ${token}` };
     const cachedEtag = this._etags.get(cacheKey);
     if (cachedEtag) {
       headers['If-None-Match'] = cachedEtag;
@@ -88,14 +137,18 @@ export class RestClient {
       headers,
     }, this.retryOptions);
 
-    // 304 Not Modified — return cached response
+    // Token expired mid-flight — re-auth and retry once
+    if (response.status === 401) {
+      this._token = null;
+      return this.restGet(path, queryParams);
+    }
+
     if (response.status === 304) {
       const cached = this._responseCache.get(cacheKey);
       if (cached) {
         log.debug(`${path} → 304 (using cache)`);
         return cached;
       }
-      // Cache miss despite 304 — fall through to fetch fresh
     }
 
     if (!response.ok) {
@@ -103,7 +156,6 @@ export class RestClient {
       throw new Error(`REST GET ${path} failed: ${response.status} ${response.statusText} ${errorBody}`);
     }
 
-    // Store ETag for future requests
     const etag = response.headers.get('ETag');
     if (etag) {
       this._etags.set(cacheKey, etag);
@@ -114,34 +166,36 @@ export class RestClient {
     if (contentType.includes('application/json')) {
       data = await response.json();
     } else {
-      // XML or HTML — return raw text
       data = await response.text();
     }
 
-    // Cache parsed response for 304 reuse
     this._responseCache.set(cacheKey, data);
     return data;
   }
 
   /**
-   * Make a REST POST/PUT request with JSON body.
-   * Returns the parsed JSON response.
+   * Make an authenticated POST/PUT request with JSON body.
    */
   async restSend(method, path, body = {}) {
+    const token = await this._getToken();
     const url = new URL(`${this.getRestBaseUrl()}${path}`);
-    url.searchParams.set('v', String(this.schemaVersion));
 
     log.debug(`${method} ${path}`);
 
     const response = await fetchWithRetry(this._rewriteForProxy(url.toString()), {
       method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        serverKey: this.config.cmsKey,
-        hardwareKey: this.config.hardwareKey,
-        ...body,
-      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
     }, this.retryOptions);
+
+    // Token expired mid-flight — re-auth and retry once
+    if (response.status === 401) {
+      this._token = null;
+      return this.restSend(method, path, body);
+    }
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');
@@ -158,15 +212,18 @@ export class RestClient {
   // ─── Public API ─────────────────────────────────────────────────
 
   /**
-   * RegisterDisplay - authenticate and get settings
-   * POST /register → JSON with display settings
+   * RegisterDisplay - authenticate and get settings.
+   * POST /displays → JSON with display settings
    */
   async registerDisplay() {
+    // Auth first to get displayId
+    await this._getToken();
+
     const os = typeof navigator !== 'undefined'
       ? `${navigator.platform} ${navigator.userAgent}`
       : 'unknown';
 
-    const json = await this.restSend('POST', '/register', {
+    const json = await this.restSend('POST', '/displays', {
       displayName: this.config.displayName,
       clientType: this.config.clientType || 'chromeOS',
       clientVersion: this.config.clientVersion || '0.1.0',
@@ -175,17 +232,16 @@ export class RestClient {
       macAddress: this.config.macAddress || 'n/a',
       xmrChannel: this.config.xmrChannel,
       xmrPubKey: this.config.xmrPubKey || '',
-      licenceResult: 'licensed',
     });
 
     return this._parseRegisterDisplayJson(json);
   }
 
   /**
-   * Parse REST JSON RegisterDisplay response into the same format as SOAP.
+   * Parse register display JSON response.
+   * Same output format as XmdsClient.
    */
   _parseRegisterDisplayJson(json) {
-    // Handle both direct object and wrapped {display: ...} forms
     const display = json.display || json;
     const attrs = display['@attributes'] || {};
     const code = attrs.code || display.code;
@@ -201,7 +257,6 @@ export class RestClient {
     for (const [key, value] of Object.entries(display)) {
       if (key === '@attributes' || key === 'file') continue;
       if (key === 'commands') {
-        // Parse commands: array of {code/commandCode, commandString} objects
         if (Array.isArray(value)) {
           commands = value.map(c => ({
             commandCode: c.code || c.commandCode || '',
@@ -211,16 +266,10 @@ export class RestClient {
         continue;
       }
       if (key === 'tags') {
-        // Parse tags from CMS JSON (SimpleXMLElement serialization varies):
-        //   Array of strings: ["geoApiKey|AIzaSy..."]
-        //   Array of objects: [{tag: "geoApiKey|AIzaSy..."}]
-        //   Single-tag object: {tag: "geoApiKey|AIzaSy..."} (SimpleXMLElement collapses single-element arrays)
-        //   String: "geoApiKey|AIzaSy..."
         const extractTag = (t) => typeof t === 'object' ? (t.tag || t.value || '') : String(t);
         if (Array.isArray(value)) {
           tags = value.map(extractTag).filter(Boolean);
         } else if (value && typeof value === 'object') {
-          // Single tag: {tag: "value"} — wrap in array
           const t = extractTag(value);
           if (t) tags = [t];
         } else if (typeof value === 'string' && value) {
@@ -234,7 +283,6 @@ export class RestClient {
     const checkRf = attrs.checkRf || '';
     const checkSchedule = attrs.checkSchedule || '';
 
-    // Extract display-level attributes from CMS (server time, status, version info)
     const displayAttrs = {
       date: attrs.date || display.date || null,
       timezone: attrs.timezone || display.timezone || null,
@@ -243,8 +291,6 @@ export class RestClient {
       version_instructions: attrs.version_instructions || display.version_instructions || null,
     };
 
-    // Extract sync group config if present (multi-display sync coordination)
-    // syncGroup: "lead" if this display is leader, or leader's LAN IP if follower
     const syncConfig = display.syncGroup ? {
       syncGroup: String(display.syncGroup),
       syncPublisherPort: parseInt(display.syncPublisherPort || '9590', 10),
@@ -257,88 +303,124 @@ export class RestClient {
   }
 
   /**
-   * RequiredFiles - get list of files to download
-   * GET /requiredFiles → JSON file manifest (with ETag caching)
+   * RequiredFiles - get list of files to download.
+   * GET /displays/{id}/media → categorized JSON (no XML parsing)
    */
   async requiredFiles() {
-    const json = await this.restGet('/requiredFiles');
-    return this._parseRequiredFilesJson(json);
+    const json = await this.restGet(`/displays/${this._displayId}/media`);
+    return this._parseRequiredFilesV2(json);
   }
 
   /**
-   * Parse REST JSON RequiredFiles into the same array format as SOAP.
+   * Parse v2 categorized required files into the same flat format
+   * that the download pipeline expects.
+   *
+   * v2 server returns: { media: [...], layouts: [...], widgets: [...] }
+   * We flatten back to: { files: [...], purge: [] }
    */
-  _parseRequiredFilesJson(json) {
+  _parseRequiredFilesV2(json) {
     const files = [];
-    let fileList = json.file || [];
 
-    // Normalize single item to array
-    if (!Array.isArray(fileList)) {
-      fileList = [fileList];
-    }
-
-    for (const f of fileList) {
-      const attrs = f['@attributes'] || f;
-      const path = attrs.path || null;
+    // Media files (images, videos)
+    for (const m of json.media || []) {
       files.push({
-        type: attrs.type || null,
-        id: attrs.id || null,
-        size: parseInt(attrs.size || '0'),
-        md5: attrs.md5 || null,
-        download: attrs.download || null,
-        path,
-        saveAs: attrs.saveAs || null,
-        fileType: attrs.fileType || null,
-        code: attrs.code || null,
-        layoutid: attrs.layoutid || null,
-        regionid: attrs.regionid || null,
-        mediaid: attrs.mediaid || null,
+        type: m.type || 'media',
+        id: m.id != null ? String(m.id) : null,
+        size: m.fileSize || 0,
+        md5: m.md5 || null,
+        download: 'http',
+        path: m.url || null,
+        saveAs: m.saveAs || null,
+        fileType: null,
+        code: null,
+        layoutid: null,
+        regionid: null,
+        mediaid: null,
       });
     }
 
-    // Parse purge items — files CMS wants the player to delete
-    const purgeItems = [];
-    let purgeList = json.purge?.item || [];
-    if (!Array.isArray(purgeList)) purgeList = [purgeList];
-    for (const p of purgeList) {
-      const pAttrs = p['@attributes'] || p;
-      purgeItems.push({
-        id: pAttrs.id || null,
-        storedAs: pAttrs.storedAs || null,
+    // Layout files
+    for (const l of json.layouts || []) {
+      files.push({
+        type: 'layout',
+        id: l.id != null ? String(l.id) : null,
+        size: l.fileSize || 0,
+        md5: l.md5 || null,
+        download: 'http',
+        path: l.url || null,
+        saveAs: null,
+        fileType: null,
+        code: null,
+        layoutid: null,
+        regionid: null,
+        mediaid: null,
       });
     }
 
-    return { files, purge: purgeItems };
+    // Widget data files
+    for (const w of json.widgets || []) {
+      files.push({
+        type: 'media',
+        id: w.id != null ? String(w.id) : null,
+        size: 0,
+        md5: w.md5 || null,
+        download: 'http',
+        path: w.url || null,
+        saveAs: null,
+        fileType: null,
+        code: null,
+        layoutid: null,
+        regionid: null,
+        mediaid: null,
+        updateInterval: w.updateInterval || 0,
+      });
+    }
+
+    // Dependencies (fonts, CSS, JS bundles) — pre-classified as 'static'
+    for (const d of json.dependencies || []) {
+      files.push({
+        type: 'static',
+        id: d.id != null ? String(d.id) : null,
+        size: d.fileSize || 0,
+        md5: d.md5 || null,
+        download: 'http',
+        path: d.url || null,
+        saveAs: null,
+        fileType: d.type || null,
+        code: null,
+        layoutid: null,
+        regionid: null,
+        mediaid: null,
+      });
+    }
+
+    return { files, purge: [] };
   }
 
   /**
-   * Schedule - get layout schedule
-   * GET /schedule → XML (preserved for layout parser compatibility, with ETag caching)
+   * Schedule - get layout schedule.
+   * GET /displays/{id}/schedule → native JSON (no XML parsing needed!)
+   *
+   * The v2 server returns the same structure as parseScheduleResponse(),
+   * so we return it directly.
    */
   async schedule() {
-    const xml = await this.restGet('/schedule');
-    return parseScheduleResponse(xml);
+    return this.restGet(`/displays/${this._displayId}/schedule`);
   }
 
   /**
-   * GetResource - get rendered widget HTML
-   * GET /getResource → HTML string
+   * GetResource - get rendered widget HTML.
+   * GET /widgets/{layoutId}/{regionId}/{mediaId} → HTML string
    */
   async getResource(layoutId, regionId, mediaId) {
-    return this.restGet('/getResource', {
-      layoutId: String(layoutId),
-      regionId: String(regionId),
-      mediaId: String(mediaId),
-    });
+    return this.restGet(`/widgets/${layoutId}/${regionId}/${mediaId}`);
   }
 
   /**
-   * NotifyStatus - report current status
-   * PUT /status → JSON acknowledgement
-   * @param {Object} status - Status object with currentLayoutId, deviceName, etc.
+   * NotifyStatus - report current status.
+   * PUT /displays/{id}/status → JSON acknowledgement
    */
   async notifyStatus(status) {
-    // Enrich with storage estimate if available
     if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
       try {
         const estimate = await navigator.storage.estimate();
@@ -347,115 +429,115 @@ export class RestClient {
       } catch (_) { /* storage estimate not supported */ }
     }
 
-    // Add timezone if not already provided
     if (!status.timeZone && typeof Intl !== 'undefined') {
       status.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     }
 
-    // Add statusDialog (summary for CMS display status page) if not provided
     if (!status.statusDialog) {
       status.statusDialog = `Current Layout: ${status.currentLayoutId || 'None'}`;
     }
 
-    return this.restSend('PUT', '/status', {
+    return this.restSend('PUT', `/displays/${this._displayId}/status`, {
       statusData: status,
     });
   }
 
   /**
-   * MediaInventory - report downloaded files
-   * POST /mediaInventory → JSON acknowledgement
+   * MediaInventory - report downloaded files.
+   * PUT /displays/{id}/inventory → JSON acknowledgement
    */
   async mediaInventory(inventoryXml) {
-    // Accept array (JSON-native) or string (XML) — send under the right key
     const body = Array.isArray(inventoryXml)
       ? { inventoryItems: inventoryXml }
       : { inventory: inventoryXml };
-    return this.restSend('POST', '/mediaInventory', body);
+    return this.restSend('PUT', `/displays/${this._displayId}/inventory`, body);
   }
 
   /**
-   * BlackList - report broken media to CMS
-   * POST /blacklist → JSON acknowledgement
-   * @param {string|number} mediaId - The media ID
-   * @param {string} type - File type ('media' or 'layout')
-   * @param {string} reason - Reason for blacklisting
-   * @returns {Promise<boolean>}
+   * BlackList - report broken media to CMS.
+   * Not in v2 API — falls back to v1 behavior (no-op with warning).
    */
   async blackList(mediaId, type, reason) {
-    try {
-      const result = await this.restSend('POST', '/blacklist', {
-        mediaId: String(mediaId),
-        type: type || 'media',
-        reason: reason || 'Failed to render',
-      });
-      log.info(`BlackListed ${type}/${mediaId}: ${reason}`);
-      return result?.success === true;
-    } catch (error) {
-      log.warn('BlackList failed:', error);
-      return false;
-    }
+    log.warn(`BlackList not available in v2 API (${type}/${mediaId}: ${reason})`);
+    return false;
   }
 
   /**
-   * SubmitLog - submit player logs to CMS
-   * POST /log → JSON acknowledgement
+   * SubmitLog - submit player logs to CMS.
+   * POST /displays/{id}/logs → JSON acknowledgement
    */
   async submitLog(logXml, hardwareKeyOverride = null) {
-    // Accept array (JSON-native) or string (XML) — send under the right key
     const body = Array.isArray(logXml) ? { logs: logXml } : { logXml };
-    if (hardwareKeyOverride) body.hardwareKey = hardwareKeyOverride;
-    const result = await this.restSend('POST', '/log', body);
+    const result = await this.restSend('POST', `/displays/${this._displayId}/logs`, body);
     return result?.success === true;
   }
 
   /**
-   * SubmitScreenShot - submit screenshot to CMS
-   * POST /screenshot → JSON acknowledgement
+   * SubmitScreenShot - submit screenshot to CMS.
+   * POST /displays/{id}/screenshot → JSON acknowledgement
    */
   async submitScreenShot(base64Image) {
-    const result = await this.restSend('POST', '/screenshot', {
+    const result = await this.restSend('POST', `/displays/${this._displayId}/screenshot`, {
       screenshot: base64Image,
     });
     return result?.success === true;
   }
 
   /**
-   * SubmitStats - submit proof of play statistics
-   * POST /stats → JSON acknowledgement
+   * SubmitStats - submit proof of play statistics.
+   * POST /displays/{id}/stats → JSON acknowledgement
    */
-  /**
-   * ReportFaults - submit fault data to CMS for dashboard alerts
-   * POST /fault → JSON acknowledgement
-   * @param {string} faultJson - JSON-encoded fault data
-   * @returns {Promise<boolean>}
-   */
-  async reportFaults(faultJson) {
-    const result = await this.restSend('POST', '/fault', { fault: faultJson });
-    return result?.success === true;
-  }
-
-  /**
-   * GetWeather - get current weather data for schedule criteria
-   * GET /weather → JSON weather data
-   * @returns {Promise<Object>} Weather data from CMS
-   */
-  async getWeather() {
-    return this.restGet('/weather');
-  }
-
   async submitStats(statsXml, hardwareKeyOverride = null) {
     try {
-      // Accept array (JSON-native) or string (XML) — send under the right key
       const body = Array.isArray(statsXml) ? { stats: statsXml } : { statXml: statsXml };
-      if (hardwareKeyOverride) body.hardwareKey = hardwareKeyOverride;
-      const result = await this.restSend('POST', '/stats', body);
+      const result = await this.restSend('POST', `/displays/${this._displayId}/stats`, body);
       const success = result?.success === true;
       log.info(`SubmitStats result: ${success}`);
       return success;
     } catch (error) {
       log.error('SubmitStats failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * ReportFaults - submit fault data to CMS for dashboard alerts.
+   * POST /displays/{id}/faults → JSON acknowledgement
+   */
+  async reportFaults(faultJson) {
+    const result = await this.restSend('POST', `/displays/${this._displayId}/faults`, {
+      fault: faultJson,
+    });
+    return result?.success === true;
+  }
+
+  /**
+   * GetWeather - get current weather data for schedule criteria.
+   * GET /displays/{id}/weather → JSON weather data
+   */
+  async getWeather() {
+    return this.restGet(`/displays/${this._displayId}/weather`);
+  }
+
+  // ─── Static helpers ───────────────────────────────────────────
+
+  /**
+   * Probe whether the CMS supports API v2.
+   * GET /api/v2/player/health → { version: 2, status: "ok" }
+   *
+   * @param {string} cmsUrl - CMS base URL
+   * @param {Object} [retryOptions] - Retry options for fetch
+   * @returns {Promise<boolean>} true if v2 is available
+   */
+  static async isAvailable(cmsUrl, retryOptions) {
+    try {
+      const url = `${cmsUrl.replace(/\/+$/, '')}${PLAYER_API}/health`;
+      const response = await fetchWithRetry(url, { method: 'GET' }, retryOptions || { maxRetries: 0 });
+      if (!response.ok) return false;
+      const data = await response.json();
+      return data.version === 2 && data.status === 'ok';
+    } catch {
+      return false;
     }
   }
 }

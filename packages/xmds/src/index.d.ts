@@ -6,23 +6,6 @@ export class RestClient {
   schemaVersion: number;
 
   registerDisplay(): Promise<any>;
-  getSchedule(): Promise<any>;
-  getRequiredFiles(): Promise<any>;
-  getFile(fileId: number, fileType: string): Promise<any>;
-  notifyStatus(status: any): Promise<any>;
-  submitStats(statsXml: string, hardwareKey?: string): Promise<boolean>;
-  submitLog(logsXml: string, hardwareKey?: string): Promise<boolean>;
-  reportFaults(faultsJson: string): Promise<boolean>;
-  mediaInventory(inventoryXml: string): Promise<boolean>;
-  submitGeoLocation?(data: any): Promise<void>;
-}
-
-export class RestClientV2 {
-  constructor(config: any);
-  config: any;
-  schemaVersion: number;
-
-  registerDisplay(): Promise<any>;
   requiredFiles(): Promise<any>;
   schedule(): Promise<any>;
   getResource(layoutId: number, regionId: string, mediaId: string): Promise<string>;

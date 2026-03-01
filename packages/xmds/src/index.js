@@ -2,6 +2,5 @@
 import pkg from '../package.json' with { type: 'json' };
 export const VERSION = pkg.version;
 export { RestClient } from './rest-client.js';
-export { RestClientV2 } from './rest-client-v2.js';
 export { XmdsClient } from './xmds-client.js';
 export { parseScheduleResponse } from './schedule-parser.js';

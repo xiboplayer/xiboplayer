@@ -25,7 +25,7 @@ const PLAYER_BASE = new URL('./', window.location.href).pathname.replace(/\/$/, 
 let cacheWidgetHtml: any;
 let scheduleManager: any;
 let config: any;
-let RestClientV2: any;
+let RestClient: any;
 let XmdsClient: any;
 let XmrWrapper: any;
 let store: StoreClient;
@@ -350,7 +350,7 @@ class PwaPlayer {
       SyncManager = syncModule.SyncManager;
       scheduleManager = scheduleModule.scheduleManager;
       config = configModule.config;
-      RestClientV2 = xmdsModule.RestClientV2;
+      RestClient = xmdsModule.RestClient;
       XmdsClient = xmdsModule.XmdsClient;
       XmrWrapper = xmrModule.XmrWrapper;
       StatsCollector = statsModule.StatsCollector;
@@ -381,9 +381,9 @@ class PwaPlayer {
       }
 
       // Transport selection:
-      //   transport: "rest-v2" → forced v2 REST API (default)
+      //   transport: "rest"   → forced REST API (default)
       //   transport: "xmds"   → forced SOAP
-      //   transport: "auto"   → try v2 → SOAP
+      //   transport: "auto"   → try REST → SOAP
       //   /player/pwa-xmds/   → forced SOAP (URL-based override)
       //   ?transport=xmds     → forced SOAP (query param override)
       const cfgTransport = (() => {
@@ -399,16 +399,16 @@ class PwaPlayer {
       if (transport === 'xmds') {
         log.info('Using XMDS/SOAP transport (forced)');
         this.xmds = new XmdsClient(config);
-      } else if (transport === 'rest-v2') {
-        log.info('Using REST v2 transport (forced)');
-        this.xmds = new RestClientV2(config);
+      } else if (transport === 'rest') {
+        log.info('Using REST transport (forced)');
+        this.xmds = new RestClient(config);
       } else {
-        // Auto-detect: try v2 → SOAP
-        if (await RestClientV2.isAvailable(config.cmsUrl, { maxRetries: 0 })) {
-          this.xmds = new RestClientV2(config);
-          log.info('Using REST v2 transport (auto-detected)');
+        // Auto-detect: try REST → SOAP
+        if (await RestClient.isAvailable(config.cmsUrl, { maxRetries: 0 })) {
+          this.xmds = new RestClient(config);
+          log.info('Using REST transport (auto-detected)');
         } else {
-          log.warn('REST v2 unavailable, falling back to XMDS/SOAP');
+          log.warn('REST unavailable, falling back to XMDS/SOAP');
           this.xmds = new XmdsClient(config);
         }
       }

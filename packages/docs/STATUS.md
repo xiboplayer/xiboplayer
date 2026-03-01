@@ -8,13 +8,13 @@
 
 ## What's New in v0.6.0
 
-### Full REST API v2 Support
-First Xibo player to implement the complete CMS REST API v2 (`/api/v2/player/*`). See [REST_V2.md](REST_V2.md) for full documentation.
+### Full REST API Support
+First Xibo player to implement the complete CMS REST API (`/api/v2/player/*`). See [REST.md](REST.md) for full documentation.
 
 - **Auto-detection** — player probes `/api/v2/player/auth` and falls back to SOAP
 - **JWT authentication** — authenticate once, reuse token for all requests
 - **ETag 304 caching** — unchanged schedule/media responses return 0 bytes
-- **v2 dependency pipeline** — widget assets (JS, CSS, fonts, images) downloaded via dedicated endpoints
+- **Dependency pipeline** — widget assets (JS, CSS, fonts, images) downloaded via dedicated endpoints
 - **No SOAP dependency** — works on CMS deployments without PHP ext-soap
 
 ### PDF Memory Leak Fix
@@ -39,10 +39,9 @@ First Xibo player to implement the complete CMS REST API v2 (`/api/v2/player/*`)
 - ReportFaults - Fault tracking with deduplication
 - GetWeather - Weather data for schedule criteria evaluation
 
-### Triple Transport (PWA Exclusive)
+### Dual Transport (PWA Exclusive)
 - SOAP/XML transport (XmdsClient) - All CMS versions
-- REST/JSON v1 transport (RestClient) - ETag 304 caching, 30% smaller payloads
-- **REST/JSON v2 transport (RestClientV2)** - JWT auth, v2 dependency pipeline, auto-detected
+- **REST/JSON transport (RestClient)** - JWT auth, ETag caching, dependency pipeline, CDN-compatible
 - Auto-detection with SOAP fallback
 
 ### Layout Rendering (RendererLite)
@@ -196,7 +195,7 @@ pnpm --filter @xiboplayer/pwa build
 ## Related Documentation
 
 - Architecture: `packages/docs/ARCHITECTURE.md`
-- REST API v2: `packages/docs/REST_V2.md`
+- REST API: `packages/docs/REST.md`
 - Spec Audit: `packages/docs/AUDIT.md`
 - Renderer comparison: `packages/renderer/docs/RENDERER_COMPARISON.md`
 - Deployment guide: `packages/docs/DEPLOYMENT.md`
