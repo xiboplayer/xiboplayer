@@ -4,15 +4,14 @@
  * Uses the /api/v2/player REST API with JWT auth, resource-oriented URLs,
  * and native JSON responses (no XML parsing required).
  *
- * Key differences from RestClient (v1):
  *   - JWT bearer token auth (single POST /auth → token for all requests)
  *   - Resource-oriented URLs (/displays/{id}/schedule vs /schedule)
  *   - Native JSON schedule (no client-side XML parsing)
  *   - Categorized required files (media/layouts/widgets)
  *
- * Same public API as RestClient and XmdsClient — drop-in replacement.
+ * Same public API as XmdsClient — drop-in replacement.
  */
-import { createLogger, fetchWithRetry } from '@xiboplayer/utils';
+import { createLogger, fetchWithRetry, PLAYER_API } from '@xiboplayer/utils';
 
 const log = createLogger('REST-v2');
 
@@ -41,7 +40,7 @@ export class RestClientV2 {
    * Falls back to /api/v2/player path relative to the CMS address.
    */
   getRestBaseUrl() {
-    const base = this.config.restApiV2Url || `${this.config.cmsUrl}/api/v2/player`;
+    const base = this.config.restApiV2Url || `${this.config.cmsUrl}${PLAYER_API}`;
     return base.replace(/\/+$/, '');
   }
 
@@ -239,7 +238,7 @@ export class RestClientV2 {
 
   /**
    * Parse register display JSON response.
-   * Same output format as RestClient v1 and XmdsClient.
+   * Same output format as XmdsClient.
    */
   _parseRegisterDisplayJson(json) {
     const display = json.display || json;
@@ -321,7 +320,7 @@ export class RestClientV2 {
   _parseRequiredFilesV2(json) {
     const files = [];
 
-    // Media files (images, videos, fonts, CSS, dependencies)
+    // Media files (images, videos)
     for (const m of json.media || []) {
       files.push({
         type: m.type || 'media',
@@ -330,7 +329,7 @@ export class RestClientV2 {
         md5: m.md5 || null,
         download: 'http',
         path: m.url || null,
-        saveAs: null,
+        saveAs: m.saveAs || null,
         fileType: null,
         code: null,
         layoutid: null,
@@ -344,7 +343,7 @@ export class RestClientV2 {
       files.push({
         type: 'layout',
         id: l.id != null ? String(l.id) : null,
-        size: 0,
+        size: l.fileSize || 0,
         md5: l.md5 || null,
         download: 'http',
         path: l.url || null,
@@ -376,6 +375,24 @@ export class RestClientV2 {
       });
     }
 
+    // Dependencies (fonts, CSS, JS bundles) — pre-classified as 'static'
+    for (const d of json.dependencies || []) {
+      files.push({
+        type: 'static',
+        id: d.id != null ? String(d.id) : null,
+        size: d.fileSize || 0,
+        md5: d.md5 || null,
+        download: 'http',
+        path: d.url || null,
+        saveAs: null,
+        fileType: d.type || null,
+        code: null,
+        layoutid: null,
+        regionid: null,
+        mediaid: null,
+      });
+    }
+
     return { files, purge: [] };
   }
 
@@ -392,13 +409,10 @@ export class RestClientV2 {
 
   /**
    * GetResource - get rendered widget HTML.
-   * GET /widgets/{id}/resource → HTML string
+   * GET /widgets/{layoutId}/{regionId}/{mediaId} → HTML string
    */
   async getResource(layoutId, regionId, mediaId) {
-    return this.restGet(`/widgets/${mediaId}/resource`, {
-      layoutId: String(layoutId),
-      regionId: String(regionId),
-    });
+    return this.restGet(`/widgets/${layoutId}/${regionId}/${mediaId}`);
   }
 
   /**
@@ -516,7 +530,7 @@ export class RestClientV2 {
    */
   static async isAvailable(cmsUrl, retryOptions) {
     try {
-      const url = `${cmsUrl.replace(/\/+$/, '')}/api/v2/player/health`;
+      const url = `${cmsUrl.replace(/\/+$/, '')}${PLAYER_API}/health`;
       const response = await fetchWithRetry(url, { method: 'GET' }, retryOptions || { maxRetries: 0 });
       if (!response.ok) return false;
       const data = await response.json();
