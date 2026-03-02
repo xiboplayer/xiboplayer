@@ -935,6 +935,8 @@ export class DownloadQueue {
   getProgress() {
     const progress = {};
     for (const [key, file] of this.active.entries()) {
+      // Skip completed/failed — they stay in active until removeCompleted() runs
+      if (file.state === 'complete' || file.state === 'failed') continue;
       progress[key] = {
         downloaded: file.downloadedBytes,
         total: file.totalBytes,

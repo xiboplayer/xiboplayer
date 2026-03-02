@@ -70,16 +70,15 @@ export class DownloadOverlay {
     const hasDownloads = !!html;
 
     if (hasDownloads) {
+      // Active downloads — show overlay (auto or user-toggled)
       this.overlay.innerHTML = html;
-      if (this._visible) {
-        this.overlay.style.display = 'block';
-      }
+      this.overlay.style.display = 'block';
     } else if (this._visible) {
-      // User toggled on but no downloads — show idle status, keep polling
+      // User toggled on (D key) but no downloads — show idle status
       this.overlay.innerHTML = '<div style="color: #6c6; font-size: 1.4vw;">✓ All downloads complete</div>';
       this.overlay.style.display = 'block';
     } else {
-      // Auto-triggered but no downloads left — stop polling, hide
+      // No downloads and not user-toggled — stop polling, hide
       this.stopUpdating();
       this.overlay.style.display = 'none';
     }
@@ -154,13 +153,15 @@ export class DownloadOverlay {
   /**
    * Start polling for download progress.
    * Safe to call multiple times — won't create duplicate timers.
+   * Does NOT set _visible — the overlay auto-shows when downloads are active
+   * and auto-hides when they finish. Use toggle() for user-controlled visibility.
    */
   public startUpdating() {
-    this._visible = true;
     if (this.updateTimer) return; // Already polling
     this.updateTimer = window.setInterval(() => {
       this.updateOverlay();
     }, this.config.updateInterval);
+    this.updateOverlay(); // Immediate first update
   }
 
   /**
