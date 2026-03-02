@@ -57,6 +57,17 @@ export class Config {
 
 export const config: Config;
 
+export const SHELL_ONLY_KEYS: Set<string>;
+
+/**
+ * Extract PWA config from a full shell config.json.
+ * Filters out shell-only keys, passes everything else to the PWA.
+ */
+export function extractPwaConfig(
+  config: Record<string, any>,
+  extraShellKeys?: Iterable<string>
+): Record<string, any> | undefined;
+
 export function fetchWithRetry(
   url: string,
   options?: RequestInit,
