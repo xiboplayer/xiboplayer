@@ -334,3 +334,45 @@ export class Config {
 }
 
 export const config = new Config();
+
+/**
+ * Shell-only config keys common to ALL player shells (Electron, Chromium, etc.).
+ * These control the native shell window/process and must NOT be forwarded to the PWA.
+ *
+ * Each shell may have additional shell-specific keys — pass them as extraShellKeys
+ * to extractPwaConfig().
+ *
+ * Electron extras:  autoLaunch
+ * Chromium extras:  browser, extraBrowserFlags, relaxSslCerts
+ */
+export const SHELL_ONLY_KEYS = new Set([
+  'serverPort',
+  'kioskMode',
+  'fullscreen',
+  'hideMouseCursor',
+  'preventSleep',
+  'width',
+  'height',
+]);
+
+/**
+ * Extract PWA config from a full shell config.json.
+ *
+ * Uses a deny-list approach: filters out shell-only keys, passes everything else.
+ * This is future-proof — new config.json fields automatically reach the PWA
+ * without code changes in each shell.
+ *
+ * @param {Object} config - Full config object from config.json
+ * @param {Iterable<string>} [extraShellKeys] - Additional shell-specific keys to exclude
+ * @returns {Object} Config to pass to the PWA (via proxy pwaConfig)
+ */
+export function extractPwaConfig(config, extraShellKeys) {
+  const exclude = new Set([...SHELL_ONLY_KEYS, ...(extraShellKeys || [])]);
+  const pwaConfig = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (!exclude.has(key)) {
+      pwaConfig[key] = value;
+    }
+  }
+  return Object.keys(pwaConfig).length > 0 ? pwaConfig : undefined;
+}
