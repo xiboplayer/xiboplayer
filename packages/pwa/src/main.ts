@@ -292,7 +292,7 @@ class PwaPlayer {
 
       log.warn(`Invalid SSL certificate accepted for stream: ${host} (${error})`);
 
-      // Find or recreate the top bar
+      // Find or recreate the top bar with full structure
       let overlay = document.getElementById('overlay');
       if (!overlay) {
         overlay = document.createElement('div');
@@ -303,6 +303,15 @@ class PwaPlayer {
           display: flex; justify-content: space-between; align-items: center;
           font-size: 12px; z-index: 9999;
         `;
+        // Recreate the full bar structure: config-info | cert-warnings | status
+        const info = document.createElement('div');
+        info.id = 'config-info';
+        info.style.color = '#4CAF50';
+        overlay.appendChild(info);
+        const status = document.createElement('div');
+        status.id = 'status';
+        status.style.color = '#fff';
+        overlay.appendChild(status);
         document.body.appendChild(overlay);
       }
 
@@ -311,13 +320,13 @@ class PwaPlayer {
       if (!certSpan) {
         certSpan = document.createElement('span');
         certSpan.id = 'cert-warnings';
-        certSpan.style.cssText = 'color: #ffaa33;';
+        certSpan.style.cssText = 'color: #ffaa33; flex: 0 0 auto;';
         const statusEl = document.getElementById('status');
         overlay.insertBefore(certSpan, statusEl);
       }
 
       const hosts = [...warnedHosts].join(', ');
-      certSpan.textContent = `\u26A0 Invalid SSL cert: ${hosts}`;
+      certSpan.textContent = `\u26A0 SSL: ${hosts}`;
 
       // Make the bar always visible (override hover-only CSS via class)
       overlay.classList.add('has-warnings');
