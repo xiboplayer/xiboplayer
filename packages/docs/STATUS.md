@@ -1,10 +1,26 @@
-# PWA Player Status - v0.5.19
+# PWA Player Status - v0.6.0
 
 ## Current Status: PRODUCTION READY
 
 **Feature Parity:** ~98% vs upstream Xibo players
-**Last Updated:** 2026-02-28
+**Last Updated:** 2026-03-01
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
+
+## What's New in v0.6.0
+
+### Full REST API Support
+First Xibo player to implement the complete CMS REST API (`/api/v2/player/*`). See [REST.md](REST.md) for full documentation.
+
+- **Auto-detection** — player probes `/api/v2/player/auth` and falls back to SOAP
+- **JWT authentication** — authenticate once, reuse token for all requests
+- **ETag 304 caching** — unchanged schedule/media responses return 0 bytes
+- **Dependency pipeline** — widget assets (JS, CSS, fonts, images) downloaded via dedicated endpoints
+- **No SOAP dependency** — works on CMS deployments without PHP ext-soap
+
+### PDF Memory Leak Fix
+- Removed bogus `pdf.cleanup()` call (PDFDocumentProxy has no cleanup method)
+- Active render tasks cancelled on widget teardown
+- Single reusable canvas with proper GPU memory release
 
 ## What Works
 
@@ -25,8 +41,8 @@
 
 ### Dual Transport (PWA Exclusive)
 - SOAP/XML transport (XmdsClient) - All CMS versions
-- REST/JSON transport (RestClient) - ETag 304 caching, 30% smaller payloads
-- Selectable per deployment
+- **REST/JSON transport (RestClient)** - JWT auth, ETag caching, dependency pipeline, CDN-compatible
+- Auto-detection with SOAP fallback
 
 ### Layout Rendering (RendererLite)
 - Full XLF parsing with layout scaling and centering
@@ -179,6 +195,7 @@ pnpm --filter @xiboplayer/pwa build
 ## Related Documentation
 
 - Architecture: `packages/docs/ARCHITECTURE.md`
+- REST API: `packages/docs/REST.md`
 - Spec Audit: `packages/docs/AUDIT.md`
 - Renderer comparison: `packages/renderer/docs/RENDERER_COMPARISON.md`
 - Deployment guide: `packages/docs/DEPLOYMENT.md`

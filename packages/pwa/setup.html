@@ -523,7 +523,7 @@
       pollTimer = null;
     }
 
-    // ── Auto-authorize via CMS API (through rest-proxy to avoid CORS) ──
+    // ── Auto-authorize via CMS API (through /api/* forward proxy) ──
     async function tryAutoAuthorize(cmsUrl, hardwareKey) {
       const clientId = document.getElementById('api-client-id').value.trim();
       const clientSecret = document.getElementById('api-client-secret').value.trim();
@@ -531,7 +531,7 @@
 
       try {
         // Step 1: OAuth2 token via proxy
-        const tokenResp = await fetch(`/rest-proxy?cms=${encodeURIComponent(cmsUrl)}&path=/api/authorize/access_token`, {
+        const tokenResp = await fetch('/api/authorize/access_token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret }),
@@ -541,7 +541,7 @@
 
         // Step 2: Find display by hardwareKey via proxy
         const displayResp = await fetch(
-          `/rest-proxy?cms=${encodeURIComponent(cmsUrl)}&path=/api/display&hardwareKey=${encodeURIComponent(hardwareKey)}`,
+          `/api/display?hardwareKey=${encodeURIComponent(hardwareKey)}`,
           { headers: { Authorization: `Bearer ${access_token}` } }
         );
         if (!displayResp.ok) throw new Error(`Find display failed: ${displayResp.status}`);
@@ -553,7 +553,7 @@
 
         // Step 3: Authorize display via proxy
         const authResp = await fetch(
-          `/rest-proxy?cms=${encodeURIComponent(cmsUrl)}&path=/api/display/authorise/${display.displayId}`,
+          `/api/display/authorise/${display.displayId}`,
           { method: 'PUT', headers: { Authorization: `Bearer ${access_token}` } }
         );
         if (!authResp.ok) throw new Error(`Authorize failed: ${authResp.status}`);

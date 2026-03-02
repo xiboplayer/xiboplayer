@@ -8,25 +8,26 @@ export class StoreClient {
   list(): Promise<Array<{ id: string; type: string; size: number }>>;
 }
 
-export class DownloadClient {
-  controller: ServiceWorker | null;
-  fetchReady: boolean;
-  init(): Promise<void>;
-  download(payload: object | any[]): Promise<void>;
-  prioritize(fileType: string, fileId: string): Promise<void>;
-  prioritizeLayout(mediaIds: string[]): Promise<void>;
-  getProgress(): Promise<Record<string, any>>;
-  cleanup(): void;
-}
-
 export class DownloadManager {
-  constructor(options?: { concurrency?: number; chunkSize?: number; maxChunksPerFile?: number });
+  constructor(options?: { concurrency?: number; chunkSize?: number; chunksPerFile?: number });
   enqueue(fileInfo: any): any;
+  getTask(key: string): any;
+  getProgress(): Record<string, any>;
   prioritizeLayoutFiles(mediaIds: string[]): void;
+  clear(): void;
+  queue: any;
 }
 
-export class FileDownload {}
-export class LayoutTaskBuilder {}
+export class FileDownload {
+  state: string;
+  wait(): Promise<Blob>;
+}
+export class LayoutTaskBuilder {
+  constructor(queue: any);
+  addFile(fileInfo: any): FileDownload;
+  build(): Promise<any[]>;
+}
+export const BARRIER: symbol;
 export class CacheManager {}
 export class CacheAnalyzer {
   constructor(store: StoreClient);
@@ -35,6 +36,4 @@ export class CacheAnalyzer {
 export const cacheManager: CacheManager;
 
 export function isUrlExpired(url: string): boolean;
-export function toProxyUrl(url: string): string;
-export function setCmsOrigin(origin: string): void;
 export function cacheWidgetHtml(...args: any[]): any;

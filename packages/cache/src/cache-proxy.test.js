@@ -1,13 +1,11 @@
 /**
- * StoreClient & DownloadClient Tests
+ * StoreClient Tests
  *
  * StoreClient: pure REST client for ContentStore — no SW dependency
- * DownloadClient: SW postMessage client for download orchestration
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { StoreClient } from './store-client.js';
-import { DownloadClient } from './download-client.js';
 import { createTestBlob } from './test-utils.js';
 
 /**
@@ -15,7 +13,6 @@ import { createTestBlob } from './test-utils.js';
  */
 function resetMocks() {
   global.fetch = vi.fn();
-  delete global.MessageChannel;
 }
 
 // ===========================================================================
@@ -189,205 +186,3 @@ describe('StoreClient', () => {
   });
 });
 
-// ===========================================================================
-// DownloadClient Tests
-// ===========================================================================
-
-/**
- * Helper: set up navigator.serviceWorker mock.
- */
-function setupServiceWorker(opts = {}) {
-  const {
-    supported = true,
-    controller = null,
-    active = undefined,
-    installing = null,
-    waiting = null,
-    swReadyResolves = true,
-  } = opts;
-
-  if (!supported) {
-    Object.defineProperty(navigator, 'serviceWorker', {
-      value: undefined,
-      configurable: true,
-      writable: true,
-    });
-    delete navigator.serviceWorker;
-    return;
-  }
-
-  const activeSW = active !== undefined
-    ? active
-    : controller
-      ? { state: 'activated', postMessage: controller.postMessage }
-      : null;
-
-  const registration = {
-    active: activeSW,
-    installing,
-    waiting,
-  };
-
-  const messageListeners = [];
-
-  const swContainer = {
-    controller,
-    ready: swReadyResolves
-      ? Promise.resolve(registration)
-      : new Promise(() => {}),
-    getRegistration: vi.fn().mockResolvedValue(registration),
-    addEventListener: vi.fn((event, handler) => {
-      if (event === 'message') {
-        messageListeners.push(handler);
-      }
-    }),
-    removeEventListener: vi.fn(),
-  };
-
-  swContainer._messageListeners = messageListeners;
-  swContainer._registration = registration;
-
-  Object.defineProperty(navigator, 'serviceWorker', {
-    value: swContainer,
-    configurable: true,
-    writable: true,
-  });
-
-  return swContainer;
-}
-
-function dispatchSWMessage(swContainer, data) {
-  for (const listener of swContainer._messageListeners || []) {
-    listener({ data });
-  }
-}
-
-function setupMessageChannel() {
-  const channels = [];
-
-  global.MessageChannel = class {
-    constructor() {
-      const self = { port1: { onmessage: null }, port2: {} };
-      channels.push(self);
-      this.port1 = self.port1;
-      this.port2 = self.port2;
-    }
-  };
-
-  return {
-    get lastChannel() {
-      return channels[channels.length - 1];
-    },
-    respondOnLastChannel(data) {
-      const ch = channels[channels.length - 1];
-      if (ch && ch.port1.onmessage) {
-        ch.port1.onmessage({ data });
-      }
-    },
-    channels,
-  };
-}
-
-async function createInitialisedDownloadClient() {
-  const controller = { postMessage: vi.fn() };
-  const sw = setupServiceWorker({ controller });
-
-  const client = new DownloadClient();
-  const initPromise = client.init();
-
-  await Promise.resolve();
-  dispatchSWMessage(sw, { type: 'SW_READY' });
-
-  await initPromise;
-  return { client, sw, controller };
-}
-
-describe('DownloadClient', () => {
-  beforeEach(() => {
-    resetMocks();
-    Object.defineProperty(navigator, 'serviceWorker', {
-      value: undefined,
-      configurable: true,
-      writable: true,
-    });
-  });
-
-  describe('init()', () => {
-    it('should initialize with SW controller', async () => {
-      setupMessageChannel();
-      const { client } = await createInitialisedDownloadClient();
-
-      expect(client.controller).toBeTruthy();
-    });
-
-    it('should throw if SW not supported', async () => {
-      setupServiceWorker({ supported: false });
-
-      const client = new DownloadClient();
-
-      await expect(client.init()).rejects.toThrow('Service Worker not supported');
-    });
-  });
-
-  describe('download()', () => {
-    it('should post DOWNLOAD_FILES message to SW', async () => {
-      setupMessageChannel();
-      const { client } = await createInitialisedDownloadClient();
-
-      client.controller.postMessage = vi.fn();
-
-      const files = [
-        { id: '1', type: 'media', path: 'http://test.com/file1.mp4' },
-        { id: '2', type: 'media', path: 'http://test.com/file2.mp4' },
-      ];
-
-      const mc = setupMessageChannel();
-      const downloadPromise = client.download(files);
-
-      // Simulate SW acknowledging the download
-      mc.respondOnLastChannel({
-        success: true,
-        enqueuedCount: 2,
-        activeCount: 2,
-        queuedCount: 0,
-      });
-
-      await expect(downloadPromise).resolves.toBeUndefined();
-    });
-
-    it('should reject when SW returns error', async () => {
-      setupMessageChannel();
-      const { client } = await createInitialisedDownloadClient();
-
-      client.controller.postMessage = vi.fn();
-
-      const mc = setupMessageChannel();
-      const downloadPromise = client.download([]);
-
-      mc.respondOnLastChannel({ success: false, error: 'Download failed' });
-
-      await expect(downloadPromise).rejects.toThrow('Download failed');
-    });
-
-    it('should throw if SW controller not available', async () => {
-      setupMessageChannel();
-      const { client } = await createInitialisedDownloadClient();
-
-      client.controller = null;
-
-      await expect(client.download([])).rejects.toThrow('Service Worker not available');
-    });
-  });
-
-  describe('getProgress()', () => {
-    it('should return empty object when controller is null', async () => {
-      setupMessageChannel();
-      const { client } = await createInitialisedDownloadClient();
-      client.controller = null;
-
-      const progress = await client.getProgress();
-
-      expect(progress).toEqual({});
-    });
-  });
-});

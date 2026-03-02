@@ -16,6 +16,7 @@ export class DownloadOverlay {
   private config: DownloadOverlayConfig;
   private updateTimer: number | null = null;
   private _visible: boolean = false; // User-toggled visibility (D key)
+  private _getProgress: (() => Record<string, any>) | null = null;
 
   constructor(config: DownloadOverlayConfig) {
     this.config = {
@@ -54,60 +55,33 @@ export class DownloadOverlay {
     document.body.appendChild(this.overlay);
   }
 
-  private async updateOverlay() {
+  /**
+   * Set the progress callback. Called by PwaPlayer after DownloadManager is created.
+   */
+  public setProgressCallback(fn: () => Record<string, any>) {
+    this._getProgress = fn;
+  }
+
+  private updateOverlay() {
     if (!this.overlay) return;
 
-    try {
-      // Get download progress from Service Worker via postMessage
-      if (!navigator.serviceWorker?.controller) {
-        throw new Error('No SW controller');
+    const progress = this._getProgress ? this._getProgress() : {};
+    const html = this.renderStatus(progress);
+    const hasDownloads = !!html;
+
+    if (hasDownloads) {
+      this.overlay.innerHTML = html;
+      if (this._visible) {
+        this.overlay.style.display = 'block';
       }
-
-      // Request progress from SW
-      const mc = new MessageChannel();
-      const progressPromise = new Promise((resolve) => {
-        mc.port1.onmessage = (event) => resolve(event.data);
-        setTimeout(() => resolve({ success: false }), 500); // Timeout
-      });
-
-      navigator.serviceWorker.controller.postMessage(
-        { type: 'GET_DOWNLOAD_PROGRESS' },
-        [mc.port2]
-      );
-
-      const result: any = await progressPromise;
-
-      if (result.success) {
-        const html = this.renderStatus(result.progress);
-        const hasDownloads = !!html;
-
-        if (hasDownloads) {
-          this.overlay.innerHTML = html;
-          if (this._visible) {
-            this.overlay.style.display = 'block';
-          }
-        } else if (this._visible) {
-          // User toggled on but no downloads — show idle status, keep polling
-          this.overlay.innerHTML = '<div style="color: #6c6; font-size: 1.4vw;">✓ All downloads complete</div>';
-          this.overlay.style.display = 'block';
-        } else {
-          // Auto-triggered but no downloads left — stop polling, hide
-          this.stopUpdating();
-          this.overlay.style.display = 'none';
-        }
-      } else {
-        throw new Error('Progress request failed');
-      }
-    } catch (error) {
-      // No SW controller or request failed
-      if (this._visible && this.overlay) {
-        this.overlay.innerHTML = '<div style="color: #999; font-size: 1.4vw;">⋯ Waiting for service worker</div>';
-      } else {
-        this.stopUpdating();
-        if (this.overlay) {
-          this.overlay.style.display = 'none';
-        }
-      }
+    } else if (this._visible) {
+      // User toggled on but no downloads — show idle status, keep polling
+      this.overlay.innerHTML = '<div style="color: #6c6; font-size: 1.4vw;">✓ All downloads complete</div>';
+      this.overlay.style.display = 'block';
+    } else {
+      // Auto-triggered but no downloads left — stop polling, hide
+      this.stopUpdating();
+      this.overlay.style.display = 'none';
     }
   }
 
@@ -178,7 +152,7 @@ export class DownloadOverlay {
   }
 
   /**
-   * Start polling SW for download progress.
+   * Start polling for download progress.
    * Safe to call multiple times — won't create duplicate timers.
    */
   public startUpdating() {

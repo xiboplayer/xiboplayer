@@ -9,8 +9,8 @@
  * - This file: PWA-specific wiring (lifecycle events, Interactive Control)
  *
  * Media storage flow:
- *   CMS → proxy /file-proxy → ContentStore (filesystem) → proxy /store → SW → renderer
- *   The SW orchestrates downloads but never stores media — the proxy does.
+ *   CMS → proxy cache-through → ContentStore (filesystem) → proxy /store → renderer
+ *   Download orchestration lives in the main thread (PwaPlayer).
  */
 
 import { DownloadManager } from '@xiboplayer/cache/download-manager';
@@ -177,7 +177,6 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   const shouldIntercept =
-    url.pathname.startsWith(BASE + '/cache/') ||
     url.pathname.startsWith(BASE + '/ic/') ||
     url.pathname.startsWith('/player/') && (url.pathname.endsWith('.html') || url.pathname === '/player/') ||
     (url.pathname.includes('xmds.php') && url.searchParams.has('file') && event.request.method === 'GET');

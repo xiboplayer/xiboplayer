@@ -130,12 +130,16 @@ The proxy server (`packages/proxy/src/proxy.js`) exposes these endpoints backed 
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| `GET` | `/store/:type/:id` | Serve file (Range support) |
-| `HEAD` | `/store/:type/:id` | Existence + size check |
-| `PUT` | `/store/:type/:id` | Store file |
+| `HEAD` | `/store/:type/*` | Existence + size check (returns 404 for incomplete chunked files) |
+| `GET` | `/store/:type/*` | Serve file (Range support) |
+| `PUT` | `/store/:type/*` | Store file |
 | `POST` | `/store/delete` | Delete files |
 | `POST` | `/store/mark-complete` | Mark chunked download complete |
+| `POST` | `/store/unmark-complete` | Unmark chunked file (keeps chunks, allows partial re-download) |
+| `GET` | `/store/missing-chunks/:type/*` | Return missing chunk indices for a chunked file |
 | `GET` | `/store/list` | List all cached files |
+
+**Note:** HEAD must be registered before GET in Express 5 because `app.get()` also matches HEAD requests.
 
 ### ContentStore (Filesystem)
 
@@ -207,6 +211,41 @@ Widget HTML is processed on the main thread by `cacheWidgetHtml()`:
 5. Store widget HTML via `PUT /store/widget/{layoutId}/{regionId}/{mediaId}`
 
 Static resources are stored before widget HTML to prevent race conditions when the iframe loads.
+
+## Chunked Download Resume
+
+Large media files are downloaded in chunks (configurable size, default ~100MB per chunk). If a download is interrupted (crash, network failure, process restart), the player resumes by only downloading missing chunks:
+
+### How it works
+
+1. **On startup/collection**: `enqueueFile()` calls `GET /store/missing-chunks/{storeKey}` before enqueueing
+2. If chunks exist on disk, it populates `file.skipChunks` with the indices of cached chunks
+3. The download pipeline skips those chunks, downloading only the missing ones
+4. After all chunks arrive, the file is marked complete
+
+### On video playback error
+
+1. The renderer emits a `videoError` event when a `<video>` element fails
+2. The PWA calls `GET /store/missing-chunks/{storeKey}` to check for missing chunks
+3. If chunks are missing, it calls `POST /store/unmark-complete` (keeps all existing chunks on disk)
+4. Triggers `collectNow()` — the normal enqueue path populates `skipChunks` and re-downloads only the missing chunks
+
+### Incomplete file detection
+
+- `HEAD /store/:type/*` returns **404** for chunked files with missing chunks (so the download pipeline picks them up)
+- `cacheThrough()` falls through to the CMS for incomplete chunked files instead of serving broken data from the store
+
+### Example
+
+A 2GB video (21 chunks) where chunks 0 and 9 are cached:
+```
+GET /store/missing-chunks/api/v2/player/media/15
+→ { "missing": [1,2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20], "numChunks": 21 }
+
+# enqueueFile sets skipChunks = {0, 9}
+# Download pipeline fetches only 19 chunks instead of 21
+# Saves ~200MB of bandwidth
+```
 
 ## Error Handling
 

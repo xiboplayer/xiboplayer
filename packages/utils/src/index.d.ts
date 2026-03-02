@@ -1,4 +1,5 @@
 export const VERSION: string;
+export let PLAYER_API: string;
 
 export interface Logger {
   debug(...args: any[]): void;

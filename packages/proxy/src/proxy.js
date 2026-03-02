@@ -3,8 +3,7 @@
  *
  * Provides Express middleware that:
  * - Proxies XMDS SOAP requests (/xmds-proxy)
- * - Proxies REST API requests (/rest-proxy)
- * - Proxies file downloads with Range support (/file-proxy)
+ * - Cache-through mirror routes: serve from store, fetch CMS on miss
  * - Serves the PWA player as static files (/player/pwa/)
  */
 
@@ -13,7 +12,7 @@ import path from 'path';
 import { Readable } from 'node:stream';
 import express from 'express';
 import cors from 'cors';
-import { createLogger, registerLogSink } from '@xiboplayer/utils';
+import { createLogger, registerLogSink, PLAYER_API, setPlayerApi } from '@xiboplayer/utils';
 import { ContentStore } from './content-store.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
@@ -23,12 +22,15 @@ function redactUrl(url) {
   return url.replace(/(?<=[?&])(serverKey|hardwareKey|X-Amz-[^=]*)=[^&]*/gi, '$1=***');
 }
 
+// Server-side JWT token for v2 API requests.
+// Set once via POST /auth-token, injected into cache-through CMS requests.
+let _bearerToken = null;
+
 // Module-level loggers — one per subsystem, following @xiboplayer/utils conventions.
 // In Node (no window/localStorage), default level is WARNING. Pass 'INFO' explicitly
 // so proxy logs are always visible (these are server-side operational logs).
 const logProxy = createLogger('Proxy', 'INFO');
-const logRest  = createLogger('REST Proxy', 'INFO');
-const logFile  = createLogger('FileProxy', 'INFO');
+const logFile  = createLogger('CacheThrough', 'INFO');
 const logStore = createLogger('ContentStore', 'INFO');
 const logConfig = createLogger('Config', 'INFO');
 const logServer = createLogger('Server', 'INFO');
@@ -144,13 +146,20 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
 export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog } = {}) {
   const app = express();
 
+  // Override Player API base path if configured (before registering routes)
+  if (pwaConfig?.playerApiBase) {
+    setPlayerApi(pwaConfig.playerApiBase);
+    logProxy.info(`Player API base path: ${PLAYER_API}`);
+  }
+
   // Register cross-process log sink (e.g. Electron main → renderer DevTools)
   if (onLog) registerLogSink(onLog);
 
   app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'SOAPAction'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'SOAPAction',
+      'X-Store-Chunk-Index', 'X-Store-Num-Chunks', 'X-Store-Chunk-Size', 'X-Store-MD5'],
     credentials: true,
   }));
 
@@ -171,10 +180,13 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     // Update in-memory config — merge all POSTed fields (takes effect on next page load injection)
     currentPwaConfig = { ...(currentPwaConfig || {}), ...req.body };
 
-    // Write config.json (host-specific path passed as option)
+    // Write config.json — merge with existing file to preserve non-POSTed keys (e.g. controls)
     if (configFilePath) {
       fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
-      fs.writeFileSync(configFilePath, JSON.stringify(req.body, null, 2));
+      let existing = {};
+      try { existing = JSON.parse(fs.readFileSync(configFilePath, 'utf8')); } catch (_) {}
+      const merged = { ...existing, ...req.body };
+      fs.writeFileSync(configFilePath, JSON.stringify(merged, null, 2));
       logConfig.info(`Wrote config.json: ${configFilePath}`);
     }
 
@@ -218,51 +230,6 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
   });
 
-  // ─── REST API Proxy ────────────────────────────────────────────────
-  app.all('/rest-proxy', async (req, res) => {
-    try {
-      const cmsUrl = req.query.cms;
-      const apiPath = req.query.path;
-      if (!cmsUrl) return res.status(400).json({ error: 'Missing cms parameter' });
-
-      const queryParams = new URLSearchParams(req.query);
-      queryParams.delete('cms');
-      queryParams.delete('path');
-      const queryString = queryParams.toString();
-      const fullUrl = `${cmsUrl}${apiPath || ''}${queryString ? '?' + queryString : ''}`;
-
-      logRest.info(`${req.method} ${redactUrl(fullUrl)}`);
-
-      const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
-      if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
-      if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'];
-      if (req.headers['accept']) headers['Accept'] = req.headers['accept'];
-      if (req.headers['if-none-match']) headers['If-None-Match'] = req.headers['if-none-match'];
-
-      const fetchOptions = { method: req.method, headers };
-      if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
-        if (req.headers['content-type']?.includes('x-www-form-urlencoded') && typeof req.body === 'object') {
-          fetchOptions.body = new URLSearchParams(req.body).toString();
-        } else {
-          fetchOptions.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-        }
-      }
-
-      const response = await fetch(fullUrl, fetchOptions);
-      response.headers.forEach((value, key) => {
-        if (!SKIP_HEADERS.includes(key.toLowerCase())) {
-          res.setHeader(key, value);
-        }
-      });
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      const buffer = await response.arrayBuffer();
-      res.status(response.status).send(Buffer.from(buffer));
-      logRest.info(`${response.status} (${buffer.byteLength} bytes)`);
-    } catch (error) {
-      logRest.error('Error:', error.message);
-      res.status(500).json({ error: 'REST proxy error', message: error.message });
-    }
-  });
 
   // ─── ContentStore initialization ──────────────────────────────────
   let store = null;
@@ -272,131 +239,94 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     logProxy.info(`ContentStore enabled: ${path.join(dataDir, 'media')}`);
   }
 
-  // ─── File Download Proxy ───────────────────────────────────────────
-  // Streams CMS responses to disk + client simultaneously — zero buffering.
-  // Previous version used response.arrayBuffer() which held entire chunks
-  // in memory, causing ~3 GB heap growth on large media downloads.
-  app.get('/file-proxy', async (req, res) => {
+  // ─── Auth Token ──────────────────────────────────────────────────
+  // Store JWT token server-side so cache-through can inject it into CMS
+  // requests without passing tokens through URLs.
+  app.post('/auth-token', express.json(), (req, res) => {
+    _bearerToken = req.body.token || null;
+    logProxy.info('Auth token', _bearerToken ? 'set' : 'cleared');
+    res.json({ success: true });
+  });
+
+  // ─── Cache-through helper ─────────────────────────────────────────
+  // Serve from store on hit. On miss, fetch from CMS and tee-stream to
+  // disk + client simultaneously — zero buffering.
+  //
+  // Chunk metadata is passed via custom X-Store-* headers from DownloadTask:
+  //   X-Store-Chunk-Index, X-Store-Num-Chunks, X-Store-Chunk-Size, X-Store-MD5
+  async function cacheThrough(req, res, storeKey, cmsPath, { ttl = Infinity } = {}) {
+    // 1. Store hit → serve from disk (with optional TTL check)
+    if (store) {
+      let info;
+      try { info = store.has(storeKey); } catch (_) {}
+      if (info?.exists) {
+        // Incomplete chunked files: fall through to CMS for the missing bytes
+        const incomplete = info.chunked && store.missingChunks(storeKey).length > 0;
+        if (incomplete) {
+          logFile.info(`Incomplete chunked file: ${storeKey} — fetching from CMS`);
+        } else if (ttl !== Infinity && info.metadata?.createdAt) {
+          const ageMs = Date.now() - info.metadata.createdAt;
+          if (ageMs > ttl * 1000) {
+            logFile.info(`TTL expired: ${storeKey} (${Math.round(ageMs / 1000)}s > ${ttl}s)`);
+            // Fall through to CMS fetch (will overwrite stored file)
+          } else {
+            return serveFromStore(req, res, storeKey);
+          }
+        } else {
+          return serveFromStore(req, res, storeKey);
+        }
+      }
+    }
+
+    // 2. Store miss → fetch from CMS
+    const cmsUrl = currentPwaConfig?.cmsUrl;
+    if (!cmsUrl) return res.status(502).json({ error: 'CMS URL not configured' });
+
+    const fullUrl = `${cmsUrl}${cmsPath}`;
+    logFile.info(`Cache miss: ${storeKey} → GET ${redactUrl(fullUrl)}`);
+
+    const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
+    if (_bearerToken) headers['Authorization'] = `Bearer ${_bearerToken}`;
+    if (req.headers.range) {
+      headers['Range'] = req.headers.range;
+      logFile.info(`Range: ${req.headers.range}`);
+    }
+
     try {
-      const cmsUrl = req.query.cms;
-      const fileUrl = req.query.url;
-      if (!cmsUrl || !fileUrl) return res.status(400).json({ error: 'Missing cms or url parameter' });
+      const response = await fetch(fullUrl, { headers });
 
-      const fullUrl = `${cmsUrl}${fileUrl}`;
-      logFile.info(`GET ${redactUrl(fullUrl)}`);
-
-      const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
-      if (req.headers.range) {
-        headers['Range'] = req.headers.range;
-        logFile.info(`Range: ${req.headers.range}`);
+      if (!response.ok && response.status !== 206) {
+        logFile.info(`CMS ${response.status} for ${storeKey}`);
+        return res.status(response.status).end();
       }
 
-      const response = await fetch(fullUrl, { headers });
+      // Forward response headers
       res.status(response.status);
       response.headers.forEach((value, key) => {
         if (!SKIP_HEADERS.includes(key.toLowerCase())) {
           res.setHeader(key, value);
         }
       });
-      // Forward Content-Length only when the upstream didn't use compression.
-      // Node's fetch() auto-decompresses gzip/br but reports the *compressed*
-      // Content-Length — forwarding it truncates the decompressed response.
       const upstreamLength = response.headers.get('content-length');
       const wasCompressed = response.headers.get('content-encoding');
       if (upstreamLength && !wasCompressed) res.setHeader('Content-Length', upstreamLength);
       res.setHeader('Access-Control-Allow-Origin', '*');
 
-      if (!response.body) {
-        res.end();
-        return;
-      }
-
-      // ── CSS font URL rewriting ──────────────────────────────────────
-      // CSS files are tiny (~1KB) — buffer, rewrite CMS font URLs to local
-      // /player/cache/static/ paths, fetch+store the font files, then
-      // send rewritten CSS.  This fixes CORS errors when fonts.css contains
-      // absolute CMS URLs that the browser can't fetch cross-origin.
-      const upstreamContentType = response.headers.get('content-type') || '';
-      // Detect CSS: check Content-Type, file extension, or ?file=*.css query parameter
-      // The CMS serves files via /pwa/file?file=fonts.css&... so fileUrl.endsWith('.css')
-      // fails due to trailing query params (e.g. &X-Amz-Signature=...).
-      const fileParam = new URLSearchParams(fileUrl.split('?')[1] || '').get('file') || '';
-      const isCss = upstreamContentType.includes('text/css')
-        || fileUrl.endsWith('.css')
-        || fileParam.endsWith('.css');
-
-      if (isCss) {
-        const cssBuffer = Buffer.from(await response.arrayBuffer());
-        let cssText = cssBuffer.toString('utf-8');
-
-        // Match any CMS signed URL with a file= query param. Handles both normal
-        // url('...') and truncated CSS (where closing '); is cut off by CMS).
-        const CMS_SIGNED_URL_RE = /https?:\/\/[^\s'")\]]+\?[^\s'")\]]*file=([^&\s'")\]]+)[^\s'")\]]*/g;
-        const fontJobs = [];
-        const FONT_EXTS = /\.(?:woff2?|ttf|otf|eot|svg)$/i;
-
-        cssText = cssText.replace(CMS_SIGNED_URL_RE, (fullUrl, filename) => {
-          if (!FONT_EXTS.test(filename) && !fullUrl.includes('fileType=font')) return fullUrl;
-          fontJobs.push({ filename, url: fullUrl });
-          logFile.info(`Rewrote font URL: ${filename}`);
-          return `/player/cache/static/${encodeURIComponent(filename)}`;
-        });
-
-        // Fetch and store font files BEFORE sending CSS — the iframe renders
-        // immediately after CSS is stored, so fonts must already be available.
-        if (store) {
-          await Promise.all(fontJobs.map(async ({ filename: fontFile, url: fontUrl }) => {
-            const fontStoreKey = `static/${encodeURIComponent(fontFile)}`;
-            if (store.has(fontStoreKey).exists) return; // already stored
-            try {
-              const r = await fetch(fontUrl, { headers: { 'User-Agent': `XiboPlayer/${appVersion}` } });
-              if (!r.ok) return;
-              const buf = await r.arrayBuffer();
-              const fontExt = fontFile.split('.').pop().toLowerCase();
-              const fontContentType = {
-                otf: 'font/otf', ttf: 'font/ttf',
-                woff: 'font/woff', woff2: 'font/woff2',
-                eot: 'application/vnd.ms-fontobject', svg: 'image/svg+xml',
-              }[fontExt] || 'application/octet-stream';
-              store.put(fontStoreKey, Buffer.from(buf), {
-                contentType: fontContentType, size: buf.byteLength,
-              });
-              logFile.info(`Stored font: ${fontFile} (${buf.byteLength} bytes)`);
-            } catch (e) {
-              logFile.warn(`Font fetch failed: ${fontFile}`, e.message);
-            }
-          }));
-        }
-
-        // Store rewritten CSS if storeKey provided
-        const rewrittenBuf = Buffer.from(cssText, 'utf-8');
-        if (store && req.query.storeKey) {
-          store.put(req.query.storeKey, rewrittenBuf, {
-            contentType: 'text/css', size: rewrittenBuf.length,
-          });
-          logFile.info(`Stored rewritten CSS: ${req.query.storeKey} (${rewrittenBuf.length} bytes)`);
-        }
-
-        res.setHeader('Content-Type', 'text/css');
-        res.setHeader('Content-Length', rewrittenBuf.length);
-        res.send(rewrittenBuf);
-        logFile.info(`${response.status} CSS rewritten (${fontJobs.length} font URLs, ${rewrittenBuf.length} bytes)`);
-        return;
-      }
+      if (!response.body) { res.end(); return; }
 
       const fetchStream = Readable.fromWeb(response.body);
 
-      if (store && req.query.storeKey) {
-        // Stream to disk AND client simultaneously
-        const storeKey = req.query.storeKey;
-        const chunkIndex = req.query.chunkIndex;
+      if (store) {
+        // Read chunk metadata from custom headers (set by DownloadTask)
+        const chunkIndexStr = req.headers['x-store-chunk-index'];
+        const chunkIndex = chunkIndexStr !== undefined ? parseInt(chunkIndexStr) : undefined;
         const contentType = response.headers.get('content-type') || 'application/octet-stream';
-        const meta = { contentType, md5: req.query.md5 || null };
+        const meta = { contentType, md5: req.headers['x-store-md5'] || null };
 
         if (chunkIndex !== undefined) {
           meta.chunked = true;
-          if (req.query.numChunks) meta.numChunks = parseInt(req.query.numChunks);
-          if (req.query.chunkSize) meta.chunkSize = parseInt(req.query.chunkSize);
+          if (req.headers['x-store-num-chunks']) meta.numChunks = parseInt(req.headers['x-store-num-chunks']);
+          if (req.headers['x-store-chunk-size']) meta.chunkSize = parseInt(req.headers['x-store-chunk-size']);
           const contentRange = response.headers.get('content-range');
           if (contentRange) {
             const totalMatch = contentRange.match(/\/(\d+)/);
@@ -405,20 +335,18 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         }
 
         const { writeStream, commit, abort } = store.createTempWrite(
-          storeKey, chunkIndex !== undefined ? parseInt(chunkIndex) : null
+          storeKey, chunkIndex !== undefined ? chunkIndex : null
         );
 
         let bytesWritten = 0;
         let aborted = false;
 
-        // Prevent unhandled stream errors from crashing the process
         writeStream.on('error', (err) => {
           if (!aborted) logStore.error('Write stream error:', err.message);
           aborted = true;
           abort();
         });
 
-        // Clean up on client disconnect
         req.on('close', () => {
           if (!res.writableFinished) {
             aborted = true;
@@ -459,32 +387,34 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
           else res.end();
         });
       } else {
-        // No store needed — stream directly to client (zero memory)
+        // No store — stream directly to client
         fetchStream.pipe(res);
         fetchStream.on('error', (err) => {
           logFile.error('Stream error:', err.message);
           if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
           else res.end();
         });
-        logFile.info(`${response.status} streaming`);
+        logFile.info(`${response.status} streaming (no store)`);
       }
     } catch (error) {
-      logFile.error('Error:', error.message);
-      if (!res.headersSent) res.status(500).json({ error: 'File proxy error', message: error.message });
+      logFile.error('Cache-through error:', error.message);
+      if (!res.headersSent) res.status(502).json({ error: 'CMS fetch failed', message: error.message });
     }
-  });
+  }
 
-  // ─── ContentStore — Serve files ────────────────────────────────────
-  // GET /store/:type/* — serve stored file with Range support
-  app.get('/store/:type/{*splat}', (req, res) => {
+  // ─── serveFromStore — shared serving logic ──────────────────────────
+  /**
+   * Serve a file from ContentStore with Range support, CORS headers, and
+   * chunked file assembly. Used by mirror routes and /store/* routes.
+   */
+  function serveFromStore(req, res, storeKey) {
     if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
 
-    let key, info;
+    let info;
     try {
-      key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
-      info = store.has(key);
+      info = store.has(storeKey);
     } catch (err) {
-      logStore.error(`GET lookup error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
+      logStore.error(`GET lookup error for ${storeKey}:`, err.message);
       return res.status(500).end();
     }
     if (!info.exists) return res.status(404).end();
@@ -493,12 +423,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     const contentType = meta.contentType || 'application/octet-stream';
 
     if (info.chunked) {
-      // Chunked file — serve via assembled chunk reads
-      return serveChunkedFile(req, res, store, key, meta, contentType);
+      return serveChunkedFile(req, res, store, storeKey, meta, contentType);
     }
 
-    // Whole file — serve with Range support via fs.createReadStream
-    const filePath = store.getPath(key);
+    const filePath = store.getPath(storeKey);
     if (!filePath) return res.status(404).end();
 
     const fileSize = meta.size || fs.statSync(filePath).size;
@@ -517,7 +445,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Access-Control-Allow-Origin', '*');
 
-      const stream = store.getReadStream(key, { start, end });
+      const stream = store.getReadStream(storeKey, { start, end });
       stream.pipe(res);
     } else {
       res.status(200);
@@ -526,11 +454,153 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Access-Control-Allow-Origin', '*');
 
-      const stream = store.getReadStream(key);
+      const stream = store.getReadStream(storeKey);
       stream.pipe(res);
+    }
+  }
+
+  // ─── Cache-through Mirror Routes ────────────────────────────────────
+  // Serve from store on hit, fetch from CMS on miss. Same URL paths as CMS.
+
+  // Strip leading slash for store key: /api/v2/player → api/v2/player
+  const STORE_PREFIX = PLAYER_API.slice(1);
+
+  // HEAD helper — check store existence (used for all mirror routes)
+  function headFromStore(req, res, storeKey, defaultContentType) {
+    if (!store) return res.status(501).end();
+    try {
+      const info = store.has(storeKey);
+      if (!info.exists) return res.status(404).end();
+      // Incomplete chunked files → 404 so download pipeline re-fetches them
+      if (info.chunked && store.missingChunks(storeKey).length > 0) {
+        return res.status(404).end();
+      }
+      const meta = info.metadata || {};
+      res.setHeader('Content-Length', meta.size || 0);
+      res.setHeader('Content-Type', meta.contentType || defaultContentType);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.status(200).end();
+    } catch (err) {
+      logStore.error(`HEAD error for ${storeKey}:`, err.message);
+      res.status(500).end();
+    }
+  }
+
+  // Media: {PLAYER_API}/media/:id
+  app.get(`${PLAYER_API}/media/:id`, (req, res) => {
+    const key = `${STORE_PREFIX}/media/${req.params.id}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/media/${req.params.id}`);
+  });
+  app.head(`${PLAYER_API}/media/:id`, (req, res) => {
+    headFromStore(req, res, `${STORE_PREFIX}/media/${req.params.id}`, 'application/octet-stream');
+  });
+
+  // Layouts: {PLAYER_API}/layouts/:id
+  app.get(`${PLAYER_API}/layouts/:id`, (req, res) => {
+    const key = `${STORE_PREFIX}/layouts/${req.params.id}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/layouts/${req.params.id}`);
+  });
+  app.head(`${PLAYER_API}/layouts/:id`, (req, res) => {
+    headFromStore(req, res, `${STORE_PREFIX}/layouts/${req.params.id}`, 'application/xml');
+  });
+
+  // Widgets: {PLAYER_API}/widgets/:layoutId/:regionId/:mediaId
+  app.get(`${PLAYER_API}/widgets/:layoutId/:regionId/:mediaId`, (req, res) => {
+    const { layoutId, regionId, mediaId } = req.params;
+    const key = `${STORE_PREFIX}/widgets/${layoutId}/${regionId}/${mediaId}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/widgets/${layoutId}/${regionId}/${mediaId}`);
+  });
+  app.head(`${PLAYER_API}/widgets/:layoutId/:regionId/:mediaId`, (req, res) => {
+    const key = `${STORE_PREFIX}/widgets/${req.params.layoutId}/${req.params.regionId}/${req.params.mediaId}`;
+    headFromStore(req, res, key, 'text/html');
+  });
+
+  // Dependencies: {PLAYER_API}/dependencies/*
+  app.get(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
+    const filename = decodeURIComponent([req.params.splat].flat().pop());
+    const key = `${STORE_PREFIX}/dependencies/${filename}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/dependencies/${filename}`);
+  });
+  app.head(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
+    const filename = decodeURIComponent([req.params.splat].flat().pop());
+    headFromStore(req, res, `${STORE_PREFIX}/dependencies/${filename}`, 'application/octet-stream');
+  });
+
+  // Datasets (widget data): {PLAYER_API}/datasets/:widgetId/data
+  // Cached with TTL — data changes on XTR runs, but short-lived caching avoids
+  // repeated CMS hits during the same layout cycle. Auth injected by cacheThrough.
+  app.get(`${PLAYER_API}/datasets/:widgetId/data`, (req, res) => {
+    const widgetId = req.params.widgetId;
+    const key = `${STORE_PREFIX}/datasets/${widgetId}/data`;
+    const ttl = parseInt(req.headers['x-cache-ttl']) || 300;
+    cacheThrough(req, res, key, `${PLAYER_API}/datasets/${widgetId}/data`, { ttl });
+  });
+
+  // ─── CMS API Forward Proxy ─────────────────────────────────────────
+  // Forward unmatched /api/* requests to the CMS.
+  // Specific mirror routes (media, widgets, dependencies) match first;
+  // this catch-all handles Player API + CMS API (OAuth2, display management).
+  const logApi = createLogger('API-Proxy');
+  app.all('/api/{*splat}', async (req, res) => {
+    const cmsUrl = currentPwaConfig?.cmsUrl;
+    if (!cmsUrl) return res.status(502).json({ error: 'CMS URL not configured' });
+
+    const targetUrl = `${cmsUrl}${req.originalUrl}`;
+    logApi.info(`${req.method} ${req.originalUrl} → ${targetUrl}`);
+
+    try {
+      const fetchOptions = {
+        method: req.method,
+        headers: { ...req.headers, host: new URL(cmsUrl).host },
+      };
+      // Forward request body for POST/PUT
+      if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+        const ct = req.headers['content-type'] || '';
+        if (ct.includes('urlencoded')) {
+          fetchOptions.body = new URLSearchParams(req.body).toString();
+        } else {
+          fetchOptions.body = JSON.stringify(req.body);
+        }
+        fetchOptions.headers['content-type'] = ct || 'application/json';
+      }
+      delete fetchOptions.headers['content-length'];
+
+      const response = await fetch(targetUrl, fetchOptions);
+
+      // Forward response headers
+      for (const [key, value] of response.headers) {
+        if (!['transfer-encoding', 'connection'].includes(key.toLowerCase())) {
+          res.setHeader(key, value);
+        }
+      }
+
+      res.status(response.status);
+      if (response.body) {
+        const { Readable } = await import('stream');
+        Readable.fromWeb(response.body).pipe(res);
+      } else {
+        res.end();
+      }
+    } catch (err) {
+      logApi.error(`Forward failed: ${err.message}`);
+      res.status(502).json({ error: err.message });
     }
   });
 
+  // ─── ContentStore — Missing chunks check ────────────────────────────
+  // GET /store/missing-chunks/:type/* — return missing chunk indices for a file
+  app.get('/store/missing-chunks/:type/{*splat}', (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+    const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
+    const info = store.has(key);
+    if (!info.exists || !info.chunked) return res.json({ missing: [], numChunks: 0 });
+    const meta = info.metadata || {};
+    res.json({ missing: store.missingChunks(key), numChunks: meta.numChunks || 0 });
+  });
+
+  // ─── ContentStore — Serve files (legacy + internal) ──────────────────
+  // HEAD must be registered before GET (Express GET also matches HEAD requests)
   // HEAD /store/:type/* — existence + size check
   app.head('/store/:type/{*splat}', (req, res) => {
     if (!store) return res.status(501).end();
@@ -539,6 +609,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
       const info = store.has(key);
       if (!info.exists) return res.status(404).end();
+      // Incomplete chunked files → 404 so download pipeline re-fetches them
+      if (info.chunked && store.missingChunks(key).length > 0) {
+        return res.status(404).end();
+      }
 
       const meta = info.metadata || {};
       res.setHeader('Content-Length', meta.size || 0);
@@ -550,6 +624,12 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       logStore.error(`HEAD error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
       res.status(500).end();
     }
+  });
+
+  // GET /store/:type/* — serve stored file with Range support
+  app.get('/store/:type/{*splat}', (req, res) => {
+    const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
+    serveFromStore(req, res, key);
   });
 
   // PUT /store/:type/* — store arbitrary content
@@ -574,7 +654,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
 
     let deleted = 0;
     for (const file of files) {
-      const key = `${file.type}/${file.id}`;
+      const key = file.key || `${file.type}/${file.id}`;
       if (store.delete(key)) {
         deleted++;
         logStore.info(`Deleted: ${key}`);
@@ -594,6 +674,20 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     store.markComplete(storeKey);
     logStore.info(`Marked complete: ${storeKey}`);
     res.json({ success: true });
+  });
+
+  // POST /store/unmark-complete — unmark chunked file (keeps chunks, allows partial re-download)
+  app.post('/store/unmark-complete', express.json(), (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+
+    const { storeKey } = req.body;
+    if (!storeKey) return res.status(400).json({ error: 'storeKey required' });
+
+    const unmarked = store.unmarkComplete(storeKey);
+    if (unmarked) {
+      logStore.info(`Unmarked complete: ${storeKey}`);
+    }
+    res.json({ success: true, unmarked });
   });
 
   // GET /store/list — list all stored files
@@ -649,26 +743,6 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
     res.type('html').send(injected);
   }
-
-  // ─── Serve cached static resources via Express (bypasses SW) ──────
-  // html2canvas and other non-SW contexts request /player/cache/static/*
-  // directly from Express. Route these to ContentStore so they don't 404.
-  app.get('/player/cache/static/{*splat}', (req, res) => {
-    if (!store) return res.status(404).end();
-    const filename = [req.params.splat].flat().pop();
-    const key = `static/${filename}`;
-    const info = store.has(key);
-    if (!info.exists) return res.status(404).type('text').send('Not found');
-    const meta = info.metadata || {};
-    const contentType = meta.contentType || 'application/octet-stream';
-    const filePath = store.getPath(key);
-    if (!filePath) return res.status(404).type('text').send('Not found');
-    const fileSize = meta.size || fs.statSync(filePath).size;
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', fileSize);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    store.getReadStream(key).pipe(res);
-  });
 
   // Always serve index.html through sendIndexHtml so config injection
   // works dynamically (POST /config can enable it at runtime).

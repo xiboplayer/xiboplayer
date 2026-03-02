@@ -83,6 +83,17 @@ export async function fetchWithRetry(url, options = {}, retryOptions = {}) {
       lastResponse = response;
       lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
       lastError.status = response.status;
+
+      // Respect Retry-After on 503 Service Unavailable (e.g. CMS cache warming)
+      if (response.status === 503 && attempt < maxRetries) {
+        const retryAfter = response.headers.get('Retry-After');
+        if (retryAfter) {
+          const delayMs = parseRetryAfter(retryAfter);
+          log.debug(`503 Service Unavailable, Retry-After: ${retryAfter} (${delayMs}ms)`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue;
+        }
+      }
     } catch (error) {
       // Network error — retryable
       lastError = error;

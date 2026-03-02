@@ -4,7 +4,7 @@
  */
 
 import { cacheWidgetHtml } from '@xiboplayer/cache';
-import { createLogger } from '@xiboplayer/utils';
+import { createLogger, PLAYER_API } from '@xiboplayer/utils';
 
 const log = createLogger('Layout');
 
@@ -157,10 +157,10 @@ export class LayoutTranslator {
 
         // Try to get cached widget HTML from ContentStore via proxy
         try {
-          const resp = await fetch(`/store/widget/${layoutId}/${regionId}/${id}`);
+          const resp = await fetch(`/store${PLAYER_API}/widgets/${layoutId}/${regionId}/${id}`);
           if (resp.ok) {
             raw = await resp.text();
-            options.widgetCacheKey = `/cache/widget/${layoutId}/${regionId}/${id}`;
+            options.widgetCacheKey = `${PLAYER_API}/widgets/${layoutId}/${regionId}/${id}`;
             log.info(`Using stored widget HTML (${raw.length} chars) - CMS update pending`);
           } else {
             log.error(`No stored version available for widget ${id}`);
@@ -466,7 +466,7 @@ ${mediaJS}
     switch (media.type) {
       case 'image':
         // Use absolute URL within service worker scope
-        const imageSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        const imageSrc = `${window.location.origin}${PLAYER_API}/media/${media.options.uri}`;
         startFn = `() => {
         const region = document.getElementById('region_${regionId}');
         const img = document.createElement('img');
@@ -490,7 +490,7 @@ ${mediaJS}
       case 'video':
         // All videos use cache URL pattern
         // Background-downloaded videos will auto-reload when cache completes
-        const videoSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        const videoSrc = `${window.location.origin}${PLAYER_API}/media/${media.options.uri}`;
         const videoFilename = media.options.uri;
 
         startFn = `() => {
@@ -564,7 +564,7 @@ ${mediaJS}
         // Text/ticker widgets use the same iframe pattern as default widgets.
         // If no widgetCacheKey, fall through to the default case which handles unsupported types.
         if (media.options.widgetCacheKey) {
-          const textUrl = `${window.location.origin}/player${media.options.widgetCacheKey}`;
+          const textUrl = `${window.location.origin}${media.options.widgetCacheKey}`;
           const iframe = this._generateIframeWidgetJS(regionId, media.id, textUrl, transIn, transOut);
           startFn = iframe.startFn;
           stopFn = iframe.stopFn;
@@ -573,7 +573,7 @@ ${mediaJS}
         // Fall through to default (handles missing widgetCacheKey as unsupported)
 
       case 'audio':
-        const audioSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        const audioSrc = `${window.location.origin}${PLAYER_API}/media/${media.options.uri}`;
         const audioId = `audio_${regionId}_${media.id}`;
         const audioLoop = media.options.loop === '1';
         const audioVolume = (parseInt(media.options.volume || '100') / 100).toFixed(2);
@@ -689,7 +689,7 @@ ${mediaJS}
         break;
 
       case 'pdf':
-        const pdfSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        const pdfSrc = `${window.location.origin}${PLAYER_API}/media/${media.options.uri}`;
         const pdfContainerId = `pdf_${regionId}_${media.id}`;
         const pdfDuration = duration; // Total duration for entire PDF
 
@@ -902,7 +902,7 @@ ${mediaJS}
         // Widgets (clock, calendar, weather, etc.) - use cache URL pattern in /player/ scope for SW
         // Keep widget iframes alive across duration cycles (arexibo behavior)
         if (media.options.widgetCacheKey) {
-          const widgetUrl = `${window.location.origin}/player${media.options.widgetCacheKey}`;
+          const widgetUrl = `${window.location.origin}${media.options.widgetCacheKey}`;
           const iframe = this._generateIframeWidgetJS(regionId, media.id, widgetUrl, transIn, transOut);
           startFn = iframe.startFn;
           stopFn = iframe.stopFn;

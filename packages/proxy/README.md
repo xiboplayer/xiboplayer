@@ -71,10 +71,31 @@ Creates the app and starts listening. Returns `Promise<{ server, port }>`.
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/xmds-proxy?cms=URL` | ALL | Proxies XMDS SOAP requests to `URL/xmds.php` |
-| `/rest-proxy?cms=URL&path=/api/...` | ALL | Proxies REST API requests |
-| `/file-proxy?cms=URL&url=/path` | GET | Downloads files (supports Range) |
-| `/player/pwa/` | GET | Serves PWA static files |
-| `/` | GET | Redirects to `/player/pwa/` |
+| `/api/*` | ALL | Forward proxy to CMS REST API (injects JWT Bearer token) |
+| `/player/` | GET | Serves PWA index.html with config injection |
+
+### ContentStore Routes
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/store/:type/*` | HEAD | Existence + size check (404 for incomplete chunked files) |
+| `/store/:type/*` | GET | Serve stored file with Range support |
+| `/store/:type/*` | PUT | Store file content |
+| `/store/delete` | POST | Delete files from store |
+| `/store/mark-complete` | POST | Mark chunked download as complete |
+| `/store/unmark-complete` | POST | Unmark chunked file (keeps chunks on disk for partial re-download) |
+| `/store/missing-chunks/:type/*` | GET | Return `{ missing: number[], numChunks: number }` for a chunked file |
+| `/store/list` | GET | List all stored files with metadata |
+
+### Cache-Through Mirror Routes
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/v2/player/media/:id` | GET/HEAD | Media files (images, video, audio, XLF) |
+| `/api/v2/player/layouts/:id` | GET/HEAD | Layout XLF files |
+| `/api/v2/player/widgets/:l/:r/:m` | GET/HEAD | Widget HTML |
+| `/api/v2/player/dependencies/*` | GET/HEAD | Static resources (CSS, fonts, JS) |
+| `/api/v2/player/datasets/:id/data` | GET | Dataset data (JSON, no caching) |
 
 ## Dependencies
 

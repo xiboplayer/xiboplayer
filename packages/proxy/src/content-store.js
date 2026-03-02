@@ -6,16 +6,16 @@
  * restarts. Every deployment (Electron, Chromium kiosk, deployed PWA server)
  * runs the proxy, making this the single durable storage layer.
  *
- * File layout:
+ * File layout (mirrors CMS URL structure):
  *   {storeDir}/
- *     media/123.bin          — whole file (small media)
- *     media/123.meta.json    — { size, contentType, md5, createdAt }
- *     media/456/chunk-0.bin  — chunked file directory
- *     media/456/chunk-1.bin
- *     media/456/meta.json    — { size, contentType, md5, numChunks, chunkSize, complete }
- *     layout/789.bin
- *     widget/...
- *     static/...
+ *     api/v2/player/
+ *       media/42.bin                    — whole file (small media)
+ *       media/42.meta.json              — { size, contentType, md5, createdAt }
+ *       media/456/chunk-0.bin           — chunked file directory (large media)
+ *       media/456/meta.json             — { size, numChunks, chunkSize, complete }
+ *       dependencies/fonts.css.bin      — dependency files (by filename)
+ *       dependencies/Aileron.otf.bin
+ *     widget/...                        — widget HTML (legacy path)
  */
 
 import fs from 'fs';
@@ -23,11 +23,10 @@ import path from 'path';
 
 /**
  * Sanitize a store key into a safe relative path.
- * Input:  "/player/pwa/cache/media/123" or "media/123"
- * Output: "media/123"
+ * Accepts CMS URL paths (api/v2/player/media/42). Strips leading slashes only.
  */
 function keyToRelative(key) {
-  return key.replace(/^\/player\/[^/]+\/cache\//, '').replace(/^\/+/, '');
+  return key.replace(/^\/+/, '');
 }
 
 export class ContentStore {
@@ -96,6 +95,23 @@ export class ContentStore {
   /** Check if a specific chunk exists */
   hasChunk(key, chunkIndex) {
     return fs.existsSync(this._chunkPath(key, chunkIndex));
+  }
+
+  /**
+   * Return indices of missing chunks for a chunked file.
+   * @param {string} key
+   * @returns {number[]} — empty if not chunked or all chunks present
+   */
+  missingChunks(key) {
+    const metaPath = this._chunkMetaPath(key);
+    if (!fs.existsSync(metaPath)) return [];
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    if (!meta.numChunks) return [];
+    const missing = [];
+    for (let i = 0; i < meta.numChunks; i++) {
+      if (!fs.existsSync(this._chunkPath(key, i))) missing.push(i);
+    }
+    return missing;
   }
 
   // ── Read operations ───────────────────────────────────────────────
@@ -233,6 +249,22 @@ export class ContentStore {
   }
 
   /**
+   * Unmark a chunked file as complete (keeps all chunks on disk).
+   * Used when missing chunks are detected — allows re-download of only missing chunks.
+   * @param {string} key
+   * @returns {boolean} true if the file was unmarked
+   */
+  unmarkComplete(key) {
+    const metaPath = this._chunkMetaPath(key);
+    if (!fs.existsSync(metaPath)) return false;
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    delete meta.complete;
+    delete meta.completedAt;
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+    return true;
+  }
+
+  /**
    * Create a temp write stream for streaming data to disk.
    * Returns a WriteStream and a commit() function that atomically
    * renames the temp file and writes metadata.
@@ -339,45 +371,65 @@ export class ContentStore {
 
   /**
    * List all stored files with metadata.
+   * Recursively walks the store directory to support deep key structures
+   * (e.g. api/v2/player/media/42.bin).
    * @returns {Array<{ key: string, type: string, id: string, size: number, cachedAt: number, chunked: boolean }>}
    */
   list() {
     const files = [];
     if (!fs.existsSync(this.storeDir)) return files;
+    this._walk(this.storeDir, '', files);
+    return files;
+  }
 
-    for (const typeDir of fs.readdirSync(this.storeDir, { withFileTypes: true })) {
-      if (!typeDir.isDirectory()) continue;
-      const type = typeDir.name;
-      const typePath = path.join(this.storeDir, type);
+  /**
+   * Recursive walk for list(). Detects .bin files and chunk directories.
+   * @param {string} dir - Current directory path
+   * @param {string} relPath - Relative path from storeDir
+   * @param {Array} files - Accumulator
+   */
+  _walk(dir, relPath, files) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.endsWith('.meta.json') || entry.name.endsWith('.tmp')) continue;
 
-      for (const entry of fs.readdirSync(typePath, { withFileTypes: true })) {
-        if (entry.name.endsWith('.meta.json') || entry.name.endsWith('.tmp')) continue;
+      const entryRel = relPath ? `${relPath}/${entry.name}` : entry.name;
+      const entryPath = path.join(dir, entry.name);
 
-        if (entry.isDirectory()) {
-          // Chunked file
-          const id = entry.name;
-          const meta = this.getMetadata(`${type}/${id}`);
+      if (entry.isDirectory()) {
+        // Check if this is a chunk directory (has meta.json inside)
+        const chunkMeta = path.join(entryPath, 'meta.json');
+        if (fs.existsSync(chunkMeta)) {
+          const key = entryRel;
+          const meta = this.getMetadata(key);
+          // Extract type and id from the key path
+          const parts = key.split('/');
+          const id = parts[parts.length - 1];
+          const type = parts.slice(0, -1).join('/');
           files.push({
-            key: `${type}/${id}`, type, id,
+            key, type, id,
             size: meta?.size || 0,
             cachedAt: meta?.createdAt || 0,
             chunked: true,
             complete: meta?.complete || false,
           });
-        } else if (entry.name.endsWith('.bin')) {
-          // Whole file
-          const id = entry.name.replace('.bin', '');
-          const meta = this.getMetadata(`${type}/${id}`);
-          files.push({
-            key: `${type}/${id}`, type, id,
-            size: meta?.size || fs.statSync(path.join(typePath, entry.name)).size,
-            cachedAt: meta?.createdAt || 0,
-            chunked: false,
-            complete: true,
-          });
+        } else {
+          // Recurse into subdirectory
+          this._walk(entryPath, entryRel, files);
         }
+      } else if (entry.name.endsWith('.bin')) {
+        const key = entryRel.replace(/\.bin$/, '');
+        const meta = this.getMetadata(key);
+        const parts = key.split('/');
+        const id = parts[parts.length - 1];
+        const type = parts.slice(0, -1).join('/');
+        files.push({
+          key, type, id,
+          size: meta?.size || fs.statSync(entryPath).size,
+          cachedAt: meta?.createdAt || 0,
+          chunked: false,
+          complete: true,
+        });
       }
     }
-    return files;
   }
 }
