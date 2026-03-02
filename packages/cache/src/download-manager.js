@@ -254,7 +254,12 @@ export class FileDownload {
       this.totalBytes = (size && size > 0) ? parseInt(size) : 0;
       this._contentType = inferContentType(this.fileInfo);
 
-      if (this.totalBytes === 0) {
+      // Skip HEAD for JSON / dynamic API endpoints (no file extension → octet-stream).
+      // These generate responses server-side; HEAD triggers the full handler for nothing
+      // and may fail if the CMS cache isn't warm yet. They're always small, never chunked.
+      const isJsonEndpoint = this._contentType === 'application/octet-stream';
+
+      if (this.totalBytes === 0 && !isJsonEndpoint) {
         // No size declared — HEAD fallback (rare: only for files without CMS size)
         const url = this.getUrl();
         const ac = new AbortController();
