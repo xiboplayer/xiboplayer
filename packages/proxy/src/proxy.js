@@ -180,10 +180,13 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     // Update in-memory config — merge all POSTed fields (takes effect on next page load injection)
     currentPwaConfig = { ...(currentPwaConfig || {}), ...req.body };
 
-    // Write config.json (host-specific path passed as option)
+    // Write config.json — merge with existing file to preserve non-POSTed keys (e.g. controls)
     if (configFilePath) {
       fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
-      fs.writeFileSync(configFilePath, JSON.stringify(req.body, null, 2));
+      let existing = {};
+      try { existing = JSON.parse(fs.readFileSync(configFilePath, 'utf8')); } catch (_) {}
+      const merged = { ...existing, ...req.body };
+      fs.writeFileSync(configFilePath, JSON.stringify(merged, null, 2));
       logConfig.info(`Wrote config.json: ${configFilePath}`);
     }
 
