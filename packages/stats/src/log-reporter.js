@@ -271,6 +271,47 @@ export class LogReporter {
     return this.log('debug', message, category);
   }
 
+  /** Query records from an IndexedDB index with a cursor, up to a limit. */
+  _queryByIndex(storeName, indexName, keyValue, limit) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([storeName], 'readonly');
+      const index = tx.objectStore(storeName).index(indexName);
+      const request = index.openCursor(keyValue);
+      const results = [];
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+      request.onerror = () => reject(new Error(`Index query failed: ${request.error}`));
+    });
+  }
+
+  /** Delete records by ID from an IndexedDB object store. */
+  _deleteByIds(storeName, records) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([storeName], 'readwrite');
+      const store = tx.objectStore(storeName);
+      let deleted = 0;
+
+      for (const record of records) {
+        if (record.id) {
+          const req = store.delete(record.id);
+          req.onsuccess = () => { deleted++; };
+          req.onerror = () => { log.error(`Failed to delete ${record.id}:`, req.error); };
+        }
+      }
+
+      tx.oncomplete = () => resolve(deleted);
+      tx.onerror = () => reject(new Error(`Delete failed: ${tx.error}`));
+    });
+  }
+
   /**
    * Get logs ready for submission to CMS
    *
@@ -285,32 +326,9 @@ export class LogReporter {
       return [];
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([LOGS_STORE], 'readonly');
-      const store = transaction.objectStore(LOGS_STORE);
-      const index = store.index('submitted');
-
-      // Query for unsubmitted logs (0 = false)
-      const request = index.openCursor(IDBKeyRange.only(0));
-      const logs = [];
-
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
-
-        if (cursor && logs.length < limit) {
-          logs.push(cursor.value);
-          cursor.continue();
-        } else {
-          log.debug(`Retrieved ${logs.length} unsubmitted logs (limit: ${limit})`);
-          resolve(logs);
-        }
-      };
-
-      request.onerror = () => {
-        log.error('Failed to retrieve logs:', request.error);
-        reject(new Error(`Failed to retrieve logs: ${request.error}`));
-      };
-    });
+    const logs = await this._queryByIndex(LOGS_STORE, 'submitted', IDBKeyRange.only(0), limit);
+    log.debug(`Retrieved ${logs.length} unsubmitted logs (limit: ${limit})`);
+    return logs;
   }
 
   /**
@@ -341,43 +359,9 @@ export class LogReporter {
    * @returns {Promise<void>}
    */
   async clearSubmittedLogs(logs) {
-    if (!this.db) {
-      log.warn('Logs database not initialized');
-      return;
-    }
-
-    if (!logs || logs.length === 0) {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([LOGS_STORE], 'readwrite');
-      const store = transaction.objectStore(LOGS_STORE);
-
-      let deletedCount = 0;
-
-      logs.forEach((logEntry) => {
-        if (logEntry.id) {
-          const request = store.delete(logEntry.id);
-          request.onsuccess = () => {
-            deletedCount++;
-          };
-          request.onerror = () => {
-            log.error(`Failed to delete log ${logEntry.id}:`, request.error);
-          };
-        }
-      });
-
-      transaction.oncomplete = () => {
-        log.debug(`Deleted ${deletedCount} submitted logs`);
-        resolve();
-      };
-
-      transaction.onerror = () => {
-        log.error('Failed to delete submitted logs:', transaction.error);
-        reject(new Error(`Failed to delete logs: ${transaction.error}`));
-      };
-    });
+    if (!this.db || !logs?.length) return;
+    const deleted = await this._deleteByIds(LOGS_STORE, logs);
+    log.debug(`Deleted ${deleted} submitted logs`);
   }
 
   /**

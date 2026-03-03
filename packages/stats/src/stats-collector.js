@@ -333,6 +333,59 @@ export class StatsCollector {
   }
 
   /**
+   * Query records from an IndexedDB index with a cursor, up to a limit.
+   * @param {string} storeName - Object store name
+   * @param {string} indexName - Index name
+   * @param {any} keyValue - Key to query (passed to openCursor)
+   * @param {number} limit - Maximum records to return
+   * @returns {Promise<Array>}
+   */
+  _queryByIndex(storeName, indexName, keyValue, limit) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([storeName], 'readonly');
+      const index = tx.objectStore(storeName).index(indexName);
+      const request = index.openCursor(keyValue);
+      const results = [];
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+      request.onerror = () => reject(new Error(`Index query failed: ${request.error}`));
+    });
+  }
+
+  /**
+   * Delete records by ID from an IndexedDB object store.
+   * @param {string} storeName - Object store name
+   * @param {Array} records - Records with .id property
+   * @returns {Promise<number>} Number of deleted records
+   */
+  _deleteByIds(storeName, records) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([storeName], 'readwrite');
+      const store = tx.objectStore(storeName);
+      let deleted = 0;
+
+      for (const record of records) {
+        if (record.id) {
+          const req = store.delete(record.id);
+          req.onsuccess = () => { deleted++; };
+          req.onerror = () => { log.error(`Failed to delete ${record.id}:`, req.error); };
+        }
+      }
+
+      tx.oncomplete = () => resolve(deleted);
+      tx.onerror = () => reject(new Error(`Delete failed: ${tx.error}`));
+    });
+  }
+
+  /**
    * Get stats ready for submission to CMS
    *
    * Returns unsubmitted stats up to the specified limit.
@@ -347,32 +400,9 @@ export class StatsCollector {
       return [];
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([STATS_STORE], 'readonly');
-      const store = transaction.objectStore(STATS_STORE);
-      const index = store.index('submitted');
-
-      // Query for unsubmitted stats (0 = false)
-      const request = index.openCursor(IDBKeyRange.only(0));
-      const stats = [];
-
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
-
-        if (cursor && stats.length < limit) {
-          stats.push(cursor.value);
-          cursor.continue();
-        } else {
-          log.debug(`Retrieved ${stats.length} unsubmitted stats`);
-          resolve(stats);
-        }
-      };
-
-      request.onerror = () => {
-        log.error('Failed to retrieve stats:', request.error);
-        reject(new Error(`Failed to retrieve stats: ${request.error}`));
-      };
-    });
+    const stats = await this._queryByIndex(STATS_STORE, 'submitted', IDBKeyRange.only(0), limit);
+    log.debug(`Retrieved ${stats.length} unsubmitted stats`);
+    return stats;
   }
 
   /**
@@ -384,43 +414,9 @@ export class StatsCollector {
    * @returns {Promise<void>}
    */
   async clearSubmittedStats(stats) {
-    if (!this.db) {
-      log.warn('Stats database not initialized');
-      return;
-    }
-
-    if (!stats || stats.length === 0) {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([STATS_STORE], 'readwrite');
-      const store = transaction.objectStore(STATS_STORE);
-
-      let deletedCount = 0;
-
-      stats.forEach((stat) => {
-        if (stat.id) {
-          const request = store.delete(stat.id);
-          request.onsuccess = () => {
-            deletedCount++;
-          };
-          request.onerror = () => {
-            log.error(`Failed to delete stat ${stat.id}:`, request.error);
-          };
-        }
-      });
-
-      transaction.oncomplete = () => {
-        log.debug(`Deleted ${deletedCount} submitted stats`);
-        resolve();
-      };
-
-      transaction.onerror = () => {
-        log.error('Failed to delete submitted stats:', transaction.error);
-        reject(new Error(`Failed to delete stats: ${transaction.error}`));
-      };
-    });
+    if (!this.db || !stats?.length) return;
+    const deleted = await this._deleteByIds(STATS_STORE, stats);
+    log.debug(`Deleted ${deleted} submitted stats`);
   }
 
   /**

@@ -334,16 +334,22 @@ class PwaPlayer {
    */
   private async loadCoreModules() {
     try {
-      const cacheModule = await import('@xiboplayer/cache');
-      const xmdsModule = await import('@xiboplayer/xmds');
-      const scheduleModule = await import('@xiboplayer/schedule');
-      const configModule = await import('@xiboplayer/utils');
-      const xmrModule = await import('@xiboplayer/xmr');
-      const statsModule = await import('@xiboplayer/stats');
-      const displaySettingsModule = await import('@xiboplayer/settings');
-      const coreModule = await import('@xiboplayer/core');
-      const rendererModule = await import('@xiboplayer/renderer');
-      const syncModule = await import('@xiboplayer/sync');
+      const [
+        cacheModule, xmdsModule, scheduleModule, configModule,
+        xmrModule, statsModule, displaySettingsModule, coreModule,
+        rendererModule, syncModule,
+      ] = await Promise.all([
+        import('@xiboplayer/cache'),
+        import('@xiboplayer/xmds'),
+        import('@xiboplayer/schedule'),
+        import('@xiboplayer/utils'),
+        import('@xiboplayer/xmr'),
+        import('@xiboplayer/stats'),
+        import('@xiboplayer/settings'),
+        import('@xiboplayer/core'),
+        import('@xiboplayer/renderer'),
+        import('@xiboplayer/sync'),
+      ]);
 
       cacheWidgetHtml = cacheModule.cacheWidgetHtml;
       SyncManager = syncModule.SyncManager;
@@ -694,7 +700,6 @@ class PwaPlayer {
 
     this.core.on('xmr-misconfigured', (info: { reason: string; url?: string; message: string }) => {
       log.warn(`XMR misconfigured (${info.reason}): ${info.message}`);
-      log.warn(`XMR misconfigured: ${info.message}`);
     });
 
     // Log level changes from CMS (overlays are controlled by config.controls, not log level)
@@ -2118,7 +2123,8 @@ class PwaPlayer {
           return;
         }
       } else {
-        base64 = await this.captureWithBrowserMethods();
+        this._screenshotMethod = 'html2canvas';
+        base64 = await this.captureHtml2Canvas();
       }
 
       const success = await this.xmds.submitScreenShot(base64);
@@ -2132,18 +2138,6 @@ class PwaPlayer {
     } finally {
       this._screenshotInFlight = false;
     }
-  }
-
-  /**
-   * Capture screenshot using browser-native methods (non-Electron path).
-   * Uses html2canvas directly — getDisplayMedia() is not used because:
-   * - On Wayland, it always shows an OS-level picker dialog (XDG Desktop Portal)
-   * - Chrome's --auto-select-desktop-capture-source flag only works on X11
-   * - html2canvas works without permissions and captures the layout faithfully
-   */
-  private async captureWithBrowserMethods(): Promise<string> {
-    this._screenshotMethod = 'html2canvas';
-    return this.captureHtml2Canvas();
   }
 
   /**

@@ -149,6 +149,28 @@ export class PlayerCore extends EventEmitter {
     this._offlineDbReady = this._initOfflineCache();
   }
 
+  /** Schedule queue options — avoids repeating this object in 8 call sites */
+  get _queueOptions() {
+    return { dynamicLayouts: this._dynamicLayouts };
+  }
+
+  /**
+   * Schedule an auto-revert timer for layout/overlay overrides.
+   * @param {number} id - Layout ID
+   * @param {number} duration - Duration in seconds (0 = no timer)
+   * @param {string} label - Description for logging
+   */
+  _scheduleAutoRevert(id, duration, label) {
+    if (duration > 0) {
+      setTimeout(() => {
+        if (this._layoutOverride?.layoutId === id) {
+          log.info(`${label} duration expired (${duration}s), reverting to schedule`);
+          this.revertToSchedule();
+        }
+      }, duration * 1000);
+    }
+  }
+
   // ── Offline Cache (IndexedDB) ──────────────────────────────────────
 
   /** Load offline cache from IndexedDB into memory on startup */
@@ -458,7 +480,7 @@ export class PlayerCore extends EventEmitter {
         // Layout IDs in playback order (from the pre-calculated queue)
         const { queue } = this.schedule.getScheduleQueue(
           this._layoutDurations,
-          { dynamicLayouts: this._dynamicLayouts }
+          this._queueOptions
         );
         const layoutOrder = [...new Set(queue.map(e => parseLayoutFile(e.layoutId)))];
 
@@ -733,7 +755,7 @@ export class PlayerCore extends EventEmitter {
   getNextLayout() {
     const entry = this.schedule.popNextFromQueue(
       this._layoutDurations,
-      { dynamicLayouts: this._dynamicLayouts }
+      this._queueOptions
     );
 
     if (!entry) {
@@ -752,12 +774,12 @@ export class PlayerCore extends EventEmitter {
       // Try next entries (up to queue length) to find a non-blacklisted one
       const { queue } = this.schedule.getScheduleQueue(
         this._layoutDurations,
-        { dynamicLayouts: this._dynamicLayouts }
+        this._queueOptions
       );
       for (let i = 0; i < queue.length - 1; i++) {
         const next = this.schedule.popNextFromQueue(
           this._layoutDurations,
-          { dynamicLayouts: this._dynamicLayouts }
+          this._queueOptions
         );
         if (next) {
           const nextId = parseLayoutFile(next.layoutId);
@@ -781,7 +803,7 @@ export class PlayerCore extends EventEmitter {
   peekNextLayout() {
     const entry = this.schedule.peekNextInQueue(
       this._layoutDurations,
-      { dynamicLayouts: this._dynamicLayouts }
+      this._queueOptions
     );
 
     if (!entry) return null;
@@ -793,7 +815,7 @@ export class PlayerCore extends EventEmitter {
       // Try the one after that
       const after = this.schedule.peekAfterNext(
         this._layoutDurations,
-        { dynamicLayouts: this._dynamicLayouts }
+        this._queueOptions
       );
       if (!after) return null;
       const afterId = parseLayoutFile(after.layoutId);
@@ -859,7 +881,7 @@ export class PlayerCore extends EventEmitter {
 
     const { queue } = this.schedule.getScheduleQueue(
       this._layoutDurations,
-      { dynamicLayouts: this._dynamicLayouts }
+      this._queueOptions
     );
     const pos = this.schedule._queuePosition;
     log.info(`Advancing to layout ${layoutId} (queue pos ${pos}/${queue.length})`);
@@ -879,7 +901,7 @@ export class PlayerCore extends EventEmitter {
 
     const { queue } = this.schedule.getScheduleQueue(
       this._layoutDurations,
-      { dynamicLayouts: this._dynamicLayouts }
+      this._queueOptions
     );
     if (queue.length <= 1) {
       log.info('Single or empty queue, nothing to go back to');
@@ -1173,16 +1195,7 @@ export class PlayerCore extends EventEmitter {
     this._layoutOverride = { layoutId: id, type: 'change', duration, changeMode };
     this.currentLayoutId = null; // Force re-render
     this.emit('layout-prepare-request', id);
-
-    // Auto-revert after duration (if specified)
-    if (duration > 0) {
-      setTimeout(() => {
-        if (this._layoutOverride?.layoutId === id) {
-          log.info(`Layout override duration expired (${duration}s), reverting to schedule`);
-          this.revertToSchedule();
-        }
-      }, duration * 1000);
-    }
+    this._scheduleAutoRevert(id, duration, 'Layout override');
   }
 
   /**
@@ -1195,16 +1208,7 @@ export class PlayerCore extends EventEmitter {
     const duration = options?.duration || 0;
     this._layoutOverride = { layoutId: id, type: 'overlay', duration };
     this.emit('overlay-layout-request', id);
-
-    // Auto-revert after duration (if specified)
-    if (duration > 0) {
-      setTimeout(() => {
-        if (this._layoutOverride?.layoutId === id) {
-          log.info(`Overlay duration expired (${duration}s), reverting to schedule`);
-          this.revertToSchedule();
-        }
-      }, duration * 1000);
-    }
+    this._scheduleAutoRevert(id, duration, 'Overlay');
   }
 
   /**

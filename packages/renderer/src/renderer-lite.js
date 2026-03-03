@@ -961,6 +961,94 @@ export class RendererLite {
     this.navigateToWidget(targetWidget.id);
   }
 
+  // ── Layout Helpers ───────────────────────────────────────────────
+
+  /**
+   * Pre-fetch all media URLs for a layout's widgets in parallel.
+   * @param {Object} layout - Parsed layout
+   * @param {Map} [cache=this.mediaUrlCache] - Target cache map
+   */
+  async _prefetchMediaUrls(layout, cache) {
+    if (!this.options.getMediaUrl) return;
+    const targetCache = cache || this.mediaUrlCache;
+    const mediaPromises = [];
+
+    for (const region of layout.regions) {
+      for (const widget of region.widgets) {
+        if (widget.fileId) {
+          const fileId = parseInt(widget.fileId || widget.id);
+          if (!targetCache.has(fileId)) {
+            mediaPromises.push(
+              this.options.getMediaUrl(fileId)
+                .then(url => { targetCache.set(fileId, url); })
+                .catch(err => { this.log.warn(`Failed to fetch media ${fileId}:`, err); })
+            );
+          }
+        }
+      }
+    }
+
+    if (mediaPromises.length > 0) {
+      this.log.info(`Pre-fetching ${mediaPromises.length} media URLs in parallel...`);
+      await Promise.all(mediaPromises);
+    }
+  }
+
+  /**
+   * Position a widget element to fill its region (hidden by default).
+   * @param {HTMLElement} element
+   */
+  _positionWidgetElement(element) {
+    Object.assign(element.style, {
+      position: 'absolute',
+      top: '0',
+      left: '0',
+      width: '100%',
+      height: '100%',
+      visibility: 'hidden',
+      opacity: '0',
+    });
+  }
+
+  /**
+   * Apply a background image with cover styling.
+   * @param {HTMLElement} element
+   * @param {string} url - Image URL
+   */
+  _applyBackgroundImage(element, url) {
+    Object.assign(element.style, {
+      backgroundImage: `url(${url})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+    });
+  }
+
+  /**
+   * Clear all region timers in a region map.
+   * @param {Map} regions - Region map (regionId → region)
+   */
+  _clearRegionTimers(regions) {
+    for (const [, region] of regions) {
+      if (region.timer) {
+        clearTimeout(region.timer);
+        region.timer = null;
+      }
+    }
+  }
+
+  /**
+   * Revoke blob: URLs from a media URL cache.
+   * @param {Map} cache - Media URL cache (fileId → url)
+   */
+  _revokeMediaBlobUrls(cache) {
+    for (const [, blobUrl] of cache) {
+      if (blobUrl?.startsWith?.('blob:')) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    }
+  }
+
   // ── Layout Rendering ──────────────────────────────────────────────
 
   /**
@@ -980,13 +1068,9 @@ export class RendererLite {
         // OPTIMIZATION: Reuse existing elements for same layout (Arexibo pattern)
         this.log.info(`Replaying layout ${layoutId} - reusing elements (no recreation!)`);
 
-        // Stop all region timers
-        for (const [regionId, region] of this.regions) {
-          if (region.timer) {
-            clearTimeout(region.timer);
-            region.timer = null;
-          }
-          // Reset to first widget
+        // Stop all region timers and reset to first widget
+        this._clearRegionTimers(this.regions);
+        for (const [, region] of this.regions) {
           region.currentIndex = 0;
         }
 
@@ -1049,10 +1133,7 @@ export class RendererLite {
         try {
           const bgUrl = await this.options.getMediaUrl(parseInt(layout.background));
           if (bgUrl) {
-            this.container.style.backgroundImage = `url(${bgUrl})`;
-            this.container.style.backgroundSize = 'cover';
-            this.container.style.backgroundPosition = 'center';
-            this.container.style.backgroundRepeat = 'no-repeat';
+            this._applyBackgroundImage(this.container, bgUrl);
             this.log.info(`Background image set: ${layout.background}`);
           }
         } catch (err) {
@@ -1061,35 +1142,8 @@ export class RendererLite {
       }
 
       // PRE-FETCH: Get all media URLs in parallel (huge speedup!)
-      if (this.options.getMediaUrl) {
-        const mediaPromises = [];
-        this.mediaUrlCache.clear(); // Clear previous layout's cache
-
-        for (const region of layout.regions) {
-          for (const widget of region.widgets) {
-            if (widget.fileId) {
-              const fileId = parseInt(widget.fileId || widget.id);
-              if (!this.mediaUrlCache.has(fileId)) {
-                mediaPromises.push(
-                  this.options.getMediaUrl(fileId)
-                    .then(url => {
-                      this.mediaUrlCache.set(fileId, url);
-                    })
-                    .catch(err => {
-                      this.log.warn(`Failed to fetch media ${fileId}:`, err);
-                    })
-                );
-              }
-            }
-          }
-        }
-
-        if (mediaPromises.length > 0) {
-          this.log.info(`Pre-fetching ${mediaPromises.length} media URLs in parallel...`);
-          await Promise.all(mediaPromises);
-          this.log.info(`All media URLs pre-fetched`);
-        }
-      }
+      this.mediaUrlCache.clear();
+      await this._prefetchMediaUrls(layout);
 
       // Create regions
       for (const regionConfig of layout.regions) {
@@ -1106,13 +1160,7 @@ export class RendererLite {
 
           try {
             const element = await this.createWidgetElement(widget, region);
-            element.style.position = 'absolute';
-            element.style.top = '0';
-            element.style.left = '0';
-            element.style.width = '100%';
-            element.style.height = '100%';
-            element.style.visibility = 'hidden'; // Hidden by default
-            element.style.opacity = '0';
+            this._positionWidgetElement(element);
             region.element.appendChild(element);
             region.widgetElements.set(widget.id, element);
           } catch (error) {
@@ -2597,10 +2645,7 @@ export class RendererLite {
         try {
           const bgUrl = await this.options.getMediaUrl(parseInt(layout.background));
           if (bgUrl) {
-            wrapper.style.backgroundImage = `url(${bgUrl})`;
-            wrapper.style.backgroundSize = 'cover';
-            wrapper.style.backgroundPosition = 'center';
-            wrapper.style.backgroundRepeat = 'no-repeat';
+            this._applyBackgroundImage(wrapper, bgUrl);
           }
         } catch (err) {
           this.log.warn('Preload: Failed to load background image:', err);
@@ -2609,33 +2654,7 @@ export class RendererLite {
 
       // Pre-fetch all media URLs in parallel
       const preloadMediaUrlCache = new Map();
-      if (this.options.getMediaUrl) {
-        const mediaPromises = [];
-
-        for (const region of layout.regions) {
-          for (const widget of region.widgets) {
-            if (widget.fileId) {
-              const fileId = parseInt(widget.fileId || widget.id);
-              if (!preloadMediaUrlCache.has(fileId)) {
-                mediaPromises.push(
-                  this.options.getMediaUrl(fileId)
-                    .then(url => {
-                      preloadMediaUrlCache.set(fileId, url);
-                    })
-                    .catch(err => {
-                      this.log.warn(`Preload: Failed to fetch media ${fileId}:`, err);
-                    })
-                );
-              }
-            }
-          }
-        }
-
-        if (mediaPromises.length > 0) {
-          this.log.info(`Preload: fetching ${mediaPromises.length} media URLs...`);
-          await Promise.all(mediaPromises);
-        }
-      }
+      await this._prefetchMediaUrls(layout, preloadMediaUrlCache);
 
       // Temporarily swap mediaUrlCache so createWidgetElement uses preload cache
       const savedMediaUrlCache = this.mediaUrlCache;
@@ -2692,13 +2711,7 @@ export class RendererLite {
 
           try {
             const element = await this.createWidgetElement(widget, region);
-            element.style.position = 'absolute';
-            element.style.top = '0';
-            element.style.left = '0';
-            element.style.width = '100%';
-            element.style.height = '100%';
-            element.style.visibility = 'hidden';
-            element.style.opacity = '0';
+            this._positionWidgetElement(element);
             region.element.appendChild(element);
             region.widgetElements.set(widget.id, element);
           } catch (error) {
@@ -2782,15 +2795,12 @@ export class RendererLite {
       // Old layout was rendered normally — manual cleanup.
       // Region elements live directly in this.container (not a wrapper),
       // so we must remove them individually.
-      for (const [regionId, region] of this.regions) {
-        if (region.timer) {
-          clearTimeout(region.timer);
-          region.timer = null;
-        }
+      this._clearRegionTimers(this.regions);
+      for (const [, region] of this.regions) {
         // Release video/audio resources before removing from DOM
         LayoutPool.releaseMediaElements(region.element);
         // Apply region exit transition if configured, then remove
-        if (region.config && region.config.exitTransition) {
+        if (region.config?.exitTransition) {
           const animation = Transitions.apply(
             region.element, region.config.exitTransition, false,
             region.width, region.height
@@ -2809,11 +2819,7 @@ export class RendererLite {
       if (oldLayoutId) {
         this.revokeBlobUrlsForLayout(oldLayoutId);
       }
-      for (const [fileId, blobUrl] of this.mediaUrlCache) {
-        if (blobUrl && typeof blobUrl === 'string' && blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(blobUrl);
-        }
-      }
+      this._revokeMediaBlobUrls(this.mediaUrlCache);
     }
 
     // Emit layoutEnd for old layout if timer hasn't already
@@ -2839,10 +2845,10 @@ export class RendererLite {
     // Update container background to match preloaded layout
     this.container.style.backgroundColor = preloaded.layout.bgcolor;
     if (preloaded.container.style.backgroundImage) {
-      this.container.style.backgroundImage = preloaded.container.style.backgroundImage;
-      this.container.style.backgroundSize = preloaded.container.style.backgroundSize;
-      this.container.style.backgroundPosition = preloaded.container.style.backgroundPosition;
-      this.container.style.backgroundRepeat = preloaded.container.style.backgroundRepeat;
+      // Copy background styles from preloaded wrapper to main container
+      for (const prop of ['backgroundImage', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat']) {
+        this.container.style[prop] = preloaded.container.style[prop];
+      }
     } else {
       this.container.style.backgroundImage = '';
     }
@@ -2942,12 +2948,8 @@ export class RendererLite {
       }
 
       // Stop all regions
+      this._clearRegionTimers(this.regions);
       for (const [regionId, region] of this.regions) {
-        if (region.timer) {
-          clearTimeout(region.timer);
-          region.timer = null;
-        }
-
         // Stop current widget
         if (region.widgets.length > 0) {
           this.stopWidget(regionId, region.currentIndex);
@@ -2957,13 +2959,12 @@ export class RendererLite {
         LayoutPool.releaseMediaElements(region.element);
 
         // Apply region exit transition if configured, then remove
-        if (region.config && region.config.exitTransition) {
+        if (region.config?.exitTransition) {
           const animation = Transitions.apply(
             region.element, region.config.exitTransition, false,
             region.width, region.height
           );
           if (animation) {
-            // Remove element after exit transition completes
             const el = region.element;
             animation.onfinish = () => el.remove();
           } else {
@@ -2975,11 +2976,7 @@ export class RendererLite {
       }
 
       // Revoke media blob URLs from cache
-      for (const [fileId, blobUrl] of this.mediaUrlCache) {
-        if (blobUrl && blobUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(blobUrl);
-        }
-      }
+      this._revokeMediaBlobUrls(this.mediaUrlCache);
     }
 
     // Clear state
@@ -3034,32 +3031,7 @@ export class RendererLite {
       overlayDiv.style.backgroundColor = layout.bgcolor;
 
       // Pre-fetch all media URLs for overlay
-      if (this.options.getMediaUrl) {
-        const mediaPromises = [];
-        for (const region of layout.regions) {
-          for (const widget of region.widgets) {
-            if (widget.fileId) {
-              const fileId = parseInt(widget.fileId || widget.id);
-              if (!this.mediaUrlCache.has(fileId)) {
-                mediaPromises.push(
-                  this.options.getMediaUrl(fileId)
-                    .then(url => {
-                      this.mediaUrlCache.set(fileId, url);
-                    })
-                    .catch(err => {
-                      this.log.warn(`Failed to fetch overlay media ${fileId}:`, err);
-                    })
-                );
-              }
-            }
-          }
-        }
-
-        if (mediaPromises.length > 0) {
-          this.log.info(`Pre-fetching ${mediaPromises.length} overlay media URLs...`);
-          await Promise.all(mediaPromises);
-        }
-      }
+      await this._prefetchMediaUrls(layout);
 
       // Calculate scale for overlay layout
       this.calculateScale(layout);
@@ -3102,8 +3074,7 @@ export class RendererLite {
 
           try {
             const element = await this.createWidgetElement(widget, region);
-            element.style.visibility = 'hidden';
-            element.style.opacity = '0';
+            this._positionWidgetElement(element);
             region.element.appendChild(element);
             region.widgetElements.set(widget.id, element);
           } catch (error) {

@@ -111,15 +111,7 @@ export class CmsApiClient {
     const response = await fetch(url, options);
 
     if (!response.ok) {
-      const text = await response.text();
-      let errorMsg;
-      try {
-        const errorData = JSON.parse(text);
-        errorMsg = errorData.error?.message || errorData.message || text;
-      } catch (_) {
-        errorMsg = text;
-      }
-      throw new CmsApiError(method, path, response.status, errorMsg);
+      await this._handleErrorResponse(response, method, path);
     }
 
     // Some endpoints return empty body (204)
@@ -141,6 +133,35 @@ export class CmsApiClient {
   /** DELETE request (path relative to /api/) */
   del(path) { return this.request('DELETE', path); }
 
+  /**
+   * GET a list endpoint and ensure the result is always an array.
+   * @param {string} path - API path
+   * @param {Object} [filters={}] - Query parameters
+   * @returns {Promise<Array>}
+   */
+  async _listRequest(path, filters = {}) {
+    const data = await this.request('GET', path, filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Parse an error response body and throw a structured error.
+   * @param {Response} response - Fetch response
+   * @param {string} method - HTTP method
+   * @param {string} path - API path
+   */
+  async _handleErrorResponse(response, method, path) {
+    const text = await response.text();
+    let errorMsg;
+    try {
+      const errorData = JSON.parse(text);
+      errorMsg = errorData.error?.message || errorData.message || text;
+    } catch (_) {
+      errorMsg = text;
+    }
+    throw new CmsApiError(method, path, response.status, errorMsg);
+  }
+
   // ── Display Management ──────────────────────────────────────────
 
   /**
@@ -150,10 +171,7 @@ export class CmsApiClient {
    */
   async findDisplay(hardwareKey) {
     log.info('Looking up display by hardwareKey:', hardwareKey);
-    const data = await this.request('GET', '/display', { hardwareKey });
-
-    // API returns array of matching displays
-    const displays = Array.isArray(data) ? data : [];
+    const displays = await this._listRequest('/display', { hardwareKey });
     if (displays.length === 0) {
       log.info('No display found for hardwareKey:', hardwareKey);
       return null;
@@ -192,8 +210,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>} Array of display objects
    */
   async listDisplays(filters = {}) {
-    const data = await this.request('GET', '/display', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/display', filters);
   }
 
   /**
@@ -238,15 +255,7 @@ export class CmsApiClient {
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      let errorMsg;
-      try {
-        const errorData = JSON.parse(text);
-        errorMsg = errorData.error?.message || errorData.message || text;
-      } catch (_) {
-        errorMsg = text;
-      }
-      throw new Error(`CMS API ${method} ${path} failed (${response.status}): ${errorMsg}`);
+      await this._handleErrorResponse(response, method, path);
     }
 
     const contentType = response.headers.get('Content-Type') || '';
@@ -278,8 +287,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listLayouts(filters = {}) {
-    const data = await this.request('GET', '/layout', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/layout', filters);
   }
 
   /**
@@ -446,8 +454,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listMedia(filters = {}) {
-    const data = await this.request('GET', '/library', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/library', filters);
   }
 
   /**
@@ -485,8 +492,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listCampaigns(filters = {}) {
-    const data = await this.request('GET', '/campaign', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/campaign', filters);
   }
 
   /**
@@ -600,8 +606,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listDisplayGroups(filters = {}) {
-    const data = await this.request('GET', '/displaygroup', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/displaygroup', filters);
   }
 
   /**
@@ -688,8 +693,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listResolutions() {
-    const data = await this.request('GET', '/resolution');
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/resolution');
   }
 
   // ── Template Management ──────────────────────────────────────────
@@ -700,8 +704,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listTemplates(filters = {}) {
-    const data = await this.request('GET', '/template', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/template', filters);
   }
 
   // ── Playlist Management ──────────────────────────────────────────
@@ -870,8 +873,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listCommands(filters = {}) {
-    const data = await this.get('/command', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/command', filters);
   }
 
   /**
@@ -949,8 +951,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listDayParts(filters = {}) {
-    const data = await this.get('/daypart', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/daypart', filters);
   }
 
   /**
@@ -1055,8 +1056,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listPlaylists(filters = {}) {
-    const data = await this.get('/playlist', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/playlist', filters);
   }
 
   /**
@@ -1212,8 +1212,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listDatasets(filters = {}) {
-    const data = await this.get('/dataset', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/dataset', filters);
   }
 
   /**
@@ -1250,8 +1249,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listDatasetColumns(dataSetId) {
-    const data = await this.get(`/dataset/${dataSetId}/column`);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest(`/dataset/${dataSetId}/column`);
   }
 
   /**
@@ -1292,8 +1290,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listDatasetData(dataSetId, filters = {}) {
-    const data = await this.get(`/dataset/data/${dataSetId}`, filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest(`/dataset/data/${dataSetId}`, filters);
   }
 
   /**
@@ -1354,8 +1351,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listNotifications(filters = {}) {
-    const data = await this.get('/notification', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/notification', filters);
   }
 
   /**
@@ -1394,8 +1390,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listFolders(filters = {}) {
-    const data = await this.get('/folder', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/folder', filters);
   }
 
   /**
@@ -1434,8 +1429,7 @@ export class CmsApiClient {
    * @returns {Promise<Array>}
    */
   async listTags(filters = {}) {
-    const data = await this.get('/tag', filters);
-    return Array.isArray(data) ? data : [];
+    return this._listRequest('/tag', filters);
   }
 
   /**
