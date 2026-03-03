@@ -7,6 +7,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLogger, setLogLevel, getLogLevel, LOG_LEVELS } from './logger.js';
 
+// Matches "HH:MM:SS.mmm [Name]" or "HH:MM:SS.mmm [Name] DEBUG:"
+const ts = (name, suffix = '') =>
+  expect.stringMatching(new RegExp(`^\\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[${name}\\]${suffix}$`));
+
 describe('Logger', () => {
   let consoleLogSpy;
   let consoleWarnSpy;
@@ -62,7 +66,7 @@ describe('Logger', () => {
       logger.debug('Debug message', { data: 'value' });
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[Test] DEBUG:',
+        ts('Test', ' DEBUG:'),
         'Debug message',
         { data: 'value' }
       );
@@ -100,7 +104,7 @@ describe('Logger', () => {
       logger.info('Info message', 'arg1', 'arg2');
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[Test]',
+        ts('Test'),
         'Info message',
         'arg1',
         'arg2'
@@ -139,7 +143,7 @@ describe('Logger', () => {
       logger.warn('Warning message', { warn: true });
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        '[Test]',
+        ts('Test'),
         'Warning message',
         { warn: true }
       );
@@ -177,7 +181,7 @@ describe('Logger', () => {
       logger.error('Error message', new Error('Test error'));
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[Test]',
+        ts('Test'),
         'Error message',
         expect.any(Error)
       );
@@ -226,37 +230,37 @@ describe('Logger', () => {
     it('should delegate to debug()', () => {
       logger.log('DEBUG', 'message');
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[Test] DEBUG:', 'message');
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('Test', ' DEBUG:'), 'message');
     });
 
     it('should delegate to info()', () => {
       logger.log('INFO', 'message');
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[Test]', 'message');
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('Test'), 'message');
     });
 
     it('should delegate to warn() for WARNING', () => {
       logger.log('WARNING', 'message');
 
-      expect(consoleWarnSpy).toHaveBeenCalledWith('[Test]', 'message');
+      expect(consoleWarnSpy).toHaveBeenCalledWith(ts('Test'), 'message');
     });
 
     it('should delegate to warn() for WARN', () => {
       logger.log('WARN', 'message');
 
-      expect(consoleWarnSpy).toHaveBeenCalledWith('[Test]', 'message');
+      expect(consoleWarnSpy).toHaveBeenCalledWith(ts('Test'), 'message');
     });
 
     it('should delegate to error()', () => {
       logger.log('ERROR', 'message');
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith('[Test]', 'message');
+      expect(consoleErrorSpy).toHaveBeenCalledWith(ts('Test'), 'message');
     });
 
     it('should handle lowercase level names', () => {
       logger.log('debug', 'message');
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[Test] DEBUG:', 'message');
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('Test', ' DEBUG:'), 'message');
     });
   });
 
@@ -345,7 +349,7 @@ describe('Logger', () => {
       logger.info('Message', 1, 'two', { three: 3 }, [4, 5]);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[Test]',
+        ts('Test'),
         'Message',
         1,
         'two',
@@ -357,7 +361,7 @@ describe('Logger', () => {
     it('should handle zero arguments', () => {
       logger.info();
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[Test]');
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('Test'));
     });
 
     it('should handle objects and errors', () => {
@@ -367,7 +371,7 @@ describe('Logger', () => {
       logger.error('Error:', error, obj);
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[Test]',
+        ts('Test'),
         'Error:',
         error,
         obj
@@ -381,7 +385,7 @@ describe('Logger', () => {
 
       logger.info('Test');
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[MyModule]', 'Test');
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('MyModule'), 'Test');
     });
 
     it('should support different module names', () => {
@@ -391,8 +395,8 @@ describe('Logger', () => {
       logger1.info('From 1');
       logger2.info('From 2');
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[Module1]', 'From 1');
-      expect(consoleLogSpy).toHaveBeenCalledWith('[Module2]', 'From 2');
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('Module1'), 'From 1');
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('Module2'), 'From 2');
     });
   });
 
@@ -402,7 +406,7 @@ describe('Logger', () => {
 
       logger.info('Test');
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[null]', 'Test');
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('null'), 'Test');
     });
 
     it('should handle undefined level (use default)', () => {
@@ -419,7 +423,7 @@ describe('Logger', () => {
 
       logger.info(longMessage);
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('[Test]', longMessage);
+      expect(consoleLogSpy).toHaveBeenCalledWith(ts('Test'), longMessage);
     });
 
     it('should handle circular references in objects', () => {

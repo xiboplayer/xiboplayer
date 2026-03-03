@@ -40,6 +40,12 @@ class Logger {
     }
   }
 
+  /** HH:MM:SS.mmm timestamp for log lines */
+  _ts() {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+  }
+
   setLevel(level) {
     this.useGlobal = false;
     if (typeof level === 'string') {
@@ -56,28 +62,28 @@ class Logger {
 
   debug(...args) {
     if (this.getEffectiveLevel() <= LOG_LEVELS.DEBUG) {
-      console.log(`[${this.name}] DEBUG:`, ...args);
+      console.log(`${this._ts()} [${this.name}] DEBUG:`, ...args);
     }
     _dispatchToSinks('debug', this.name, args);
   }
 
   info(...args) {
     if (this.getEffectiveLevel() <= LOG_LEVELS.INFO) {
-      console.log(`[${this.name}]`, ...args);
+      console.log(`${this._ts()} [${this.name}]`, ...args);
     }
     _dispatchToSinks('info', this.name, args);
   }
 
   warn(...args) {
     if (this.getEffectiveLevel() <= LOG_LEVELS.WARNING) {
-      console.warn(`[${this.name}]`, ...args);
+      console.warn(`${this._ts()} [${this.name}]`, ...args);
     }
     _dispatchToSinks('warning', this.name, args);
   }
 
   error(...args) {
     if (this.getEffectiveLevel() <= LOG_LEVELS.ERROR) {
-      console.error(`[${this.name}]`, ...args);
+      console.error(`${this._ts()} [${this.name}]`, ...args);
     }
     _dispatchToSinks('error', this.name, args);
   }
