@@ -97,6 +97,7 @@ export class PlayerCore extends EventEmitter {
     this.collecting = false;
     this.collectionInterval = null;
     this.pendingLayouts = new Map(); // layoutId -> required media IDs
+    this._layoutMediaStatus = new Map(); // layoutFile → { ready: boolean, missing: string[] }
     this.offlineMode = false; // Track whether we're currently in offline mode
     this._normalCollectInterval = null; // Saved interval to restore after offline retry
     this._offlineRetrySeconds = 0; // Current backoff interval (0 = not retrying)
@@ -723,6 +724,8 @@ export class PlayerCore extends EventEmitter {
     this._lastLayoutChangeTime = new Date().toISOString();
     this._statusCode = 1; // Running
     this.pendingLayouts.delete(layoutId);
+    // Layout proved playable — clear media status (no longer missing)
+    this._layoutMediaStatus.delete(`${layoutId}.xlf`);
     this.emit('layout-current', layoutId);
     // Force timeline recalc on layout change (fingerprint reset)
     this._lastTimelineFingerprint = null;
@@ -1649,14 +1652,19 @@ export class PlayerCore extends EventEmitter {
     if (this._layoutDurations.size === 0) return;
     if (!this.schedule.getLayoutsAtTime) return; // Schedule doesn't support time queries
 
-    // Fingerprint inputs: schedule CRC + sorted durations + current layout.
+    // Fingerprint inputs: schedule CRC + sorted durations + current layout + media status.
     // When unchanged, re-emit the cached timeline — avoids time drift from
     // re-simulating with a new Date.now() anchor on every collection cycle.
     const durationEntries = [...this._layoutDurations.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}:${v}`)
       .join('|');
-    const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}`;
+    const mediaStatusEntries = [...this._layoutMediaStatus.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}:${v.ready}:${v.missingKey}`)
+      .join('|');
+    const pendingEntries = [...this.pendingLayouts.keys()].sort().join(',');
+    const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}|${mediaStatusEntries}|${pendingEntries}`;
 
     if (fingerprint === this._lastTimelineFingerprint && this._lastTimeline) {
       this.emit('timeline-updated', this._lastTimeline);
@@ -1668,16 +1676,58 @@ export class PlayerCore extends EventEmitter {
     });
     if (timeline.length === 0) return;
 
+    // Annotate entries with missingMedia from pendingLayouts (high authority)
+    // and _layoutMediaStatus (proactive check, lower authority)
+    for (const entry of timeline) {
+      const layoutId = parseInt(entry.layoutFile.replace('.xlf', ''), 10);
+      const pendingMedia = this.pendingLayouts.get(layoutId);
+      if (pendingMedia && pendingMedia.length > 0) {
+        // pendingLayouts takes priority — definitively missing
+        entry.missingMedia = pendingMedia.map(String);
+      } else {
+        const status = this._layoutMediaStatus.get(entry.layoutFile);
+        if (status && !status.ready && status.missing.length > 0) {
+          entry.missingMedia = status.missing.map(String);
+        }
+      }
+    }
+
     this._lastTimelineFingerprint = fingerprint;
     this._lastTimeline = timeline;
 
     const lines = timeline.slice(0, 20).map(e => {
       const s = e.startTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const end = e.endTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      return `  ${s}-${end}  Layout ${e.layoutFile} (${e.duration}s)${e.isDefault ? ' [default]' : ''}`;
+      const missingTag = e.missingMedia ? ` [MISSING: ${e.missingMedia.length} files]` : '';
+      return `  ${s}-${end}  Layout ${e.layoutFile} (${e.duration}s)${e.isDefault ? ' [default]' : ''}${missingTag}`;
     });
+
+    // Log warnings for layouts with missing media
+    for (const entry of timeline) {
+      if (entry.missingMedia) {
+        log.warn(`[Timeline] Layout ${entry.layoutFile}: ${entry.missingMedia.length} files missing`);
+      }
+    }
+
     log.info(`[Timeline] Next ${timeline.length} plays:\n${lines.join('\n')}`);
     this.emit('timeline-updated', timeline);
+  }
+
+  /**
+   * Set media readiness status for a layout (proactive async check from platform layer).
+   * No-ops if value is unchanged to avoid fingerprint churn.
+   * @param {string} layoutFile - Layout file (e.g. '100.xlf')
+   * @param {boolean} ready - Whether all media is cached
+   * @param {string[]} [missing] - Array of missing media IDs/filenames
+   */
+  setLayoutMediaStatus(layoutFile, ready, missing = []) {
+    const existing = this._layoutMediaStatus.get(layoutFile);
+    const missingKey = missing.slice().sort().join(',');
+    if (existing && existing.ready === ready && existing.missingKey === missingKey) return;
+
+    this._layoutMediaStatus.set(layoutFile, { ready, missing, missingKey });
+    // Invalidate fingerprint to force timeline recalculation
+    this._lastTimelineFingerprint = null;
   }
 
   /**

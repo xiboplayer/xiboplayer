@@ -2212,4 +2212,270 @@ describe('PlayerCore', () => {
     });
   });
 
+  // ── Timeline stability ────────────────────────────────────────────
+  // Behavioral tests for the fingerprinting/caching contract:
+  // "timeline is stable when nothing changes, and updates when something does"
+
+  describe('Timeline stability', () => {
+    /** Set up mockSchedule with timeline support methods */
+    function setupTimelineSupport() {
+      mockSchedule.getLayoutsAtTime = vi.fn(() => ['100.xlf']);
+      mockSchedule.getAllLayoutsAtTime = vi.fn(() => [
+        { file: '100.xlf', priority: 10, maxPlaysPerHour: 0 },
+      ]);
+      mockSchedule.playHistory = new Map();
+    }
+
+    it('should reuse cached timeline when inputs are unchanged', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      core.logUpcomingTimeline();
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      // Both calls emit the same array reference (cached, not recalculated)
+      expect(spy.mock.calls[0][0]).toBe(spy.mock.calls[1][0]);
+    });
+
+    it('should recalculate when schedule CRC changes', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      core.logUpcomingTimeline();
+
+      // Schedule CRC changes (new collection fetched a different schedule)
+      core._lastCheckSchedule = 'crc-bbb';
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      // Second call produces a NEW array (different reference)
+      expect(spy.mock.calls[0][0]).not.toBe(spy.mock.calls[1][0]);
+    });
+
+    it('should recalculate when a layout duration is corrected', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      core.logUpcomingTimeline();
+
+      // Duration correction (video metadata arrived)
+      core._layoutDurations.set('100.xlf', 90);
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(spy.mock.calls[0][0]).not.toBe(spy.mock.calls[1][0]);
+    });
+
+    it('should recalculate timeline on layout change', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      // Prime the cache
+      core.logUpcomingTimeline();
+      const firstFingerprint = core._lastTimelineFingerprint;
+
+      // Layout change nullifies fingerprint then recalculates
+      core.setCurrentLayout(200);
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      // Fingerprint changed because layout ID changed
+      expect(core._lastTimelineFingerprint).not.toBe(firstFingerprint);
+    });
+
+    it('should not emit timeline-updated when durations are empty', () => {
+      setupTimelineSupport();
+      // _layoutDurations is empty (default state)
+      expect(core._layoutDurations.size).toBe(0);
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      core.logUpcomingTimeline();
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should not emit timeline-updated when schedule lacks time queries', () => {
+      // mockSchedule does NOT have getLayoutsAtTime (default mock)
+      expect(mockSchedule.getLayoutsAtTime).toBeUndefined();
+      core._layoutDurations.set('100.xlf', 30);
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      core.logUpcomingTimeline();
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should produce stable timeline across multiple collection cycles', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      // Simulate 5 collection cycles with no changes
+      for (let i = 0; i < 5; i++) {
+        core.logUpcomingTimeline();
+      }
+
+      expect(spy).toHaveBeenCalledTimes(5);
+      // All 5 emissions carry the same cached timeline reference
+      const first = spy.mock.calls[0][0];
+      for (let i = 1; i < 5; i++) {
+        expect(spy.mock.calls[i][0]).toBe(first);
+      }
+    });
+
+    it('should recalculate once on duration correction then cache again', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      // Initial calculation
+      core.logUpcomingTimeline();
+
+      // Duration correction → new timeline
+      core._layoutDurations.set('100.xlf', 90);
+      core.logUpcomingTimeline();
+
+      // Same inputs again → cached
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(3);
+      // Call 1 vs call 2: different (recalculated)
+      expect(spy.mock.calls[0][0]).not.toBe(spy.mock.calls[1][0]);
+      // Call 2 vs call 3: same (cached)
+      expect(spy.mock.calls[1][0]).toBe(spy.mock.calls[2][0]);
+    });
+
+    // ── Missing media annotation ───────────────────────────────────────
+
+    it('should annotate entry from pendingLayouts', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      // Layout 100 has pending media (definitively missing)
+      core.pendingLayouts.set(100, [201, 202]);
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      const entry = spy.mock.calls[0][0].find(e => e.layoutFile === '100.xlf');
+      expect(entry).toBeDefined();
+      expect(entry.missingMedia).toEqual(['201', '202']);
+    });
+
+    it('should annotate entry from _layoutMediaStatus', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      // Proactive check found missing media
+      core.setLayoutMediaStatus('100.xlf', false, ['55', '66']);
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      const entry = spy.mock.calls[0][0].find(e => e.layoutFile === '100.xlf');
+      expect(entry).toBeDefined();
+      expect(entry.missingMedia).toEqual(['55', '66']);
+    });
+
+    it('should recalculate on media status change', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+
+      core.logUpcomingTimeline();
+
+      // Media status change → fingerprint invalidated
+      core.setLayoutMediaStatus('100.xlf', false, ['55']);
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      // Different timeline objects (recalculated)
+      expect(spy.mock.calls[0][0]).not.toBe(spy.mock.calls[1][0]);
+    });
+
+    it('should not annotate when media is ready', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      // Media status: ready (no missing files)
+      core.setLayoutMediaStatus('100.xlf', true);
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      const entry = spy.mock.calls[0][0].find(e => e.layoutFile === '100.xlf');
+      expect(entry).toBeDefined();
+      expect(entry.missingMedia).toBeUndefined();
+    });
+
+    it('should prioritize pendingLayouts over _layoutMediaStatus', () => {
+      setupTimelineSupport();
+      core._layoutDurations.set('100.xlf', 30);
+      core._lastCheckSchedule = 'crc-aaa';
+      core.currentLayoutId = 100;
+
+      // Both sources disagree: pendingLayouts says missing, _layoutMediaStatus says ready
+      core.pendingLayouts.set(100, [301, 302]);
+      core.setLayoutMediaStatus('100.xlf', true);
+
+      const spy = createSpy();
+      core.on('timeline-updated', spy);
+      core.logUpcomingTimeline();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      const entry = spy.mock.calls[0][0].find(e => e.layoutFile === '100.xlf');
+      expect(entry).toBeDefined();
+      // pendingLayouts takes priority
+      expect(entry.missingMedia).toEqual(['301', '302']);
+    });
+  });
+
 });
