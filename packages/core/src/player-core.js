@@ -941,7 +941,7 @@ export class PlayerCore extends EventEmitter {
       // For layout files: match layout ID with file ID (layout 78 needs layout/78)
       // For media files: check if fileId is in requiredFiles array
       const isLayoutFile = fileType === 'layout' && layoutId === parseInt(fileId);
-      const isRequiredMedia = fileType === 'media' && requiredFiles.includes(parseInt(fileId));
+      const isRequiredMedia = fileType === 'media' && requiredFiles.includes(fileId);
 
       if (isLayoutFile || isRequiredMedia) {
         log.debug(`${fileType} ${fileId} was needed by pending layout ${layoutId}, checking if ready...`);

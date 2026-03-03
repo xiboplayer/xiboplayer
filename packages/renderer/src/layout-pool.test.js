@@ -33,8 +33,7 @@ describe('LayoutPool', () => {
       container,
       layout: { width: 1920, height: 1080, duration: 60, bgcolor: '#000', regions: [] },
       regions: new Map(),
-      blobUrls: new Set(),
-      mediaUrlCache: new Map()
+      blobUrls: new Set()
     };
   }
 
@@ -168,18 +167,6 @@ describe('LayoutPool', () => {
 
       expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-1');
       expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-2');
-    });
-
-    it('should revoke media blob URLs on eviction', () => {
-      const entry = createMockEntry(1);
-      entry.mediaUrlCache.set(10, 'blob:media-10');
-      entry.mediaUrlCache.set(20, 'blob:media-20');
-
-      pool.add(1, entry);
-      pool.evict(1);
-
-      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:media-10');
-      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:media-20');
     });
 
     it('should remove container from DOM', () => {

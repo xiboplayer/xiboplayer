@@ -68,6 +68,7 @@ class PwaPlayer {
   private _iframeObserver: MutationObserver | null = null; // Iframe key-forwarding observer
   private _swIcHandler: any = null; // SW Interactive Control message handler
   private _chunkConfig: any = null; // Device-adaptive chunk configuration
+  private _fileIdToSaveAs: Map<string, string> = new Map(); // Numeric file ID → storedAs filename
 
   async init() {
     log.info('Initializing player with RendererLite + PlayerCore...');
@@ -124,23 +125,8 @@ class PwaPlayer {
       },
       container,
       {
-        // Provide media URL resolver - uses streaming via Service Worker
-        getMediaUrl: async (fileId: number) => {
-          log.debug(`getMediaUrl called for media ${fileId}`);
-
-          // Check if file exists in cache via mirror route HEAD
-          const exists = await store.has('api/v2/player', `media/${fileId}`);
-
-          if (!exists) {
-            log.warn(`Media ${fileId} not in cache`);
-            return '';
-          }
-
-          // Return direct URL — proxy mirror route serves from ContentStore
-          const streamingUrl = `${window.location.origin}${PLAYER_API}/media/${fileId}`;
-          log.debug(`Using streaming URL for media ${fileId}: ${streamingUrl}`);
-          return streamingUrl;
-        },
+        // Provide fileId→saveAs map for layout background resolution
+        fileIdToSaveAs: this._fileIdToSaveAs,
 
         // Provide widget HTML resolver — check ContentStore via proxy
         getWidgetHtml: async (widget: any) => {
@@ -1135,8 +1121,12 @@ class PwaPlayer {
   private notifyFileCached(fileId: string, fileType: string) {
     log.debug(`Download complete: ${fileType}/${fileId}`);
 
-    if (fileType === 'media' || fileType === 'layout') {
+    if (fileType === 'layout') {
       this.core.notifyMediaReady(parseInt(fileId), fileType);
+    } else if (fileType === 'media') {
+      // Pass saveAs string for media files (matches pendingLayouts entries)
+      const saveAs = this._fileIdToSaveAs.get(fileId) || fileId;
+      this.core.notifyMediaReady(saveAs, fileType);
     }
 
     // Debounced duration probe — run after downloads settle
@@ -1165,6 +1155,13 @@ class PwaPlayer {
 
     /** Store key = URL path without leading / and query params */
     const storeKeyFrom = (f: any) => (f.path || '').split('?')[0].replace(/^\/+/, '') || `${f.type || 'media'}/${f.id}`;
+
+    // Build fileId→saveAs map from CMS RequiredFiles data
+    for (const f of files) {
+      if (f.saveAs) {
+        this._fileIdToSaveAs.set(String(f.id), f.saveAs);
+      }
+    }
 
     // Build lookup maps from flat CMS file list
     const xlfFiles = new Map();
@@ -1592,16 +1589,17 @@ class PwaPlayer {
     });
 
     // Handle video playback errors — re-download only missing chunks
-    this.renderer.on('videoError', async ({ fileId }: any) => {
-      const storeKey = `${PLAYER_API.slice(1)}/media/${fileId}`;
+    this.renderer.on('videoError', async ({ storedAs }: any) => {
+      if (!storedAs) return;
+      const storeKey = `${PLAYER_API.slice(1)}/media/file/${storedAs}`;
       try {
         const resp = await fetch(`/store/missing-chunks/${storeKey}`);
         const { missing } = await resp.json();
         if (missing.length === 0) {
-          log.warn(`Video error for media ${fileId} but no missing chunks — possible decode error`);
+          log.warn(`Video error for ${storedAs} but no missing chunks — possible decode error`);
           return;
         }
-        log.warn(`Video ${fileId}: ${missing.length} missing chunks (${missing.join(', ')}), re-downloading`);
+        log.warn(`Video ${storedAs}: ${missing.length} missing chunks (${missing.join(', ')}), re-downloading`);
 
         // Unmark completion (keeps existing chunks on disk) so HEAD returns 404
         await fetch('/store/unmark-complete', {
@@ -1612,10 +1610,10 @@ class PwaPlayer {
 
         // Trigger collection — enqueueFile will populate skipChunks for existing chunks
         this.core.collectNow().catch((err: any) => {
-          log.error(`Failed to trigger re-download for media ${fileId}:`, err.message);
+          log.error(`Failed to trigger re-download for ${storedAs}:`, err.message);
         });
       } catch (err: any) {
-        log.error(`Failed to check/re-download media ${fileId}:`, err.message);
+        log.error(`Failed to check/re-download ${storedAs}:`, err.message);
       }
     });
   }
@@ -1711,19 +1709,23 @@ class PwaPlayer {
    * Get all required media file IDs and video-specific IDs from layout XLF.
    * Single parse to avoid double DOMParser overhead on the same XML.
    */
-  private getMediaIds(xlfXml: string): { allMedia: number[]; videoMedia: number[] } {
+  /**
+   * Get all required media saveAs filenames and video-specific ones from layout XLF.
+   * Returns saveAs strings (via _fileIdToSaveAs map) for store key matching.
+   */
+  private getMediaIds(xlfXml: string): { allMedia: string[]; videoMedia: string[] } {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xlfXml, 'text/xml');
-    const allMedia: number[] = [];
-    const videoMedia: number[] = [];
+    const allMedia: string[] = [];
+    const videoMedia: string[] = [];
 
     doc.querySelectorAll('media[fileId]').forEach(el => {
       const fileId = el.getAttribute('fileId');
       if (fileId) {
-        const id = parseInt(fileId, 10);
-        allMedia.push(id);
+        const saveAs = this._fileIdToSaveAs.get(fileId) || fileId;
+        allMedia.push(saveAs);
         if (el.getAttribute('type') === 'video') {
-          videoMedia.push(id);
+          videoMedia.push(saveAs);
         }
       }
     });
@@ -1731,9 +1733,9 @@ class PwaPlayer {
     // Include background image file ID from layout element
     const bgFileId = doc.querySelector('layout')?.getAttribute('background');
     if (bgFileId) {
-      const parsed = parseInt(bgFileId, 10);
-      if (!isNaN(parsed) && !allMedia.includes(parsed)) {
-        allMedia.push(parsed);
+      const saveAs = this._fileIdToSaveAs.get(bgFileId) || bgFileId;
+      if (!allMedia.includes(saveAs)) {
+        allMedia.push(saveAs);
       }
     }
 
@@ -1744,17 +1746,21 @@ class PwaPlayer {
    * Check if all required media files are cached and ready.
    * Uses StoreClient.has() → HEAD /store${PLAYER_API}/media/:id to check ContentStore.
    */
-  private async checkAllMediaCached(mediaIds: number[]): Promise<boolean> {
-    for (const mediaId of mediaIds) {
+  /**
+   * Check if all required media files are cached and ready.
+   * Uses storedAs filenames for store key matching: /media/file/{saveAs}
+   */
+  private async checkAllMediaCached(mediaSaveAs: string[]): Promise<boolean> {
+    for (const saveAs of mediaSaveAs) {
       try {
-        const cached = await store.has('api/v2/player', `media/${mediaId}`);
+        const cached = await store.has('api/v2/player', `media/file/${saveAs}`);
         if (!cached) {
-          log.debug(`Media ${mediaId} not yet cached`);
+          log.debug(`Media ${saveAs} not yet cached`);
           return false;
         }
-        log.debug(`Media ${mediaId} cached`);
+        log.debug(`Media ${saveAs} cached`);
       } catch (error) {
-        log.warn(`Unable to verify media ${mediaId}, assuming cached (offline mode)`);
+        log.warn(`Unable to verify media ${saveAs}, assuming cached (offline mode)`);
       }
     }
     return true;
@@ -1852,10 +1858,10 @@ class PwaPlayer {
         }
 
         const missing: string[] = [];
-        for (const mediaId of allMedia) {
+        for (const saveAs of allMedia) {
           try {
-            const cached = await store.has('api/v2/player', `media/${mediaId}`);
-            if (!cached) missing.push(String(mediaId));
+            const cached = await store.has('api/v2/player', `media/file/${saveAs}`);
+            if (!cached) missing.push(saveAs);
           } catch {
             // Assume cached on error (offline mode)
           }
@@ -1902,11 +1908,12 @@ class PwaPlayer {
           const fileId = mediaEl.getAttribute('fileId');
           if (!fileId) continue;
 
-          const exists = await store.has('api/v2/player', `media/${fileId}`);
+          const saveAs = this._fileIdToSaveAs.get(fileId) || fileId;
+          const exists = await store.has('api/v2/player', `media/file/${saveAs}`);
           if (!exists) continue;
 
           // Probe metadata only — does NOT download the full video
-          const duration = await this.probeVideoDuration(`${window.location.origin}${PLAYER_API}/media/${fileId}`);
+          const duration = await this.probeVideoDuration(`${window.location.origin}${PLAYER_API}/media/file/${saveAs}`);
           if (duration > 0) {
             videoDurations.set(fileId, duration);
           }
