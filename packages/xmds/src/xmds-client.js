@@ -150,7 +150,7 @@ export class XmdsClient {
       serverKey: this.config.cmsKey,
       hardwareKey: this.config.hardwareKey,
       displayName: this.config.displayName,
-      clientType: this.config.clientType || 'chromeOS',
+      clientType: this.config.clientType || 'linux',
       clientVersion: this.config.clientVersion || '0.1.0',
       clientCode: this.config.clientCode || '1',
       operatingSystem: os,

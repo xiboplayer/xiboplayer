@@ -215,7 +215,7 @@ export class RestClient {
 
     const json = await this.restSend('POST', '/displays', {
       displayName: this.config.displayName,
-      clientType: this.config.clientType || 'chromeOS',
+      clientType: this.config.clientType || 'linux',
       clientVersion: this.config.clientVersion || '0.1.0',
       clientCode: this.config.clientCode || 1,
       operatingSystem: os,
