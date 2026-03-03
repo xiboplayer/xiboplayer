@@ -257,6 +257,23 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     res.json({ success: true });
   });
 
+  // ─── Console Log Forwarding ──────────────────────────────────────
+  // Receive batched log entries from the PWA renderer and write them to
+  // stdout. Controlled by debug.consoleLogs in config.json.
+  // journald or shell redirect captures the output.
+  const _consoleLogsEnabled = !!currentPwaConfig?.debug?.consoleLogs;
+  if (_consoleLogsEnabled) logProxy.info('Console log forwarding enabled');
+
+  app.post('/debug/log', (req, res) => {
+    if (!_consoleLogsEnabled) return res.status(204).end();
+    const entries = Array.isArray(req.body) ? req.body : [req.body];
+    for (const { level, name, message } of entries) {
+      const tag = level === 'error' ? '[R ERROR]' : level === 'warning' ? '[R WARN]' : '[R]';
+      console.log(`${tag} [${name}] ${message}`);
+    }
+    res.status(204).end();
+  });
+
   // ─── Cache-through helper ─────────────────────────────────────────
   // Serve from store on hit. On miss, fetch from CMS and tee-stream to
   // disk + client simultaneously — zero buffering.
