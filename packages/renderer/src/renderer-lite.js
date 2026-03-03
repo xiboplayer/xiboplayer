@@ -1073,15 +1073,12 @@ export class RendererLite {
       this.container.style.backgroundColor = layout.bgcolor;
       this.container.style.backgroundImage = ''; // Reset previous
 
-      // Apply background image if specified in XLF (uses fileIdToSaveAs map)
+      // Apply background image if specified in XLF
+      // With storedAs refactor, background may be a filename (e.g. "43.png") or a numeric fileId
       if (layout.background) {
-        const saveAs = this.options.fileIdToSaveAs?.get(String(layout.background));
-        if (saveAs) {
-          this._applyBackgroundImage(this.container, this._mediaFileUrl(saveAs));
-          this.log.info(`Background image set: ${layout.background} (${saveAs})`);
-        } else {
-          this.log.warn(`Background image ${layout.background}: no saveAs mapping found`);
-        }
+        const saveAs = this.options.fileIdToSaveAs?.get(String(layout.background)) || layout.background;
+        this._applyBackgroundImage(this.container, this._mediaFileUrl(saveAs));
+        this.log.info(`Background image set: ${layout.background} → ${saveAs}`);
       }
 
       // Create regions
@@ -2548,12 +2545,11 @@ export class RendererLite {
       // Set background
       wrapper.style.backgroundColor = layout.bgcolor;
 
-      // Apply background image if specified (uses fileIdToSaveAs map)
+      // Apply background image if specified
+      // With storedAs refactor, background may be a filename or a numeric fileId
       if (layout.background) {
-        const saveAs = this.options.fileIdToSaveAs?.get(String(layout.background));
-        if (saveAs) {
-          this._applyBackgroundImage(wrapper, this._mediaFileUrl(saveAs));
-        }
+        const saveAs = this.options.fileIdToSaveAs?.get(String(layout.background)) || layout.background;
+        this._applyBackgroundImage(wrapper, this._mediaFileUrl(saveAs));
       }
 
       const savedCurrentLayoutId = this.currentLayoutId;
