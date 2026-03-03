@@ -38,7 +38,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   const cacheKey = `${PLAYER_API}/widgets/${layoutId}/${regionId}/${mediaId}`;
 
   // Inject <base> tag — resolves relative media refs (e.g. "42") to mirror route
-  const baseTag = `<base href="${PLAYER_API}/media/">`;
+  const baseTag = `<base href="${PLAYER_API}/media/file/">`;
   let modifiedHtml = html;
 
   // Insert base tag after <head> opening tag (skip if already present)

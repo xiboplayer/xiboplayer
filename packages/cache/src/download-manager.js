@@ -708,13 +708,15 @@ export class DownloadQueue {
 
     let boosted = 0;
     for (const t of this.queue) {
-      if (idSet.has(String(t._parentFile?.fileInfo.id)) && t._priority < priority) {
+      const matchValue = t._parentFile?.fileInfo.saveAs || String(t._parentFile?.fileInfo.id);
+      if (idSet.has(matchValue) && t._priority < priority) {
         t._priority = priority;
         boosted++;
       }
     }
     for (const t of this._activeTasks) {
-      if (idSet.has(String(t._parentFile?.fileInfo.id)) && t._priority < priority) {
+      const matchValue = t._parentFile?.fileInfo.saveAs || String(t._parentFile?.fileInfo.id);
+      if (idSet.has(matchValue) && t._priority < priority) {
         t._priority = priority;
       }
     }

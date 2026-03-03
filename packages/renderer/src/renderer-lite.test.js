@@ -11,7 +11,6 @@ import { RendererLite } from './renderer-lite.js';
 describe('RendererLite', () => {
   let container;
   let renderer;
-  let mockGetMediaUrl;
   let mockGetWidgetHtml;
 
   beforeEach(() => {
@@ -29,7 +28,6 @@ describe('RendererLite', () => {
     }
 
     // Mock callbacks
-    mockGetMediaUrl = vi.fn((fileId) => Promise.resolve(`blob://test-${fileId}`));
     mockGetWidgetHtml = vi.fn((widget) => Promise.resolve(`<html>Widget ${widget.id}</html>`));
 
     // Create renderer instance
@@ -37,7 +35,7 @@ describe('RendererLite', () => {
       { cmsUrl: 'https://test.com', hardwareKey: 'test-key' },
       container,
       {
-        getMediaUrl: mockGetMediaUrl,
+        fileIdToSaveAs: new Map(),
         getWidgetHtml: mockGetWidgetHtml
       }
     );
@@ -415,7 +413,6 @@ describe('RendererLite', () => {
       expect(element.className).toBe('renderer-lite-widget');
       expect(element.style.width).toBe('100%');
       expect(element.style.height).toBe('100%');
-      expect(mockGetMediaUrl).toHaveBeenCalledWith(1);
     });
 
     it('should default to objectFit contain and objectPosition center center', async () => {
@@ -566,7 +563,6 @@ describe('RendererLite', () => {
       expect(element.muted).toBe(true);
       // loop is intentionally false - handled manually via 'ended' event to avoid black frames
       expect(element.loop).toBe(false);
-      expect(mockGetMediaUrl).toHaveBeenCalledWith(5);
     });
 
     it('should create text widget with iframe (blob fallback)', async () => {
@@ -1014,20 +1010,6 @@ describe('RendererLite', () => {
   });
 
   describe('Memory Management', () => {
-    it('should clear mediaUrlCache on layout switch', async () => {
-      const xlf1 = `<layout><region id="r1"></region></layout>`;
-      const xlf2 = `<layout><region id="r2"></region></layout>`;
-
-      await renderer.renderLayout(xlf1, 1);
-      renderer.mediaUrlCache.set(1, 'blob://test-1');
-
-      // Switch to different layout
-      await renderer.renderLayout(xlf2, 2);
-
-      // Cache should be cleared
-      expect(renderer.mediaUrlCache.size).toBe(0);
-    });
-
     it('should clear regions on stopCurrentLayout', async () => {
       const xlf = `
         <layout>
@@ -1111,8 +1093,22 @@ describe('RendererLite', () => {
     });
   });
 
-  describe('Parallel Media Pre-fetch', () => {
-    it('should pre-fetch all media URLs in parallel', async () => {
+  describe('Media URL construction via fileIdToSaveAs', () => {
+    it('should construct media URLs using fileIdToSaveAs map', async () => {
+      const fileIdToSaveAs = new Map([
+        ['1', '1.png'],
+        ['5', '5.mp4'],
+        ['7', '7.png']
+      ]);
+      const r = new RendererLite(
+        { cmsUrl: 'https://test.com', hardwareKey: 'test-key' },
+        container,
+        {
+          fileIdToSaveAs,
+          getWidgetHtml: mockGetWidgetHtml
+        }
+      );
+
       const xlf = `
         <layout>
           <region id="r1">
@@ -1129,16 +1125,11 @@ describe('RendererLite', () => {
         </layout>
       `;
 
-      await renderer.renderLayout(xlf, 1);
+      await r.renderLayout(xlf, 1);
 
-      // All media URLs should have been fetched
-      expect(mockGetMediaUrl).toHaveBeenCalledTimes(3);
-      expect(mockGetMediaUrl).toHaveBeenCalledWith(1);
-      expect(mockGetMediaUrl).toHaveBeenCalledWith(5);
-      expect(mockGetMediaUrl).toHaveBeenCalledWith(7);
-
-      // All should be in cache
-      expect(renderer.mediaUrlCache.size).toBe(3);
+      // fileIdToSaveAs should have all 3 entries
+      expect(fileIdToSaveAs.size).toBe(3);
+      r.cleanup();
     });
   });
 
