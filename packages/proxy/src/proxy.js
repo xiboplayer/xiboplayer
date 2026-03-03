@@ -239,6 +239,15 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     logProxy.info(`ContentStore enabled: ${path.join(dataDir, 'media')}`);
   }
 
+  // ─── Quit ────────────────────────────────────────────────────────
+  // Allow the PWA to request a clean shutdown (Ctrl+Q in Chromium kiosk).
+  // The server exits, which triggers launch-kiosk.sh cleanup → kills browser.
+  app.post('/quit', (_req, res) => {
+    logServer.info('Quit requested — shutting down');
+    res.json({ ok: true });
+    setTimeout(() => process.exit(0), 100);
+  });
+
   // ─── Auth Token ──────────────────────────────────────────────────
   // Store JWT token server-side so cache-through can inject it into CMS
   // requests without passing tokens through URLs.

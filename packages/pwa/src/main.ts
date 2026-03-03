@@ -292,27 +292,21 @@ class PwaPlayer {
 
       log.warn(`Invalid SSL certificate accepted for stream: ${host} (${error})`);
 
-      // Find or recreate the top bar with full structure
+      // Find or recreate the top bar
       let overlay = document.getElementById('overlay');
+      let created = false;
       if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'overlay';
-        overlay.style.cssText = `
-          position: fixed; top: 0; left: 0; right: 0;
-          background: rgba(0, 0, 0, 0.7); padding: 10px 20px;
-          display: flex; justify-content: space-between; align-items: center;
-          font-size: 12px; z-index: 9999;
-        `;
-        // Recreate the full bar structure: config-info | cert-warnings | status
+        // Recreate child structure: config-info | status
         const info = document.createElement('div');
         info.id = 'config-info';
-        info.style.color = '#4CAF50';
         overlay.appendChild(info);
         const status = document.createElement('div');
         status.id = 'status';
-        status.style.color = '#fff';
         overlay.appendChild(status);
         document.body.appendChild(overlay);
+        created = true;
       }
 
       // Find or create the cert warning span between #config-info and #status
@@ -328,8 +322,10 @@ class PwaPlayer {
       const hosts = [...warnedHosts].join(', ');
       certSpan.textContent = `\u26A0 SSL: ${hosts}`;
 
-      // Make the bar always visible (override hover-only CSS via class)
-      overlay.classList.add('has-warnings');
+      // Don't force always-visible — let hover-only CSS handle show/hide
+
+      // If we recreated the overlay, repopulate config info
+      if (created) this.updateConfigDisplay();
     }) as EventListener);
   }
 
@@ -854,6 +850,14 @@ class PwaPlayer {
 
     // Keyboard / presenter remote (clicker) controls
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Ctrl+Q — quit (Chromium kiosk: calls server /quit; Electron: handled by menu accelerator)
+      if (e.key === 'q' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        log.info('[Remote] Quit requested (Ctrl+Q)');
+        fetch('/quit', { method: 'POST' }).catch(() => {});
+        return;
+      }
+
       switch (e.key) {
         case 't':
         case 'T':
