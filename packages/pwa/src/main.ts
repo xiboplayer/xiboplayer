@@ -429,6 +429,39 @@ class PwaPlayer {
         this.logReporter.log(level, `[${name}] ${message}`, 'PLAYER').catch(() => {});
       });
 
+      // Forward console logs to proxy stdout (for journald/log analysis).
+      // Controlled by debug.consoleLogs in config.json.
+      // Optional debug.consoleLogsInterval (seconds) sets the batch flush interval (default 10s).
+      const debugConfig = JSON.parse(localStorage.getItem('xibo_config') || '{}')?.debug;
+      if (debugConfig?.consoleLogs) {
+        const flushIntervalMs = (debugConfig.consoleLogsInterval || 10) * 1000;
+        let batch: Array<{ level: string; name: string; message: string; ts: string }> = [];
+        let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const flushLogs = () => {
+          if (batch.length === 0) return;
+          const payload = batch;
+          batch = [];
+          flushTimer = null;
+          // Fire-and-forget POST — log forwarding must never block the player
+          fetch('/debug/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }).catch(() => {});
+        };
+
+        registerLogSink(({ level, name, args }: { level: string; name: string; args: any[] }) => {
+          const message = args.map((a: any) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+          batch.push({ level, name, message, ts: new Date().toISOString() });
+          if (!flushTimer) {
+            flushTimer = setTimeout(flushLogs, flushIntervalMs);
+          }
+        });
+
+        log.info(`Console log forwarding to proxy enabled (flush every ${flushIntervalMs / 1000}s)`);
+      }
+
       // Initialize display settings manager
       this.displaySettings = new DisplaySettings();
       log.info('Display settings manager initialized');
