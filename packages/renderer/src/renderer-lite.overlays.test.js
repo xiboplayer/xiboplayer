@@ -65,7 +65,7 @@ describe('RendererLite - Overlay Rendering', () => {
       },
       container,
       {
-        getMediaUrl: async (fileId) => `http://test.local/media/${fileId}`,
+        fileIdToSaveAs: new Map(),
         getWidgetHtml: async (widget) => widget.raw || '<p>Widget HTML</p>'
       }
     );
@@ -163,32 +163,6 @@ describe('RendererLite - Overlay Rendering', () => {
       // Should still be the same element
       const secondOverlayDiv = container.querySelector('#overlay_200');
       expect(secondOverlayDiv).toBe(firstOverlayDiv);
-    });
-
-    it('should pre-fetch media URLs for overlay widgets', async () => {
-      const getMediaUrl = vi.fn(async (fileId) => `http://test.local/media/${fileId}`);
-
-      const customRenderer = new RendererLite(
-        { cmsUrl: 'http://test.local', hardwareKey: 'test-key' },
-        container,
-        {
-          getMediaUrl,
-          getWidgetHtml: async (widget) => widget.raw
-        }
-      );
-
-      const xlfWithMedia = `<?xml version="1.0"?>
-<layout width="1920" height="1080" bgcolor="#000000">
-  <region id="1" width="400" height="200" top="0" left="0" zindex="0">
-    <media id="10" fileId="555" type="image" duration="10">
-      <options><uri>test.jpg</uri></options>
-    </media>
-  </region>
-</layout>`;
-
-      await customRenderer.renderOverlay(xlfWithMedia, 300, 10);
-
-      expect(getMediaUrl).toHaveBeenCalledWith(555);
     });
 
     it('should set overlay timer based on duration', async () => {

@@ -186,7 +186,7 @@ export class RendererLite {
    * @param {string} config.hardwareKey - Display hardware key
    * @param {HTMLElement} container - DOM container for rendering
    * @param {Object} options - Renderer options
-   * @param {Function} options.getMediaUrl - Function to get media file URL (mediaId) => url
+   * @param {Map<string,string>} [options.fileIdToSaveAs] - Map from numeric file ID to storedAs filename (for layout backgrounds)
    * @param {Function} options.getWidgetHtml - Function to get widget HTML (layoutId, regionId, widgetId) => html
    */
   constructor(config, container, options = {}) {
@@ -210,7 +210,6 @@ export class RendererLite {
     this._layoutTimerStartedAt = null;  // Date.now() when layout timer started
     this._layoutTimerDurationMs = null; // Total layout duration in ms
     this.widgetTimers = new Map(); // widgetId => timer
-    this.mediaUrlCache = new Map(); // fileId => blob URL (for parallel pre-fetching)
     this.layoutBlobUrls = new Map(); // layoutId => Set<blobUrl> (for lifecycle tracking)
     this.audioOverlays = new Map(); // widgetId => [HTMLAudioElement] (audio overlays for widgets)
 
@@ -964,34 +963,12 @@ export class RendererLite {
   // ── Layout Helpers ───────────────────────────────────────────────
 
   /**
-   * Pre-fetch all media URLs for a layout's widgets in parallel.
-   * @param {Object} layout - Parsed layout
-   * @param {Map} [cache=this.mediaUrlCache] - Target cache map
+   * Get media file URL for storedAs filename.
+   * @param {string} storedAs - The storedAs filename (e.g. "42_abc123.jpg")
+   * @returns {string} Full URL for the media file
    */
-  async _prefetchMediaUrls(layout, cache) {
-    if (!this.options.getMediaUrl) return;
-    const targetCache = cache || this.mediaUrlCache;
-    const mediaPromises = [];
-
-    for (const region of layout.regions) {
-      for (const widget of region.widgets) {
-        if (widget.fileId) {
-          const fileId = parseInt(widget.fileId || widget.id);
-          if (!targetCache.has(fileId)) {
-            mediaPromises.push(
-              this.options.getMediaUrl(fileId)
-                .then(url => { targetCache.set(fileId, url); })
-                .catch(err => { this.log.warn(`Failed to fetch media ${fileId}:`, err); })
-            );
-          }
-        }
-      }
-    }
-
-    if (mediaPromises.length > 0) {
-      this.log.info(`Pre-fetching ${mediaPromises.length} media URLs in parallel...`);
-      await Promise.all(mediaPromises);
-    }
+  _mediaFileUrl(storedAs) {
+    return `${window.location.origin}${PLAYER_API}/media/file/${storedAs}`;
   }
 
   /**
@@ -1037,18 +1014,6 @@ export class RendererLite {
     }
   }
 
-  /**
-   * Revoke blob: URLs from a media URL cache.
-   * @param {Map} cache - Media URL cache (fileId → url)
-   */
-  _revokeMediaBlobUrls(cache) {
-    for (const [, blobUrl] of cache) {
-      if (blobUrl?.startsWith?.('blob:')) {
-        URL.revokeObjectURL(blobUrl);
-      }
-    }
-  }
-
   // ── Layout Rendering ──────────────────────────────────────────────
 
   /**
@@ -1082,7 +1047,6 @@ export class RendererLite {
         this.layoutEndEmitted = false;
 
         // DON'T call stopCurrentLayout() - keep elements alive!
-        // DON'T clear mediaUrlCache - keep blob URLs alive!
         // DON'T recreate regions/elements - already exist!
 
         // Emit layout start event
@@ -1128,22 +1092,16 @@ export class RendererLite {
       this.container.style.backgroundColor = layout.bgcolor;
       this.container.style.backgroundImage = ''; // Reset previous
 
-      // Apply background image if specified in XLF
-      if (layout.background && this.options.getMediaUrl) {
-        try {
-          const bgUrl = await this.options.getMediaUrl(parseInt(layout.background));
-          if (bgUrl) {
-            this._applyBackgroundImage(this.container, bgUrl);
-            this.log.info(`Background image set: ${layout.background}`);
-          }
-        } catch (err) {
-          this.log.warn('Failed to load background image:', err);
+      // Apply background image if specified in XLF (uses fileIdToSaveAs map)
+      if (layout.background) {
+        const saveAs = this.options.fileIdToSaveAs?.get(String(layout.background));
+        if (saveAs) {
+          this._applyBackgroundImage(this.container, this._mediaFileUrl(saveAs));
+          this.log.info(`Background image set: ${layout.background} (${saveAs})`);
+        } else {
+          this.log.warn(`Background image ${layout.background}: no saveAs mapping found`);
         }
       }
-
-      // PRE-FETCH: Get all media URLs in parallel (huge speedup!)
-      this.mediaUrlCache.clear();
-      await this._prefetchMediaUrls(layout);
 
       // Create regions
       for (const regionConfig of layout.regions) {
@@ -1560,22 +1518,8 @@ export class RendererLite {
       audio.loop = audioNode.loop;
       audio.volume = Math.max(0, Math.min(1, audioNode.volume / 100));
 
-      // Resolve audio URI via cache/proxy
-      const mediaId = parseInt(audioNode.mediaId);
-      let audioSrc = mediaId ? this.mediaUrlCache.get(mediaId) : null;
-
-      if (!audioSrc && mediaId && this.options.getMediaUrl) {
-        // Async — fire and forget, set src when ready
-        this.options.getMediaUrl(mediaId).then(url => {
-          audio.src = url;
-        }).catch(() => {
-          audio.src = `${window.location.origin}${PLAYER_API}/media/${audioNode.uri}`;
-        });
-      } else if (!audioSrc) {
-        audio.src = `${window.location.origin}${PLAYER_API}/media/${audioNode.uri}`;
-      } else {
-        audio.src = audioSrc;
-      }
+      // Direct URL from storedAs filename
+      audio.src = audioNode.uri ? this._mediaFileUrl(audioNode.uri) : '';
 
       // Append to DOM to prevent garbage collection in some browsers
       audio.style.display = 'none';
@@ -1934,17 +1878,12 @@ export class RendererLite {
 
     img.style.opacity = '0';
 
-    // Get media URL from cache (already pre-fetched!) or fetch on-demand
-    const fileId = parseInt(widget.fileId || widget.id);
-    let imageSrc = this.mediaUrlCache.get(fileId);
+    // Direct URL from storedAs filename — store key = widget reference = serve URL
+    const src = widget.options.uri
+      ? this._mediaFileUrl(widget.options.uri)
+      : '';
 
-    if (!imageSrc && this.options.getMediaUrl) {
-      imageSrc = await this.options.getMediaUrl(fileId);
-    } else if (!imageSrc) {
-      imageSrc = `${window.location.origin}${PLAYER_API}/media/${widget.options.uri}`;
-    }
-
-    img.src = imageSrc;
+    img.src = src;
     return img;
   }
 
@@ -1967,27 +1906,22 @@ export class RendererLite {
     video.controls = false; // Hidden by default — toggle with V key in PWA
     video.playsInline = true; // Prevent fullscreen on mobile
 
-    // Get media URL from cache (already pre-fetched!) or fetch on-demand
-    const fileId = parseInt(widget.fileId || widget.id);
+    // Direct URL from storedAs filename
+    const storedAs = widget.options.uri || '';
+    const fileId = widget.fileId || widget.id;
 
     // Handle video end - pause on last frame instead of showing black
     // Widget cycling will restart the video via updateMediaElement()
     const onEnded = () => {
       if (widget.options.loop === '1') {
         video.currentTime = 0;
-        this.log.info(`Video ${fileId} ended - reset to start, waiting for widget cycle to replay`);
+        this.log.info(`Video ${storedAs} ended - reset to start, waiting for widget cycle to replay`);
       } else {
-        this.log.info(`Video ${fileId} ended - paused on last frame`);
+        this.log.info(`Video ${storedAs} ended - paused on last frame`);
       }
     };
     video.addEventListener('ended', onEnded);
-    let videoSrc = this.mediaUrlCache.get(fileId);
-
-    if (!videoSrc && this.options.getMediaUrl) {
-      videoSrc = await this.options.getMediaUrl(fileId);
-    } else if (!videoSrc) {
-      videoSrc = `${window.location.origin}${PLAYER_API}/media/${fileId}`;
-    }
+    let videoSrc = storedAs ? this._mediaFileUrl(storedAs) : '';
 
     // HLS/DASH streaming support
     const isHlsStream = videoSrc.includes('.m3u8');
@@ -2033,7 +1967,7 @@ export class RendererLite {
     const createdForLayoutId = this.currentLayoutId;
     const onLoadedMetadata = () => {
       const videoDuration = Math.floor(video.duration);
-      this.log.info(`Video ${fileId} duration detected: ${videoDuration}s`);
+      this.log.info(`Video ${storedAs} duration detected: ${videoDuration}s`);
 
       if (widget.duration === 0 || widget.useDuration === 0) {
         widget.duration = videoDuration;
@@ -2042,14 +1976,14 @@ export class RendererLite {
         if (this.currentLayoutId === createdForLayoutId) {
           this.updateLayoutDuration();
         } else {
-          this.log.info(`Video ${fileId} duration set but layout timer not updated (preloaded for layout ${createdForLayoutId}, current is ${this.currentLayoutId})`);
+          this.log.info(`Video ${storedAs} duration set but layout timer not updated (preloaded for layout ${createdForLayoutId}, current is ${this.currentLayoutId})`);
         }
       }
     };
     video.addEventListener('loadedmetadata', onLoadedMetadata);
 
     const onLoadedData = () => {
-      this.log.info('Video loaded and ready:', fileId);
+      this.log.info('Video loaded and ready:', storedAs);
     };
     video.addEventListener('loadeddata', onLoadedData);
 
@@ -2057,13 +1991,13 @@ export class RendererLite {
       const error = video.error;
       const errorCode = error?.code;
       const errorMessage = error?.message || 'Unknown error';
-      this.log.warn(`Video error: ${fileId}, code: ${errorCode}, time: ${video.currentTime.toFixed(1)}s, message: ${errorMessage}`);
-      this.emit('videoError', { fileId, errorCode, errorMessage, currentTime: video.currentTime });
+      this.log.warn(`Video error: ${storedAs}, code: ${errorCode}, time: ${video.currentTime.toFixed(1)}s, message: ${errorMessage}`);
+      this.emit('videoError', { storedAs, fileId, errorCode, errorMessage, currentTime: video.currentTime });
     };
     video.addEventListener('error', onError);
 
     const onPlaying = () => {
-      this.log.info('Video playing:', fileId);
+      this.log.info('Video playing:', storedAs);
     };
     video.addEventListener('playing', onPlaying);
 
@@ -2076,7 +2010,7 @@ export class RendererLite {
       ['playing', onPlaying],
     ];
 
-    this.log.info('Video element created:', fileId, video.src);
+    this.log.info('Video element created:', storedAs, video.src);
 
     return video;
   }
@@ -2161,25 +2095,18 @@ export class RendererLite {
     audio.loop = widget.options.loop === '1';
     audio.volume = parseFloat(widget.options.volume || '100') / 100;
 
-    // Get media URL from cache (already pre-fetched!) or fetch on-demand
-    const fileId = parseInt(widget.fileId || widget.id);
-    let audioSrc = this.mediaUrlCache.get(fileId);
-
-    if (!audioSrc && this.options.getMediaUrl) {
-      audioSrc = await this.options.getMediaUrl(fileId);
-    } else if (!audioSrc) {
-      audioSrc = `${window.location.origin}${PLAYER_API}/media/${fileId}`;
-    }
-
-    audio.src = audioSrc;
+    // Direct URL from storedAs filename
+    const storedAs = widget.options.uri || '';
+    const fileId = widget.fileId || widget.id;
+    audio.src = storedAs ? this._mediaFileUrl(storedAs) : '';
 
     // Handle audio end - similar to video ended handling
     const onAudioEnded = () => {
       if (widget.options.loop === '1') {
         audio.currentTime = 0;
-        this.log.info(`Audio ${fileId} ended - reset to start, waiting for widget cycle to replay`);
+        this.log.info(`Audio ${storedAs} ended - reset to start, waiting for widget cycle to replay`);
       } else {
-        this.log.info(`Audio ${fileId} ended - playback complete`);
+        this.log.info(`Audio ${storedAs} ended - playback complete`);
       }
     };
     audio.addEventListener('ended', onAudioEnded);
@@ -2188,7 +2115,7 @@ export class RendererLite {
     const audioCreatedForLayoutId = this.currentLayoutId;
     const onAudioLoadedMetadata = () => {
       const audioDuration = Math.floor(audio.duration);
-      this.log.info(`Audio ${fileId} duration detected: ${audioDuration}s`);
+      this.log.info(`Audio ${storedAs} duration detected: ${audioDuration}s`);
 
       if (widget.duration === 0 || widget.useDuration === 0) {
         widget.duration = audioDuration;
@@ -2197,7 +2124,7 @@ export class RendererLite {
         if (this.currentLayoutId === audioCreatedForLayoutId) {
           this.updateLayoutDuration();
         } else {
-          this.log.info(`Audio ${fileId} duration set but layout timer not updated (preloaded for layout ${audioCreatedForLayoutId}, current is ${this.currentLayoutId})`);
+          this.log.info(`Audio ${storedAs} duration set but layout timer not updated (preloaded for layout ${audioCreatedForLayoutId}, current is ${this.currentLayoutId})`);
         }
       }
     };
@@ -2206,7 +2133,7 @@ export class RendererLite {
     // Handle audio errors
     const onAudioError = () => {
       const error = audio.error;
-      this.log.warn(`Audio error (non-fatal): ${fileId}, code: ${error?.code}, message: ${error?.message || 'Unknown'}`);
+      this.log.warn(`Audio error (non-fatal): ${storedAs}, code: ${error?.code}, message: ${error?.message || 'Unknown'}`);
     };
     audio.addEventListener('error', onAudioError);
 
@@ -2341,15 +2268,10 @@ export class RendererLite {
       }
     }
 
-    // Get PDF URL from cache (already pre-fetched!) or fetch on-demand
-    const fileId = parseInt(widget.fileId || widget.id);
-    let pdfUrl = this.mediaUrlCache.get(fileId);
-
-    if (!pdfUrl && this.options.getMediaUrl) {
-      pdfUrl = await this.options.getMediaUrl(fileId);
-    } else if (!pdfUrl) {
-      pdfUrl = `${window.location.origin}${PLAYER_API}/media/${widget.options.uri}`;
-    }
+    // Direct URL from storedAs filename
+    let pdfUrl = widget.options.uri
+      ? this._mediaFileUrl(widget.options.uri)
+      : '';
 
     // Render PDF with multi-page cycling
     try {
@@ -2640,26 +2562,15 @@ export class RendererLite {
       // Set background
       wrapper.style.backgroundColor = layout.bgcolor;
 
-      // Apply background image if specified
-      if (layout.background && this.options.getMediaUrl) {
-        try {
-          const bgUrl = await this.options.getMediaUrl(parseInt(layout.background));
-          if (bgUrl) {
-            this._applyBackgroundImage(wrapper, bgUrl);
-          }
-        } catch (err) {
-          this.log.warn('Preload: Failed to load background image:', err);
+      // Apply background image if specified (uses fileIdToSaveAs map)
+      if (layout.background) {
+        const saveAs = this.options.fileIdToSaveAs?.get(String(layout.background));
+        if (saveAs) {
+          this._applyBackgroundImage(wrapper, this._mediaFileUrl(saveAs));
         }
       }
 
-      // Pre-fetch all media URLs in parallel
-      const preloadMediaUrlCache = new Map();
-      await this._prefetchMediaUrls(layout, preloadMediaUrlCache);
-
-      // Temporarily swap mediaUrlCache so createWidgetElement uses preload cache
-      const savedMediaUrlCache = this.mediaUrlCache;
       const savedCurrentLayoutId = this.currentLayoutId;
-      this.mediaUrlCache = preloadMediaUrlCache;
 
       // Create regions in the hidden wrapper
       const preloadRegions = new Map();
@@ -2721,7 +2632,6 @@ export class RendererLite {
       }
 
       // Restore state
-      this.mediaUrlCache = savedMediaUrlCache;
       this.currentLayoutId = savedCurrentLayoutId;
 
       // Pause all videos in preloaded layout (autoplay starts them even when hidden)
@@ -2743,10 +2653,9 @@ export class RendererLite {
         layout,
         regions: preloadRegions,
         blobUrls: preloadBlobUrls,
-        mediaUrlCache: preloadMediaUrlCache
       });
 
-      this.log.info(`Layout ${layoutId} preloaded into pool (${preloadRegions.size} regions, ${preloadMediaUrlCache.size} media)`);
+      this.log.info(`Layout ${layoutId} preloaded into pool (${preloadRegions.size} regions)`);
       return true;
 
     } catch (error) {
@@ -2819,7 +2728,6 @@ export class RendererLite {
       if (oldLayoutId) {
         this.revokeBlobUrlsForLayout(oldLayoutId);
       }
-      this._revokeMediaBlobUrls(this.mediaUrlCache);
     }
 
     // Emit layoutEnd for old layout if timer hasn't already
@@ -2828,7 +2736,6 @@ export class RendererLite {
     }
 
     this.regions.clear();
-    this.mediaUrlCache.clear();
 
     // ── Activate preloaded layout ──
     preloaded.container.style.visibility = 'visible';
@@ -2839,7 +2746,6 @@ export class RendererLite {
     this.currentLayout = preloaded.layout;
     this.currentLayoutId = layoutId;
     this.regions = preloaded.regions;
-    this.mediaUrlCache = preloaded.mediaUrlCache || new Map();
     this.layoutEndEmitted = false;
 
     // Update container background to match preloaded layout
@@ -2975,13 +2881,10 @@ export class RendererLite {
         }
       }
 
-      // Revoke media blob URLs from cache
-      this._revokeMediaBlobUrls(this.mediaUrlCache);
     }
 
     // Clear state
     this.regions.clear();
-    this.mediaUrlCache.clear();
 
     // Emit layout end event only if timer hasn't already emitted it.
     // Timer-based layoutEnd (natural expiry) is authoritative — stopCurrentLayout
@@ -3029,9 +2932,6 @@ export class RendererLite {
       overlayDiv.style.zIndex = String(1000 + priority); // Higher priority = higher z-index
       overlayDiv.style.pointerEvents = 'auto'; // Enable clicks on overlay
       overlayDiv.style.backgroundColor = layout.bgcolor;
-
-      // Pre-fetch all media URLs for overlay
-      await this._prefetchMediaUrls(layout);
 
       // Calculate scale for overlay layout
       this.calculateScale(layout);

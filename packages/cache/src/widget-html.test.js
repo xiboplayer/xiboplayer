@@ -101,7 +101,7 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', html);
 
       const stored = getStoredWidget();
-      expect(stored).toContain('<base href="/api/v2/player/media/">');
+      expect(stored).toContain('<base href="/api/v2/player/media/file/">');
     });
 
     it('injects <base> tag when no <head> tag exists', async () => {
@@ -109,7 +109,7 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', html);
 
       const stored = getStoredWidget();
-      expect(stored).toContain('<base href="/api/v2/player/media/">');
+      expect(stored).toContain('<base href="/api/v2/player/media/file/">');
     });
   });
 

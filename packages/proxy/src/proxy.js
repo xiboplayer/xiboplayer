@@ -513,7 +513,19 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
   }
 
-  // Media: {PLAYER_API}/media/:id
+  // Media by storedAs filename: {PLAYER_API}/media/file/{storedAs}
+  // Primary route — widget HTML references media by storedAs (e.g. 42_abc123.jpg)
+  app.get(`${PLAYER_API}/media/file/{*storedAs}`, (req, res) => {
+    const storedAs = [req.params.storedAs].flat().pop();
+    const key = `${STORE_PREFIX}/media/file/${storedAs}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/media/file/${storedAs}`);
+  });
+  app.head(`${PLAYER_API}/media/file/{*storedAs}`, (req, res) => {
+    const storedAs = [req.params.storedAs].flat().pop();
+    headFromStore(req, res, `${STORE_PREFIX}/media/file/${storedAs}`, 'application/octet-stream');
+  });
+
+  // Media by numeric ID (legacy): {PLAYER_API}/media/:id
   app.get(`${PLAYER_API}/media/:id`, (req, res) => {
     const key = `${STORE_PREFIX}/media/${req.params.id}`;
     cacheThrough(req, res, key, `${PLAYER_API}/media/${req.params.id}`);
