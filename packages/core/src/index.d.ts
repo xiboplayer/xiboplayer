@@ -89,6 +89,7 @@ export class PlayerCore {
   getSyncConfig(): any;
 
   setLayoutMediaStatus(layoutFile: string, ready: boolean, missing?: string[]): void;
+  logUpcomingTimeline(): void;
   recordLayoutDuration(file: string, duration: number): void;
   setupCollectionInterval(settings: any): void;
   updateCollectionInterval(newIntervalSeconds: number): void;
