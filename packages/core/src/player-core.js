@@ -105,6 +105,10 @@ export class PlayerCore extends EventEmitter {
     this._lastCheckRf = null;
     this._lastCheckSchedule = null;
 
+    // Timeline recalculation guard — skip when inputs haven't changed
+    this._lastTimelineFingerprint = null;
+    this._lastTimeline = null;
+
     // Layout override state (for changeLayout/overlayLayout via XMR → revertToSchedule)
     this._layoutOverride = null; // { layoutId, type: 'change'|'overlay' }
     this._lastRequiredFiles = []; // Track files for MediaInventory
@@ -698,7 +702,8 @@ export class PlayerCore extends EventEmitter {
     this._statusCode = 1; // Running
     this.pendingLayouts.delete(layoutId);
     this.emit('layout-current', layoutId);
-    // Re-log timeline from current time on each layout change
+    // Force timeline recalc on layout change (fingerprint reset)
+    this._lastTimelineFingerprint = null;
     this.logUpcomingTimeline();
   }
 
@@ -1640,10 +1645,27 @@ export class PlayerCore extends EventEmitter {
     if (this._layoutDurations.size === 0) return;
     if (!this.schedule.getLayoutsAtTime) return; // Schedule doesn't support time queries
 
+    // Fingerprint inputs: schedule CRC + sorted durations + current layout.
+    // When unchanged, re-emit the cached timeline — avoids time drift from
+    // re-simulating with a new Date.now() anchor on every collection cycle.
+    const durationEntries = [...this._layoutDurations.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}:${v}`)
+      .join('|');
+    const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}`;
+
+    if (fingerprint === this._lastTimelineFingerprint && this._lastTimeline) {
+      this.emit('timeline-updated', this._lastTimeline);
+      return;
+    }
+
     const timeline = calculateTimeline(this.schedule, this._layoutDurations, {
       currentLayoutStartedAt: this._lastLayoutChangeTime ? new Date(this._lastLayoutChangeTime) : null,
     });
     if (timeline.length === 0) return;
+
+    this._lastTimelineFingerprint = fingerprint;
+    this._lastTimeline = timeline;
 
     const lines = timeline.slice(0, 20).map(e => {
       const s = e.startTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
