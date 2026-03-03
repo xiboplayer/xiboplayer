@@ -8,6 +8,7 @@
 import { RendererLite } from '@xiboplayer/renderer';
 import { StoreClient, DownloadManager, LayoutTaskBuilder, BARRIER } from '@xiboplayer/cache';
 import { PlayerCore } from '@xiboplayer/core';
+import { parseLayoutDuration } from '@xiboplayer/schedule';
 import { createLogger, registerLogSink, PLAYER_API } from '@xiboplayer/utils';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
 import { TimelineOverlay, isTimelineVisible } from './timeline-overlay.js';
@@ -1921,35 +1922,10 @@ class PwaPlayer {
 
         if (videoDurations.size === 0) continue;
 
-        // Calculate full layout duration (max region, summing all widgets per region)
-        // Same logic as renderer's updateLayoutDuration() — accounts for non-video
-        // widgets (PDFs, images, tickers) alongside probed video durations.
-        let maxRegionDuration = 0;
-        for (const regionEl of doc.querySelectorAll('region')) {
-          if (regionEl.getAttribute('type') === 'drawer') continue;
-          let regionDuration = 0;
-
-          for (const mediaEl of regionEl.querySelectorAll('media')) {
-            const dur = parseInt(mediaEl.getAttribute('duration') || '0', 10);
-            const useDur = parseInt(mediaEl.getAttribute('useDuration') || '1', 10);
-            const fileId = mediaEl.getAttribute('fileId') || '';
-            const probedDur = videoDurations.get(fileId);
-
-            if (probedDur !== undefined) {
-              // Video with probed duration
-              regionDuration += probedDur;
-            } else if (dur > 0 && useDur !== 0) {
-              // Non-video widget with explicit duration
-              regionDuration += dur;
-            }
-            // Looping widgets (useDuration=0, no probe) contribute 0
-          }
-
-          maxRegionDuration = Math.max(maxRegionDuration, regionDuration);
-        }
-
-        if (maxRegionDuration > 0) {
-          this.core.recordLayoutDuration(String(layoutId), maxRegionDuration);
+        // Phase 2: refine layout duration with probed video lengths
+        const { duration: probedDuration } = parseLayoutDuration(xlfXml, videoDurations);
+        if (probedDuration > 0) {
+          this.core.recordLayoutDuration(String(layoutId), probedDuration);
         }
       } catch (err) {
         log.debug(`Duration probe failed for layout ${layoutId}:`, err);

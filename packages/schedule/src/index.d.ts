@@ -15,5 +15,5 @@ export class ScheduleManager {
 export const scheduleManager: ScheduleManager;
 
 export function calculateTimeline(layouts: any[], durations: Map<string, number>, options?: any): any[];
-export function parseLayoutDuration(xlf: string): number;
+export function parseLayoutDuration(xlf: string, videoDurations?: Map<string, number> | null): { duration: number; isDynamic: boolean };
 export function buildScheduleQueue(schedule: any, durations: Map<string, number>): any[];

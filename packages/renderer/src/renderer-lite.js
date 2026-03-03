@@ -41,6 +41,7 @@
 
 import { createNanoEvents } from 'nanoevents';
 import { createLogger, isDebug, PLAYER_API } from '@xiboplayer/utils';
+import { parseLayoutDuration } from '@xiboplayer/schedule';
 import { LayoutPool } from './layout-pool.js';
 
 /**
@@ -203,6 +204,7 @@ export class RendererLite {
     // State
     this.currentLayout = null;
     this.currentLayoutId = null;
+    this._preloadingLayoutId = null; // Set during preload for blob URL tracking
     this.regions = new Map(); // regionId => { element, widgets, currentIndex, timer }
     this.layoutTimer = null;
     this.layoutEndEmitted = false; // Prevents double layoutEnd on stop after timer
@@ -474,31 +476,10 @@ export class RendererLite {
     }
 
     // Calculate layout duration if not specified (duration=0)
-    // Drawers don't contribute to layout duration (they're action-triggered)
+    // Uses shared parseLayoutDuration() — single source of truth for XLF-based duration calc
     if (layout.duration === 0) {
-      let maxDuration = 0;
-
-      for (const region of layout.regions) {
-        if (region.isDrawer) continue;
-        let regionDuration = 0;
-
-        // Calculate region duration based on widgets
-        for (const widget of region.widgets) {
-          if (widget.duration > 0) {
-            regionDuration += widget.duration;
-          } else {
-            // Widget with duration=0 means "use media length"
-            // Default to 60s here; actual duration is detected dynamically
-            // from video.loadedmetadata event and updateLayoutDuration() recalculates
-            regionDuration = 60;
-            break;
-          }
-        }
-
-        maxDuration = Math.max(maxDuration, regionDuration);
-      }
-
-      layout.duration = maxDuration > 0 ? maxDuration : 60;
+      const { duration } = parseLayoutDuration(xlfXml);
+      layout.duration = duration;
       this.log.info(`Calculated layout duration: ${layout.duration}s (not specified in XLF)`);
     }
 
@@ -641,7 +622,7 @@ export class RendererLite {
    * @param {string} blobUrl - Blob URL to track
    */
   trackBlobUrl(blobUrl) {
-    const layoutId = this.currentLayoutId || 0;
+    const layoutId = this._preloadingLayoutId || this.currentLayoutId || 0;
 
     if (!layoutId) {
       this.log.warn('trackBlobUrl called without currentLayoutId, tracking under key 0');
@@ -692,10 +673,10 @@ export class RendererLite {
       maxRegionDuration = Math.max(maxRegionDuration, regionDuration);
     }
 
-    // If we calculated a LONGER duration, update layout.
-    // Never downgrade — widgets with useDuration=0 start at duration=0
-    // until loadedmetadata fires, so early calculations undercount.
-    if (maxRegionDuration > 0 && maxRegionDuration > this.currentLayout.duration) {
+    // Update layout duration if recalculated value differs.
+    // Both upgrades (video metadata revealing longer duration) and downgrades
+    // (DURATION comment correcting an overestimate) are legitimate.
+    if (maxRegionDuration > 0 && maxRegionDuration !== this.currentLayout.duration) {
       const oldDuration = this.currentLayout.duration;
       this.currentLayout.duration = maxRegionDuration;
 
@@ -1653,12 +1634,15 @@ export class RendererLite {
    * @param {Object} widget - Widget config (duration may be updated)
    */
   _parseDurationComments(html, widget) {
+    const oldDuration = widget.duration;
+
     const durationMatch = html.match(/<!--\s*DURATION=(\d+)\s*-->/);
     if (durationMatch) {
       const newDuration = parseInt(durationMatch[1], 10);
       if (newDuration > 0) {
         this.log.info(`Widget ${widget.id}: DURATION comment overrides duration ${widget.duration}→${newDuration}s`);
         widget.duration = newDuration;
+        if (widget.duration !== oldDuration) this.updateLayoutDuration();
         return;
       }
     }
@@ -1672,6 +1656,8 @@ export class RendererLite {
         widget.duration = newDuration;
       }
     }
+
+    if (widget.duration !== oldDuration) this.updateLayoutDuration();
   }
 
   /**
@@ -2610,8 +2596,9 @@ export class RendererLite {
       this.layoutBlobUrls = new Map();
       this.layoutBlobUrls.set(layoutId, preloadBlobUrls);
 
-      // Temporarily set currentLayoutId for trackBlobUrl to work
-      this.currentLayoutId = layoutId;
+      // Set _preloadingLayoutId so trackBlobUrl routes to the correct layout
+      // without corrupting currentLayoutId (which other code reads during awaits)
+      this._preloadingLayoutId = layoutId;
 
       // Pre-create all widget elements
       for (const [regionId, region] of preloadRegions) {

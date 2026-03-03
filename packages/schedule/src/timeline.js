@@ -10,15 +10,22 @@
  * Parse layout duration from XLF XML string.
  * Lightweight parser — uses DOMParser, no rendering.
  *
+ * Single source of truth for XLF-based duration calculation.
+ * Supports a 3-phase progressive refinement pipeline:
+ *   Phase 1 (ESTIMATE):     parseLayoutDuration(xlf) — static duration from XLF
+ *   Phase 2 (PROBE):        parseLayoutDuration(xlf, videoDurations) — refined with real video lengths
+ *   Phase 3 (LIVE UPDATE):  renderer's updateLayoutDuration() — corrections from DURATION comments
+ *
  * Duration resolution order:
  *  1. Explicit <layout duration="60"> attribute
  *  2. Sum of widget <media duration="X"> per region (max across regions)
  *  3. Fallback: 60s
  *
  * @param {string} xlfXml - Raw XLF XML string
+ * @param {Map<string, number>|null} [videoDurations=null] - Optional map of fileId → probed duration in seconds
  * @returns {{ duration: number, isDynamic: boolean }} Duration in seconds and whether any widget has useDuration=0
  */
-export function parseLayoutDuration(xlfXml) {
+export function parseLayoutDuration(xlfXml, videoDurations = null) {
   const doc = new DOMParser().parseFromString(xlfXml, 'text/xml');
   const layoutEl = doc.querySelector('layout');
   if (!layoutEl) return { duration: 60, isDynamic: false };
@@ -31,12 +38,18 @@ export function parseLayoutDuration(xlfXml) {
   let maxDuration = 0;
   let isDynamic = false;
   for (const regionEl of layoutEl.querySelectorAll('region')) {
+    if (regionEl.getAttribute('type') === 'drawer') continue; // Drawers are action-triggered, not timed
     let regionDuration = 0;
     for (const mediaEl of regionEl.querySelectorAll('media')) {
       const dur = parseInt(mediaEl.getAttribute('duration') || '0', 10);
       const useDuration = parseInt(mediaEl.getAttribute('useDuration') || '1', 10);
-      if (dur > 0 && useDuration !== 0) {
-        regionDuration += dur;
+      const fileId = mediaEl.getAttribute('fileId') || '';
+      const probed = videoDurations?.get(fileId);
+
+      if (probed !== undefined) {
+        regionDuration += probed;         // Phase 2: probed video duration
+      } else if (dur > 0 && useDuration !== 0) {
+        regionDuration += dur;            // Explicit CMS duration
       } else {
         // Video with useDuration=0 means "play to end" — estimate 60s,
         // corrected later via recordLayoutDuration() when video metadata loads

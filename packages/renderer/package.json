@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@xiboplayer/cache": "workspace:*",
+    "@xiboplayer/schedule": "workspace:*",
     "@xiboplayer/utils": "workspace:*",
     "nanoevents": "^9.1.0",
     "pdfjs-dist": "^4.10.38"
