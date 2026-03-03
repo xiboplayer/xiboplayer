@@ -62,6 +62,7 @@ class PwaPlayer {
   private syncManager: any = null; // Multi-display sync coordinator
   private _currentLayoutEnableStat: boolean = true; // enableStat from current layout XLF
   private _probeTimer: any = null; // Debounce timer for duration probing
+  private _mediaStatusTimer: ReturnType<typeof setTimeout> | null = null; // Debounce timer for media status check
   private _pendingFollowerStats: any[] | null = null; // In-flight stats delegated to lead
   private _pendingFollowerLogs: any[] | null = null; // In-flight logs delegated to lead
   private _iframeObserver: MutationObserver | null = null; // Iframe key-forwarding observer
@@ -1144,6 +1145,13 @@ class PwaPlayer {
       this._probeTimer = null;
       this.probeLayoutDurations().catch(() => {});
     }, 3000);
+
+    // Debounced media status check — update timeline missing-media annotations
+    if (this._mediaStatusTimer) clearTimeout(this._mediaStatusTimer);
+    this._mediaStatusTimer = setTimeout(() => {
+      this._mediaStatusTimer = null;
+      this.checkTimelineMediaStatus().catch(() => {});
+    }, 2000);
   }
 
   /**
@@ -1822,6 +1830,48 @@ class PwaPlayer {
   }
 
   /**
+   * Check media cache status for all scheduled layouts.
+   * For each layout: load XLF from cache, extract media IDs, check each with store.has().
+   * Feeds results into PlayerCore.setLayoutMediaStatus() for timeline annotation.
+   */
+  private async checkTimelineMediaStatus() {
+    if (this.scheduledLayoutIds.size === 0) return;
+
+    for (const layoutId of this.scheduledLayoutIds) {
+      const layoutFile = `${layoutId}.xlf`;
+      try {
+        const xlfBlob = await store.get('api/v2/player/layouts', layoutId);
+        if (!xlfBlob) continue;
+
+        const xlfXml = await xlfBlob.text();
+        const { allMedia } = this.getMediaIds(xlfXml);
+
+        if (allMedia.length === 0) {
+          this.core.setLayoutMediaStatus(layoutFile, true);
+          continue;
+        }
+
+        const missing: string[] = [];
+        for (const mediaId of allMedia) {
+          try {
+            const cached = await store.has('api/v2/player', `media/${mediaId}`);
+            if (!cached) missing.push(String(mediaId));
+          } catch {
+            // Assume cached on error (offline mode)
+          }
+        }
+
+        this.core.setLayoutMediaStatus(layoutFile, missing.length === 0, missing);
+      } catch {
+        // Skip layouts we can't load
+      }
+    }
+
+    // Re-emit annotated timeline
+    this.core.logUpcomingTimeline();
+  }
+
+  /**
    * Probe video durations for all scheduled layouts.
    * Uses preload="metadata" — only fetches headers (~50KB), not the full video.
    * Feeds discovered durations into PlayerCore for accurate timeline calculation.
@@ -2470,6 +2520,11 @@ class PwaPlayer {
     if (this._probeTimer) {
       clearTimeout(this._probeTimer);
       this._probeTimer = null;
+    }
+
+    if (this._mediaStatusTimer) {
+      clearTimeout(this._mediaStatusTimer);
+      this._mediaStatusTimer = null;
     }
   }
 }

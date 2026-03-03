@@ -18,6 +18,7 @@ interface TimelineEntry {
   duration: number;
   isDefault: boolean;
   hidden?: HiddenLayout[];
+  missingMedia?: string[];
 }
 
 export class TimelineOverlay {
@@ -157,13 +158,24 @@ export class TimelineOverlay {
     for (const entry of visible) {
       const layoutId = parseInt(entry.layoutFile.replace('.xlf', ''), 10);
       const isCurrent = entry === effectiveCurrent;
+      const hasMissing = entry.missingMedia && entry.missingMedia.length > 0;
 
       const startStr = this.formatTime(entry.startTime);
       const endStr = this.formatTime(entry.endTime);
       const durStr = this.formatDuration(entry.duration);
 
-      const borderLeft = isCurrent ? 'border-left: 0.25vw solid #4a9eff; padding-left: 0.6vw;' : 'padding-left: 0.85vw;';
-      const color = isCurrent ? 'color: #fff; font-weight: 600;' : 'color: #aaa;';
+      let borderLeft: string;
+      let color: string;
+      if (isCurrent) {
+        borderLeft = 'border-left: 0.25vw solid #4a9eff; padding-left: 0.6vw;';
+        color = 'color: #fff; font-weight: 600;';
+      } else if (hasMissing) {
+        borderLeft = 'border-left: 0.25vw solid #ff4444; padding-left: 0.6vw;';
+        color = 'color: #ff6666;';
+      } else {
+        borderLeft = 'padding-left: 0.85vw;';
+        color = 'color: #aaa;';
+      }
       const cursor = clickable && !isCurrent ? 'cursor: pointer;' : '';
       const hover = clickable && !isCurrent ? 'onmouseover="this.style.background=\'rgba(255,255,255,0.1)\'" onmouseout="this.style.background=\'none\'"' : '';
 
@@ -172,6 +184,10 @@ export class TimelineOverlay {
       const durPad = durStr.padStart(7).replace(/ /g, '&nbsp;');
       html += `${startStr}–${endStr} ${idCol}${durPad}`;
       if (entry.isDefault) html += ' <span style="color: #888;">[def]</span>';
+      if (hasMissing) {
+        const missingList = entry.missingMedia!.join(', ');
+        html += ` <span style="color: #ff4444; font-size: 1.1vw;" title="Missing: ${missingList}">⚠ ${entry.missingMedia!.length}</span>`;
+      }
       if (entry.hidden && entry.hidden.length > 0) {
         const hiddenIds = entry.hidden.map(h => `#${h.file.replace('.xlf', '')} (p${h.priority})`).join(', ');
         html += ` <span style="color: #8899aa; font-size: 1.1vw;" title="Also scheduled: ${hiddenIds}">+${entry.hidden.length}</span>`;
