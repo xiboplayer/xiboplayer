@@ -1735,6 +1735,7 @@ export class RendererLite {
       showFn(regionId, widgetIndex);
 
       const duration = widget.duration * 1000;
+      this.log.info(`Region ${regionId} widget ${widget.id} (${widget.type}) playing for ${widget.duration}s (useDuration=${widget.useDuration}, index ${widgetIndex}/${region.widgets.length})`);
       region.timer = setTimeout(() => {
         this._handleWidgetCycleEnd(widget, region, regionId, widgetIndex, showFn, hideFn, onCycleComplete, playNext);
       }, duration);
@@ -1766,10 +1767,11 @@ export class RendererLite {
       onCycleComplete?.();
     }
 
-    // Non-looping region (loop=0): stop after one full cycle
-    if (nextIndex === 0 && region.config?.loop === false) {
-      // Show the last widget again and keep it visible
-      showFn(regionId, region.widgets.length - 1);
+    // Non-looping single-widget region (loop=0): don't replay.
+    // Multi-widget regions (playlists) always cycle regardless of loop setting —
+    // in Xibo, loop=0 only means "don't repeat a single media item."
+    if (nextIndex === 0 && region.config?.loop === false && region.widgets.length === 1) {
+      showFn(regionId, 0);
       return;
     }
 
