@@ -367,6 +367,7 @@ describe('PlayerCore', () => {
       core.on('no-layouts-scheduled', spy);
 
       mockSchedule.getCurrentLayouts.mockReturnValue([]);
+      mockSchedule._defaultQueue = [];
 
       await core.collect();
 
@@ -1819,6 +1820,7 @@ describe('PlayerCore', () => {
 
       core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
       mockSchedule.getCurrentLayouts.mockReturnValue([]);
+      mockSchedule._defaultQueue = [];
 
       core.collectOffline();
 
