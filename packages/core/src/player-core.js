@@ -297,12 +297,23 @@ export class PlayerCore extends EventEmitter {
 
     if (layoutFiles.length > 0) {
       if (this.currentLayoutId) {
-        // A layout is playing — NEVER interrupt it.
-        // The queue is rebuilt in background (via _buildLayoutDurations + logUpcomingTimeline below).
-        // The playing layout ends only when its timer fires (layoutEnd event),
-        // at which point advanceToNextLayout() pops from the already-updated queue.
-        log.info(`Layout ${this.currentLayoutId} playing — queue updated in background, playback continues`);
-        this.emit('layout-already-playing', this.currentLayoutId);
+        // Check if the playing layout is still in the schedule
+        const stillScheduled = layoutFiles.some(f => parseLayoutFile(f) === this.currentLayoutId);
+
+        if (!stillScheduled) {
+          // Schedule changed and current layout is no longer in it — expire immediately.
+          // Clear currentLayoutId and emit expire event so the renderer can teardown.
+          // The renderer's layoutEnd → advanceToNextLayout flow handles the switch.
+          log.info(`Layout ${this.currentLayoutId} no longer scheduled — expiring`);
+          this.currentLayoutId = null;
+          this.emit('layout-expire-current');
+        } else {
+          // Layout is still scheduled — don't interrupt, just rebuild queue in background.
+          // The playing layout ends when its timer fires (layoutEnd event),
+          // at which point advanceToNextLayout() pops from the already-updated queue.
+          log.info(`Layout ${this.currentLayoutId} playing — queue updated in background, playback continues`);
+          this.emit('layout-already-playing', this.currentLayoutId);
+        }
       } else {
         // No layout playing — start one from the queue
         const next = this.getNextLayout();

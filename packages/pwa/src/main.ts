@@ -655,6 +655,13 @@ class PwaPlayer {
       await this.prepareAndRenderLayout(layoutId);
     });
 
+    this.core.on('layout-expire-current', () => {
+      log.info('Schedule changed — expiring current layout');
+      this.renderer.stopCurrentLayout();
+      // stopCurrentLayout() emits layoutEnd → the layoutEnd handler
+      // calls advanceToNextLayout() which picks the next scheduled layout
+    });
+
     this.core.on('no-layouts-scheduled', () => {
       this.updateStatus('No layouts scheduled');
     });
