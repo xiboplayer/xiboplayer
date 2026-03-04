@@ -239,6 +239,12 @@ export class RendererLite {
     // Setup container styles
     this.setupContainer();
 
+    // Interactive Control (XIC) event handlers
+    this.emitter.on('interactiveTrigger', (data) => this._handleInteractiveTrigger(data));
+    this.emitter.on('widgetExpire', (data) => this._handleWidgetExpire(data));
+    this.emitter.on('widgetExtendDuration', (data) => this._handleWidgetExtendDuration(data));
+    this.emitter.on('widgetSetDuration', (data) => this._handleWidgetSetDuration(data));
+
     this.log.info('Initialized');
   }
 
@@ -856,6 +862,133 @@ export class RendererLite {
       delete element._actionHandlers;
       element.style.cursor = '';
     }
+  }
+
+  // ── Interactive Control (XIC) ─────────────────────────────────────
+
+  /**
+   * Find a region containing a widget by widget ID.
+   * Searches main regions first, then overlay regions.
+   * @param {string} widgetId
+   * @returns {{ regionId: string, region: Object, widget: Object, widgetIndex: number, regionMap: Map }|null}
+   */
+  _findRegionByWidgetId(widgetId) {
+    // Search main regions
+    for (const [regionId, region] of this.regions) {
+      const widgetIndex = region.widgets.findIndex(w => w.id === widgetId);
+      if (widgetIndex !== -1) {
+        return { regionId, region, widget: region.widgets[widgetIndex], widgetIndex, regionMap: this.regions };
+      }
+    }
+    // Search overlay regions
+    for (const overlay of this.activeOverlays.values()) {
+      if (!overlay.regions) continue;
+      for (const [regionId, region] of overlay.regions) {
+        const widgetIndex = region.widgets.findIndex(w => w.id === widgetId);
+        if (widgetIndex !== -1) {
+          return { regionId, region, widget: region.widgets[widgetIndex], widgetIndex, regionMap: overlay.regions };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Advance a region to its next widget using the standard cycle.
+   * @param {string} regionId
+   * @param {Map} regionMap - The Map containing this region (main or overlay)
+   */
+  _advanceRegion(regionId, regionMap) {
+    const region = regionMap.get(regionId);
+    if (!region) return;
+    region.currentIndex = (region.currentIndex + 1) % region.widgets.length;
+    const isMain = regionMap === this.regions;
+    this._startRegionCycle(
+      region, regionId,
+      isMain ? (rid, idx) => this.renderWidget(rid, idx) : (rid, idx) => this.renderWidget(rid, idx),
+      isMain ? (rid, idx) => this.stopWidget(rid, idx) : (rid, idx) => this.stopWidget(rid, idx),
+      isMain ? () => this.checkLayoutComplete() : undefined
+    );
+  }
+
+  /**
+   * Handle interactiveTrigger XIC event — navigate to a target widget.
+   * @param {{ targetId: string, triggerCode: string }} data
+   */
+  _handleInteractiveTrigger({ targetId, triggerCode }) {
+    this.log.info(`XIC interactiveTrigger: target=${targetId} code=${triggerCode}`);
+    const found = this._findRegionByWidgetId(targetId);
+    if (found) {
+      this.navigateToWidget(targetId);
+    } else {
+      this.log.warn(`XIC interactiveTrigger: widget ${targetId} not found`);
+    }
+  }
+
+  /**
+   * Handle widgetExpire XIC event — immediately expire a widget and advance.
+   * @param {{ widgetId: string }} data
+   */
+  _handleWidgetExpire({ widgetId }) {
+    const found = this._findRegionByWidgetId(widgetId);
+    if (!found) {
+      this.log.warn(`XIC widgetExpire: widget ${widgetId} not found`);
+      return;
+    }
+    const { regionId, region, widgetIndex, regionMap } = found;
+    this.log.info(`XIC widgetExpire: widget=${widgetId} region=${regionId}`);
+    if (region.timer) {
+      clearTimeout(region.timer);
+      region.timer = null;
+    }
+    this.stopWidget(regionId, widgetIndex);
+    this._advanceRegion(regionId, regionMap);
+  }
+
+  /**
+   * Handle widgetExtendDuration XIC event — extend the current widget timer.
+   * @param {{ widgetId: string, duration: number }} data - duration in seconds (added to remaining)
+   */
+  _handleWidgetExtendDuration({ widgetId, duration }) {
+    const found = this._findRegionByWidgetId(widgetId);
+    if (!found) {
+      this.log.warn(`XIC widgetExtendDuration: widget ${widgetId} not found`);
+      return;
+    }
+    const { regionId, region } = found;
+    this.log.info(`XIC widgetExtendDuration: widget=${widgetId} +${duration}s`);
+    if (region.timer) {
+      clearTimeout(region.timer);
+      region.timer = null;
+    }
+    // Re-arm timer with the extended duration
+    region.timer = setTimeout(() => {
+      this.stopWidget(regionId, region.currentIndex);
+      this._advanceRegion(regionId, found.regionMap);
+    }, duration * 1000);
+  }
+
+  /**
+   * Handle widgetSetDuration XIC event — replace the widget timer with an absolute duration.
+   * @param {{ widgetId: string, duration: number }} data - duration in seconds (absolute)
+   */
+  _handleWidgetSetDuration({ widgetId, duration }) {
+    const found = this._findRegionByWidgetId(widgetId);
+    if (!found) {
+      this.log.warn(`XIC widgetSetDuration: widget ${widgetId} not found`);
+      return;
+    }
+    const { regionId, region } = found;
+    this.log.info(`XIC widgetSetDuration: widget=${widgetId} ${duration}s`);
+    if (region.timer) {
+      clearTimeout(region.timer);
+      region.timer = null;
+    }
+    // Set timer with the absolute duration
+    region.timer = setTimeout(() => {
+      this.stopWidget(regionId, region.currentIndex);
+      this._advanceRegion(regionId, found.regionMap);
+    }, duration * 1000);
   }
 
   /**
