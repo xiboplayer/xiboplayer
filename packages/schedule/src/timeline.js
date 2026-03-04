@@ -111,23 +111,6 @@ function canSimulatedPlay(history, maxPlaysPerHour, timeMs) {
 }
 
 /**
- * Seed simulated play history from real play history.
- * Maps layoutId-based history to layoutFile-based history.
- * @param {Map<string, number[]>} realHistory - schedule.playHistory (layoutId → [timestamps])
- * @returns {Map<string, number[]>} layoutFile → [timestamps]
- */
-function seedPlayHistory(realHistory) {
-  const simulated = new Map();
-  if (!realHistory) return simulated;
-
-  for (const [layoutId, timestamps] of realHistory) {
-    const file = `${layoutId}.xlf`;
-    simulated.set(file, [...timestamps]);
-  }
-  return simulated;
-}
-
-/**
  * From a list of layout metadata, apply simulated rate limiting and priority
  * filtering to determine which layouts can actually play at the given time.
  * Mirrors the real player logic: filter rate-limited layouts first, then
@@ -156,129 +139,63 @@ function getPlayableLayouts(allLayouts, simPlays, timeMs) {
 }
 
 /**
- * Calculate a deterministic playback timeline by simulating round-robin scheduling
- * with rate limiting (maxPlaysPerHour) and priority fallback. Produces a real
- * schedule prediction that matches actual player behavior.
+ * Calculate a deterministic playback timeline by walking the pre-built schedule queue.
  *
- * When high-priority layouts hit their maxPlaysPerHour limit, the simulation
- * falls back to lower-priority scheduled layouts before using the CMS default.
+ * The queue already has all constraints baked in (maxPlaysPerHour, priorities,
+ * dayparting, default layout fills). This function simply cycles through it from
+ * the current position, generating time-stamped entries for the overlay.
  *
- * @param {Object} schedule - ScheduleManager instance (needs getAllLayoutsAtTime(), schedule.default, playHistory)
- * @param {Map<string, number>} durations - Map of layoutFile → duration in seconds
+ * @param {Array<{layoutId: string, duration: number}>} queue - Pre-built schedule queue from buildScheduleQueue()
+ * @param {number} queuePosition - Current position in the queue (from schedule._queuePosition)
  * @param {Object} [options]
  * @param {Date}   [options.from]    - Start time (default: now)
- * @param {number} [options.hours]   - Hours to simulate (default: 2)
- * @param {number} [options.defaultDuration] - Fallback duration in seconds (default: 60)
+ * @param {number} [options.hours]   - Hours to project (default: 2)
+ * @param {string} [options.defaultLayout] - Default layout file (to tag isDefault entries)
+ * @param {Map<string, number>} [options.durations] - Live durations map (overrides queue entry durations with corrected values)
  * @param {Date}   [options.currentLayoutStartedAt] - When current layout started (adjusts first entry to remaining time)
  * @returns {Array<{layoutFile: string, startTime: Date, endTime: Date, duration: number, isDefault: boolean}>}
  */
-export function calculateTimeline(schedule, durations, options = {}) {
+export function calculateTimeline(queue, queuePosition, options = {}) {
   const from = options.from || new Date();
   const hours = options.hours || 2;
   const to = new Date(from.getTime() + hours * 3600000);
-  const defaultDuration = options.defaultDuration || 60;
   const currentLayoutStartedAt = options.currentLayoutStartedAt || null;
+  const defaultLayout = options.defaultLayout || null;
+  const durations = options.durations || null;
+
+  if (!queue || queue.length === 0) return [];
+
   const timeline = [];
   let currentTime = new Date(from);
+  let pos = queuePosition % queue.length;
   let isFirstEntry = true;
-
-  // Use getAllLayoutsAtTime if available (new API), fall back to getLayoutsAtTime (old API)
-  const hasFullApi = typeof schedule.getAllLayoutsAtTime === 'function';
-
-  // Seed simulated play history from real plays
-  const simPlays = seedPlayHistory(schedule.playHistory);
-
   const maxEntries = 500;
 
   while (currentTime < to && timeline.length < maxEntries) {
-    const timeMs = currentTime.getTime();
-    let playable;
+    const entry = queue[pos];
+    // Use live-corrected duration (from video metadata, etc.) if available,
+    // otherwise fall back to the queue's baked-in duration
+    let dur = (durations && durations.get(entry.layoutId)) || entry.duration;
 
-    let hiddenLayouts = null;
-
-    if (hasFullApi) {
-      // Full simulation: get ALL active layouts, apply rate limiting + priority
-      const allLayouts = schedule.getAllLayoutsAtTime(currentTime);
-      playable = allLayouts.length > 0
-        ? getPlayableLayouts(allLayouts, simPlays, timeMs)
-        : [];
-      // Detect hidden layouts (lower priority, not playing)
-      if (allLayouts.length > playable.length) {
-        hiddenLayouts = allLayouts
-          .filter(l => !playable.includes(l.file))
-          .map(l => ({ file: l.file, priority: l.priority }));
-      }
-    } else {
-      // Legacy fallback: no rate limiting simulation
-      playable = schedule.getLayoutsAtTime(currentTime);
+    // First entry: use remaining duration if we know when the current layout started
+    if (isFirstEntry && currentLayoutStartedAt) {
+      const elapsedSec = (from.getTime() - currentLayoutStartedAt.getTime()) / 1000;
+      dur = Math.max(1, Math.round(dur - elapsedSec));
+      isFirstEntry = false;
     }
 
-    if (playable.length === 0) {
-      // No playable layouts — use CMS default or skip ahead
-      const defaultFile = schedule.schedule?.default;
-      if (defaultFile) {
-        const dur = durations.get(defaultFile) || defaultDuration;
-        timeline.push({
-          layoutFile: defaultFile,
-          startTime: new Date(currentTime),
-          endTime: new Date(timeMs + dur * 1000),
-          duration: dur,
-          isDefault: true,
-        });
-        currentTime = new Date(timeMs + dur * 1000);
-      } else {
-        currentTime = new Date(timeMs + 60000);
-      }
-      continue;
-    }
+    const endMs = currentTime.getTime() + dur * 1000;
 
-    // Round-robin through playable layouts
-    for (let i = 0; i < playable.length && currentTime < to && timeline.length < maxEntries; i++) {
-      const file = playable[i];
-      let dur = durations.get(file) || defaultDuration;
+    timeline.push({
+      layoutFile: entry.layoutId,
+      startTime: new Date(currentTime),
+      endTime: new Date(endMs),
+      duration: dur,
+      isDefault: defaultLayout ? entry.layoutId === defaultLayout : false,
+    });
 
-      // First entry: use remaining duration if we know when the current layout started
-      if (isFirstEntry && currentLayoutStartedAt) {
-        const elapsedSec = (from.getTime() - currentLayoutStartedAt.getTime()) / 1000;
-        const remaining = Math.max(1, Math.round(dur - elapsedSec));
-        dur = remaining;
-        isFirstEntry = false;
-      }
-
-      const endMs = currentTime.getTime() + dur * 1000;
-
-      const entry = {
-        layoutFile: file,
-        startTime: new Date(currentTime),
-        endTime: new Date(endMs),
-        duration: dur,
-        isDefault: false,
-      };
-      if (hiddenLayouts && hiddenLayouts.length > 0) {
-        entry.hidden = hiddenLayouts;
-      }
-      timeline.push(entry);
-
-      // Record simulated play
-      if (hasFullApi) {
-        if (!simPlays.has(file)) simPlays.set(file, []);
-        simPlays.get(file).push(currentTime.getTime());
-      }
-
-      currentTime = new Date(endMs);
-
-      // Re-evaluate: if playable set changed, re-enter outer loop
-      if (hasFullApi) {
-        const nextAll = schedule.getAllLayoutsAtTime(currentTime);
-        const nextPlayable = nextAll.length > 0
-          ? getPlayableLayouts(nextAll, simPlays, currentTime.getTime())
-          : [];
-        if (!arraysEqual(playable, nextPlayable)) break;
-      } else {
-        const next = schedule.getLayoutsAtTime(currentTime);
-        if (!arraysEqual(playable, next)) break;
-      }
-    }
+    currentTime = new Date(endMs);
+    pos = (pos + 1) % queue.length;
   }
 
   return timeline;

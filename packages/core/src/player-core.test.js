@@ -66,7 +66,7 @@ describe('PlayerCore', () => {
       findActionByTrigger: vi.fn(() => null),
       // Queue-based scheduling
       _queuePosition: 0,
-      _defaultQueue: [{ layoutId: '100', duration: 60 }],
+      _defaultQueue: [{ layoutId: '100.xlf', duration: 60 }],
       getScheduleQueue: vi.fn(function() {
         return { queue: this._defaultQueue, periodSeconds: 60 };
       }),
@@ -367,6 +367,7 @@ describe('PlayerCore', () => {
       core.on('no-layouts-scheduled', spy);
 
       mockSchedule.getCurrentLayouts.mockReturnValue([]);
+      mockSchedule._defaultQueue = [];
 
       await core.collect();
 
@@ -1500,15 +1501,15 @@ describe('PlayerCore', () => {
     describe('getNextLayout', () => {
       it('should return the next layout from the queue', () => {
         mockSchedule._defaultQueue = [
-          { layoutId: '100', duration: 60 },
-          { layoutId: '200', duration: 60 },
-          { layoutId: '300', duration: 60 },
+          { layoutId: '100.xlf', duration: 60 },
+          { layoutId: '200.xlf', duration: 60 },
+          { layoutId: '300.xlf', duration: 60 },
         ];
         mockSchedule._queuePosition = 0;
 
         const result = core.getNextLayout();
 
-        expect(result).toEqual({ layoutId: 100, layoutFile: '100' });
+        expect(result).toEqual({ layoutId: 100, layoutFile: '100.xlf' });
       });
 
       it('should return null when queue is empty and no default', () => {
@@ -1538,8 +1539,8 @@ describe('PlayerCore', () => {
         core.on('layout-prepare-request', spy);
 
         mockSchedule._defaultQueue = [
-          { layoutId: '100', duration: 60 },
-          { layoutId: '200', duration: 60 },
+          { layoutId: '100.xlf', duration: 60 },
+          { layoutId: '200.xlf', duration: 60 },
         ];
         mockSchedule._queuePosition = 0;
 
@@ -1552,7 +1553,7 @@ describe('PlayerCore', () => {
         const spy = createSpy();
         core.on('layout-prepare-request', spy);
 
-        mockSchedule._defaultQueue = [{ layoutId: '100', duration: 60 }];
+        mockSchedule._defaultQueue = [{ layoutId: '100.xlf', duration: 60 }];
         mockSchedule._queuePosition = 0;
         core.currentLayoutId = 100;
 
@@ -1606,9 +1607,9 @@ describe('PlayerCore', () => {
         core.on('layout-prepare-request', (id) => emitted.push(id));
 
         mockSchedule._defaultQueue = [
-          { layoutId: '100', duration: 60 },
-          { layoutId: '200', duration: 60 },
-          { layoutId: '300', duration: 60 },
+          { layoutId: '100.xlf', duration: 60 },
+          { layoutId: '200.xlf', duration: 60 },
+          { layoutId: '300.xlf', duration: 60 },
         ];
         mockSchedule._queuePosition = 0;
 
@@ -1805,7 +1806,7 @@ describe('PlayerCore', () => {
 
       core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
       mockSchedule.getCurrentLayouts.mockReturnValue(['500.xlf']);
-      mockSchedule._defaultQueue = [{ layoutId: '500', duration: 60 }];
+      mockSchedule._defaultQueue = [{ layoutId: '500.xlf', duration: 60 }];
       mockSchedule._queuePosition = 0;
 
       core.collectOffline();
@@ -1819,6 +1820,7 @@ describe('PlayerCore', () => {
 
       core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
       mockSchedule.getCurrentLayouts.mockReturnValue([]);
+      mockSchedule._defaultQueue = [];
 
       core.collectOffline();
 
@@ -2112,9 +2114,9 @@ describe('PlayerCore', () => {
 
     it('should skip blacklisted layouts in getNextLayout', () => {
       mockSchedule._defaultQueue = [
-        { layoutId: '100', duration: 60 },
-        { layoutId: '200', duration: 60 },
-        { layoutId: '300', duration: 60 },
+        { layoutId: '100.xlf', duration: 60 },
+        { layoutId: '200.xlf', duration: 60 },
+        { layoutId: '300.xlf', duration: 60 },
       ];
       mockSchedule._queuePosition = 0;
 
@@ -2129,9 +2131,9 @@ describe('PlayerCore', () => {
 
     it('should skip blacklisted layouts in advanceToNextLayout', () => {
       mockSchedule._defaultQueue = [
-        { layoutId: '100', duration: 60 },
-        { layoutId: '200', duration: 60 },
-        { layoutId: '300', duration: 60 },
+        { layoutId: '100.xlf', duration: 60 },
+        { layoutId: '200.xlf', duration: 60 },
+        { layoutId: '300.xlf', duration: 60 },
       ];
       mockSchedule._queuePosition = 0;
       core.currentLayoutId = 100;
@@ -2154,8 +2156,8 @@ describe('PlayerCore', () => {
 
     it('should fall back to first entry if all are blacklisted', () => {
       mockSchedule._defaultQueue = [
-        { layoutId: '100', duration: 60 },
-        { layoutId: '200', duration: 60 },
+        { layoutId: '100.xlf', duration: 60 },
+        { layoutId: '200.xlf', duration: 60 },
       ];
       mockSchedule._queuePosition = 0;
 
@@ -2173,9 +2175,9 @@ describe('PlayerCore', () => {
 
     it('should skip blacklisted in peekNextLayout', () => {
       mockSchedule._defaultQueue = [
-        { layoutId: '100', duration: 60 },
-        { layoutId: '200', duration: 60 },
-        { layoutId: '300', duration: 60 },
+        { layoutId: '100.xlf', duration: 60 },
+        { layoutId: '200.xlf', duration: 60 },
+        { layoutId: '300.xlf', duration: 60 },
       ];
       mockSchedule._queuePosition = 0;
       core.currentLayoutId = 100;
@@ -2190,8 +2192,8 @@ describe('PlayerCore', () => {
       // So peek returns null
       // Let's set position so peek returns 200 first, then falls through to 300
       mockSchedule._queuePosition = 1; // peek sees '200'
-      mockSchedule.peekNextInQueue.mockReturnValue({ layoutId: '200', duration: 60 });
-      mockSchedule.peekAfterNext.mockReturnValue({ layoutId: '300', duration: 60 });
+      mockSchedule.peekNextInQueue.mockReturnValue({ layoutId: '200.xlf', duration: 60 });
+      mockSchedule.peekAfterNext.mockReturnValue({ layoutId: '300.xlf', duration: 60 });
 
       // peekNextLayout sees 200 is blacklisted → returns null
       const peek = core.peekNextLayout();

@@ -1,60 +1,25 @@
 /**
  * Timeline Calculator Tests
  *
- * Tests for calculateTimeline() — the pure simulation function that produces
- * deterministic playback predictions from schedule + durations.
+ * Tests for calculateTimeline() — walks a pre-built queue to produce
+ * time-stamped playback predictions for the overlay.
  */
 
 import { describe, it, expect } from 'vitest';
 import { calculateTimeline, parseLayoutDuration } from './timeline.js';
 
-// ── Helpers ──────────────────────────────────────────────────────
-
-/** Create a mock schedule with getAllLayoutsAtTime() support */
-function createMockSchedule({ layouts = [], defaultLayout = null, playHistory = null } = {}) {
-  return {
-    schedule: { default: defaultLayout },
-    playHistory: playHistory || new Map(),
-    getAllLayoutsAtTime(time) {
-      const t = time.getTime();
-      return layouts.filter(l => {
-        const from = new Date(l.fromdt).getTime();
-        const to = new Date(l.todt).getTime();
-        return t >= from && t < to;
-      });
-    },
-    getLayoutsAtTime(time) {
-      return this.getAllLayoutsAtTime(time).map(l => l.file);
-    },
-  };
-}
-
-function hoursFromNow(h) {
-  return new Date(Date.now() + h * 3600000).toISOString();
-}
-
 // Fixed "now" for deterministic tests
 const NOW = new Date('2026-03-03T10:00:00Z');
-
-function fixedDate(isoTime) {
-  return new Date(isoTime);
-}
 
 // ── Tests ────────────────────────────────────────────────────────
 
 describe('calculateTimeline', () => {
-  describe('Basic scheduling', () => {
-    it('should produce entries for a single scheduled layout', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z',
-        }],
-      });
-      const durations = new Map([['100.xlf', 30]]);
+  describe('Basic queue walking', () => {
+    it('should produce entries from a single-entry queue', () => {
+      const queue = [{ layoutId: '100.xlf', duration: 30 }];
 
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 1,
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 0.1,
       });
 
       expect(timeline.length).toBeGreaterThan(0);
@@ -63,213 +28,102 @@ describe('calculateTimeline', () => {
       expect(timeline[0].isDefault).toBe(false);
     });
 
-    it('should use default layout when no scheduled layouts exist', () => {
-      const schedule = createMockSchedule({
-        layouts: [],
+    it('should tag default layout entries', () => {
+      const queue = [{ layoutId: 'default.xlf', duration: 45 }];
+
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 0.1,
         defaultLayout: 'default.xlf',
       });
-      const durations = new Map([['default.xlf', 45]]);
 
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 0.1,
-      });
-
-      expect(timeline.length).toBeGreaterThan(0);
       expect(timeline[0].layoutFile).toBe('default.xlf');
       expect(timeline[0].isDefault).toBe(true);
       expect(timeline[0].duration).toBe(45);
     });
 
-    it('should use fallback duration when layout not in durations map', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z',
-        }],
-      });
-      const durations = new Map(); // No durations known
+    it('should cycle through multiple queue entries', () => {
+      const queue = [
+        { layoutId: '100.xlf', duration: 30 },
+        { layoutId: '200.xlf', duration: 45 },
+      ];
 
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 0.1, defaultDuration: 42,
-      });
-
-      expect(timeline[0].duration).toBe(42);
-    });
-
-    it('should round-robin multiple layouts at same priority', () => {
-      const schedule = createMockSchedule({
-        layouts: [
-          { file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-          { file: '200.xlf', priority: 10, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-        ],
-      });
-      const durations = new Map([['100.xlf', 30], ['200.xlf', 30]]);
-
-      const timeline = calculateTimeline(schedule, durations, {
+      const timeline = calculateTimeline(queue, 0, {
         from: NOW, hours: 0.1,
       });
 
-      // Both layouts should appear in the timeline
       const files = timeline.map(e => e.layoutFile);
       expect(files).toContain('100.xlf');
       expect(files).toContain('200.xlf');
-    });
-  });
-
-  describe('Priority handling', () => {
-    it('should play higher priority layout over lower priority', () => {
-      const schedule = createMockSchedule({
-        layouts: [
-          { file: 'low.xlf', priority: 5, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-          { file: 'high.xlf', priority: 10, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-        ],
-      });
-      const durations = new Map([['low.xlf', 30], ['high.xlf', 30]]);
-
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 0.5,
-      });
-
-      // All entries should be high priority
-      const uniqueFiles = [...new Set(timeline.map(e => e.layoutFile))];
-      expect(uniqueFiles).toEqual(['high.xlf']);
+      // Should alternate
+      expect(files[0]).toBe('100.xlf');
+      expect(files[1]).toBe('200.xlf');
+      expect(files[2]).toBe('100.xlf');
     });
 
-    it('should annotate hidden (overshadowed) layouts', () => {
-      const schedule = createMockSchedule({
-        layouts: [
-          { file: 'low.xlf', priority: 5, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-          { file: 'high.xlf', priority: 10, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-        ],
-      });
-      const durations = new Map([['low.xlf', 30], ['high.xlf', 30]]);
+    it('should use live durations map over queue baked-in durations', () => {
+      const queue = [{ layoutId: '100.xlf', duration: 60 }]; // queue says 60s
+      const durations = new Map([['100.xlf', 300]]); // video metadata says 300s
 
-      const timeline = calculateTimeline(schedule, durations, {
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 0.5, durations,
+      });
+
+      expect(timeline[0].duration).toBe(300);
+      // Only ~6 entries in 30min at 300s each, not 30 at 60s
+      expect(timeline.length).toBeLessThanOrEqual(7);
+    });
+
+    it('should fall back to queue duration when not in durations map', () => {
+      const queue = [{ layoutId: '100.xlf', duration: 45 }];
+      const durations = new Map(); // empty
+
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 0.1, durations,
+      });
+
+      expect(timeline[0].duration).toBe(45);
+    });
+
+    it('should start from the given queue position', () => {
+      const queue = [
+        { layoutId: '100.xlf', duration: 30 },
+        { layoutId: '200.xlf', duration: 30 },
+        { layoutId: '300.xlf', duration: 30 },
+      ];
+
+      const timeline = calculateTimeline(queue, 2, {
         from: NOW, hours: 0.1,
       });
 
-      // First entry should have hidden layouts
-      expect(timeline[0].hidden).toBeDefined();
-      expect(timeline[0].hidden).toEqual(
-        expect.arrayContaining([expect.objectContaining({ file: 'low.xlf' })])
-      );
-    });
-  });
-
-  describe('Rate limiting (maxPlaysPerHour)', () => {
-    it('should respect maxPlaysPerHour by falling back to lower priority', () => {
-      const schedule = createMockSchedule({
-        layouts: [
-          { file: 'limited.xlf', priority: 10, maxPlaysPerHour: 2,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-          { file: 'filler.xlf', priority: 5, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-        ],
-      });
-      const durations = new Map([['limited.xlf', 30], ['filler.xlf', 30]]);
-
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 1,
-      });
-
-      // limited.xlf should appear at most 2 times in the hour
-      const limitedPlays = timeline.filter(e => e.layoutFile === 'limited.xlf');
-      expect(limitedPlays.length).toBeLessThanOrEqual(2);
-
-      // filler.xlf should fill the gaps
-      const fillerPlays = timeline.filter(e => e.layoutFile === 'filler.xlf');
-      expect(fillerPlays.length).toBeGreaterThan(0);
+      expect(timeline[0].layoutFile).toBe('300.xlf');
+      expect(timeline[1].layoutFile).toBe('100.xlf');
+      expect(timeline[2].layoutFile).toBe('200.xlf');
     });
 
-    it('should fall back to default when all layouts are rate-limited', () => {
-      const schedule = createMockSchedule({
-        layouts: [
-          { file: 'limited.xlf', priority: 10, maxPlaysPerHour: 1,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-        ],
-        defaultLayout: 'default.xlf',
-      });
-      const durations = new Map([['limited.xlf', 30], ['default.xlf', 30]]);
+    it('should wrap queue position when past end', () => {
+      const queue = [
+        { layoutId: '100.xlf', duration: 30 },
+        { layoutId: '200.xlf', duration: 30 },
+      ];
 
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 1,
+      const timeline = calculateTimeline(queue, 5, {
+        from: NOW, hours: 0.1,
       });
 
-      // Should have both limited and default layouts
-      const files = [...new Set(timeline.map(e => e.layoutFile))];
-      expect(files).toContain('limited.xlf');
-      expect(files).toContain('default.xlf');
-
-      // limited.xlf at most once per hour
-      const limitedPlays = timeline.filter(e => e.layoutFile === 'limited.xlf');
-      expect(limitedPlays.length).toBeLessThanOrEqual(1);
-    });
-  });
-
-  describe('Time boundaries', () => {
-    it('should stop at schedule end time', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T10:00:00Z', todt: '2026-03-03T10:30:00Z',
-        }],
-        defaultLayout: 'default.xlf',
-      });
-      const durations = new Map([['100.xlf', 60], ['default.xlf', 60]]);
-
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 1,
-      });
-
-      // After 10:30, should switch to default
-      const afterEnd = timeline.filter(e =>
-        e.startTime >= new Date('2026-03-03T10:30:00Z')
-      );
-      for (const entry of afterEnd) {
-        expect(entry.layoutFile).toBe('default.xlf');
-      }
-    });
-
-    it('should not produce entries beyond the simulation window', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T14:00:00Z',
-        }],
-      });
-      const durations = new Map([['100.xlf', 30]]);
-
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 1,
-      });
-
-      const endOfWindow = new Date(NOW.getTime() + 3600000);
-      for (const entry of timeline) {
-        expect(entry.startTime.getTime()).toBeLessThan(endOfWindow.getTime());
-      }
+      // 5 % 2 = 1, so starts at 200.xlf
+      expect(timeline[0].layoutFile).toBe('200.xlf');
+      expect(timeline[1].layoutFile).toBe('100.xlf');
     });
   });
 
   describe('currentLayoutStartedAt (remaining time adjustment)', () => {
     it('should adjust first entry duration to remaining time', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z',
-        }],
-      });
-      const durations = new Map([['100.xlf', 60]]);
+      const queue = [{ layoutId: '100.xlf', duration: 60 }];
 
       // Layout started 20 seconds ago → 40 seconds remaining
       const startedAt = new Date(NOW.getTime() - 20000);
 
-      const timeline = calculateTimeline(schedule, durations, {
+      const timeline = calculateTimeline(queue, 0, {
         from: NOW, hours: 0.5,
         currentLayoutStartedAt: startedAt,
       });
@@ -278,40 +132,82 @@ describe('calculateTimeline', () => {
     });
 
     it('should clamp remaining time to at least 1 second', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z',
-        }],
-      });
-      const durations = new Map([['100.xlf', 30]]);
+      const queue = [{ layoutId: '100.xlf', duration: 30 }];
 
       // Layout started 60 seconds ago but duration is only 30 → already overdue
       const startedAt = new Date(NOW.getTime() - 60000);
 
-      const timeline = calculateTimeline(schedule, durations, {
+      const timeline = calculateTimeline(queue, 0, {
         from: NOW, hours: 0.1,
         currentLayoutStartedAt: startedAt,
       });
 
       expect(timeline[0].duration).toBeGreaterThanOrEqual(1);
     });
+
+    it('should only adjust first entry, not subsequent', () => {
+      const queue = [{ layoutId: '100.xlf', duration: 60 }];
+      const startedAt = new Date(NOW.getTime() - 20000);
+
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 0.1,
+        currentLayoutStartedAt: startedAt,
+      });
+
+      expect(timeline[0].duration).toBe(40);
+      expect(timeline[1].duration).toBe(60); // Full duration
+    });
+  });
+
+  describe('Time boundaries', () => {
+    it('should not produce entries beyond the simulation window', () => {
+      const queue = [{ layoutId: '100.xlf', duration: 30 }];
+
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 1,
+      });
+
+      const endOfWindow = new Date(NOW.getTime() + 3600000);
+      for (const entry of timeline) {
+        expect(entry.startTime.getTime()).toBeLessThan(endOfWindow.getTime());
+      }
+    });
+
+    it('should produce continuous timeline (no gaps between entries)', () => {
+      const queue = [
+        { layoutId: '100.xlf', duration: 30 },
+        { layoutId: '200.xlf', duration: 45 },
+      ];
+
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 0.5,
+      });
+
+      for (let i = 1; i < timeline.length; i++) {
+        expect(timeline[i].startTime.getTime()).toBe(timeline[i - 1].endTime.getTime());
+      }
+    });
+
+    it('should handle a large number of entries without exceeding 500 cap', () => {
+      const queue = [{ layoutId: '100.xlf', duration: 5 }]; // 5s = many entries
+
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 2,
+      });
+
+      expect(timeline.length).toBeLessThanOrEqual(500);
+    });
   });
 
   describe('Determinism', () => {
     it('should produce identical output for identical inputs', () => {
-      const schedule = createMockSchedule({
-        layouts: [
-          { file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-          { file: '200.xlf', priority: 10, maxPlaysPerHour: 0,
-            fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z' },
-        ],
-      });
-      const durations = new Map([['100.xlf', 30], ['200.xlf', 45]]);
+      const queue = [
+        { layoutId: '100.xlf', duration: 30 },
+        { layoutId: '200.xlf', duration: 45 },
+      ];
 
-      const t1 = calculateTimeline(schedule, durations, { from: NOW, hours: 1 });
-      const t2 = calculateTimeline(schedule, durations, { from: NOW, hours: 1 });
+      const t1 = calculateTimeline(queue, 0, { from: NOW, hours: 1 });
+      const t2 = calculateTimeline(queue, 0, { from: NOW, hours: 1 });
 
       expect(t1.length).toBe(t2.length);
       for (let i = 0; i < t1.length; i++) {
@@ -323,67 +219,54 @@ describe('calculateTimeline', () => {
     });
 
     it('should produce DIFFERENT output when "from" time changes', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z',
-        }],
-      });
-      const durations = new Map([['100.xlf', 30]]);
+      const queue = [{ layoutId: '100.xlf', duration: 30 }];
 
-      const t1 = calculateTimeline(schedule, durations, { from: NOW, hours: 1 });
+      const t1 = calculateTimeline(queue, 0, { from: NOW, hours: 1 });
       const laterNow = new Date(NOW.getTime() + 300000); // 5 min later
-      const t2 = calculateTimeline(schedule, durations, { from: laterNow, hours: 1 });
+      const t2 = calculateTimeline(queue, 0, { from: laterNow, hours: 1 });
 
       // Start times must differ because the anchor moved
       expect(t1[0].startTime.getTime()).not.toBe(t2[0].startTime.getTime());
     });
+
+    it('should produce DIFFERENT output when position changes', () => {
+      const queue = [
+        { layoutId: '100.xlf', duration: 30 },
+        { layoutId: '200.xlf', duration: 30 },
+      ];
+
+      const t1 = calculateTimeline(queue, 0, { from: NOW, hours: 0.1 });
+      const t2 = calculateTimeline(queue, 1, { from: NOW, hours: 0.1 });
+
+      expect(t1[0].layoutFile).toBe('100.xlf');
+      expect(t2[0].layoutFile).toBe('200.xlf');
+    });
   });
 
   describe('Edge cases', () => {
-    it('should return empty array when no layouts and no default', () => {
-      const schedule = createMockSchedule({ layouts: [], defaultLayout: null });
-      const durations = new Map();
-
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 1,
-      });
-
+    it('should return empty array for empty queue', () => {
+      const timeline = calculateTimeline([], 0, { from: NOW, hours: 1 });
       expect(timeline).toEqual([]);
     });
 
-    it('should handle a large number of entries without exceeding 500 cap', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T20:00:00Z',
-        }],
-      });
-      const durations = new Map([['100.xlf', 5]]); // 5s = many entries
-
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 2,
-      });
-
-      expect(timeline.length).toBeLessThanOrEqual(500);
+    it('should return empty array for null queue', () => {
+      const timeline = calculateTimeline(null, 0, { from: NOW, hours: 1 });
+      expect(timeline).toEqual([]);
     });
 
-    it('should produce continuous timeline (no gaps between entries)', () => {
-      const schedule = createMockSchedule({
-        layouts: [{
-          file: '100.xlf', priority: 10, maxPlaysPerHour: 0,
-          fromdt: '2026-03-03T09:00:00Z', todt: '2026-03-03T12:00:00Z',
-        }],
-      });
-      const durations = new Map([['100.xlf', 30]]);
+    it('should handle mixed default and scheduled entries in queue', () => {
+      const queue = [
+        { layoutId: '100.xlf', duration: 30 },
+        { layoutId: 'default.xlf', duration: 60 },
+      ];
 
-      const timeline = calculateTimeline(schedule, durations, {
-        from: NOW, hours: 0.5,
+      const timeline = calculateTimeline(queue, 0, {
+        from: NOW, hours: 0.1,
+        defaultLayout: 'default.xlf',
       });
 
-      for (let i = 1; i < timeline.length; i++) {
-        expect(timeline[i].startTime.getTime()).toBe(timeline[i - 1].endTime.getTime());
-      }
+      expect(timeline[0].isDefault).toBe(false);
+      expect(timeline[1].isDefault).toBe(true);
     });
   });
 });

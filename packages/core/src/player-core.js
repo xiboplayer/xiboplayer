@@ -295,20 +295,25 @@ export class PlayerCore extends EventEmitter {
   async _evaluateAndSwitchLayout(layoutFiles, context) {
     const prefix = context ? `${context}: ` : '';
 
-    if (layoutFiles.length > 0) {
-      if (this.currentLayoutId) {
-        // Check if the playing layout is still in the schedule
-        const stillScheduled = layoutFiles.some(f => parseLayoutFile(f) === this.currentLayoutId);
+    // Use the queue (not raw layoutFiles) for play/expire decisions.
+    // The queue has all constraints baked in (maxPlaysPerHour, priorities, dayparting).
+    // The player is a dumb consumer — it only expires when the queue rebuilds
+    // with a different layout set (new CMS schedule, daypart boundary crossed).
+    const { queue } = this.schedule.getScheduleQueue(this._layoutDurations, this._queueOptions);
 
-        if (!stillScheduled) {
-          // Schedule changed and current layout is no longer in it — expire immediately.
+    if (queue.length > 0) {
+      if (this.currentLayoutId) {
+        const stillInQueue = queue.some(e => parseLayoutFile(e.layoutId) === this.currentLayoutId);
+
+        if (!stillInQueue) {
+          // Schedule changed and current layout is no longer in the queue — expire immediately.
           // Clear currentLayoutId and emit expire event so the renderer can teardown.
           // The renderer's layoutEnd → advanceToNextLayout flow handles the switch.
-          log.info(`Layout ${this.currentLayoutId} no longer scheduled — expiring`);
+          log.info(`Layout ${this.currentLayoutId} no longer in queue — expiring`);
           this.currentLayoutId = null;
           this.emit('layout-expire-current');
         } else {
-          // Layout is still scheduled — don't interrupt, just rebuild queue in background.
+          // Layout is still in queue — don't interrupt, just rebuild queue in background.
           // The playing layout ends when its timer fires (layoutEnd event),
           // at which point advanceToNextLayout() pops from the already-updated queue.
           log.info(`Layout ${this.currentLayoutId} playing — queue updated in background, playback continues`);
@@ -546,15 +551,6 @@ export class PlayerCore extends EventEmitter {
 
       // Process scheduled commands (auto-execute commands whose time has arrived)
       this._processScheduledCommands();
-
-      // If no layouts scheduled and we're playing one that was filtered (e.g., maxPlaysPerHour),
-      // force switch to default layout if available
-      if (layoutFiles.length === 0 && this.currentLayoutId && this.schedule.schedule?.default) {
-        const defaultLayoutId = parseLayoutFile(this.schedule.schedule.default);
-        log.info(`Current layout filtered by schedule, switching to default layout ${defaultLayoutId}`);
-        this.currentLayoutId = null; // Clear to force switch
-        this.emit('layout-prepare-request', defaultLayoutId);
-      }
 
       // Submit stats if enabled and collector is available
       if (regResult.settings?.statsEnabled === 'On' || regResult.settings?.statsEnabled === '1') {
@@ -1692,15 +1688,19 @@ export class PlayerCore extends EventEmitter {
       .map(([k, v]) => `${k}:${v.ready}:${v.missingKey}`)
       .join('|');
     const pendingEntries = [...this.pendingLayouts.keys()].sort().join(',');
-    const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}|${mediaStatusEntries}|${pendingEntries}`;
+    const queuePos = this.schedule._queuePosition || 0;
+    const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}|${queuePos}|${mediaStatusEntries}|${pendingEntries}`;
 
     if (fingerprint === this._lastTimelineFingerprint && this._lastTimeline) {
       this.emit('timeline-updated', this._lastTimeline);
       return;
     }
 
-    const timeline = calculateTimeline(this.schedule, this._layoutDurations, {
+    const { queue } = this.schedule.getScheduleQueue(this._layoutDurations, this._queueOptions);
+    const timeline = calculateTimeline(queue, this.schedule._queuePosition, {
       currentLayoutStartedAt: this._lastLayoutChangeTime ? new Date(this._lastLayoutChangeTime) : null,
+      defaultLayout: this.schedule.schedule?.default || null,
+      durations: this._layoutDurations,
     });
     if (timeline.length === 0) return;
 
