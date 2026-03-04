@@ -28,6 +28,7 @@ let scheduleManager: any;
 let config: any;
 let RestClient: any;
 let XmdsClient: any;
+let ProtocolDetector: any;
 let XmrWrapper: any;
 let store: StoreClient;
 let downloadManager: DownloadManager;
@@ -70,6 +71,7 @@ class PwaPlayer {
   private _swIcHandler: any = null; // SW Interactive Control message handler
   private _chunkConfig: any = null; // Device-adaptive chunk configuration
   private _fileIdToSaveAs: Map<string, string> = new Map(); // Numeric file ID → storedAs filename
+  private protocolDetector: any = null; // CMS protocol auto-detector
 
   async init() {
     log.info('Initializing player with RendererLite + PlayerCore...');
@@ -345,6 +347,7 @@ class PwaPlayer {
       config = configModule.config;
       RestClient = xmdsModule.RestClient;
       XmdsClient = xmdsModule.XmdsClient;
+      ProtocolDetector = xmdsModule.ProtocolDetector;
       XmrWrapper = xmrModule.XmrWrapper;
       StatsCollector = statsModule.StatsCollector;
       formatStats = statsModule.formatStats;
@@ -374,9 +377,9 @@ class PwaPlayer {
       }
 
       // Transport selection:
-      //   transport: "rest"   → forced REST API (default)
+      //   transport: "rest"   → forced REST API
       //   transport: "xmds"   → forced SOAP
-      //   transport: "auto"   → try REST → SOAP
+      //   transport: "auto"   → probe REST → SOAP fallback (default)
       //   /player/pwa-xmds/   → forced SOAP (URL-based override)
       //   ?transport=xmds     → forced SOAP (query param override)
       const cfgTransport = (() => {
@@ -389,22 +392,11 @@ class PwaPlayer {
         || cfgTransport
         || 'auto';
 
-      if (transport === 'xmds') {
-        log.info('Using XMDS/SOAP transport (forced)');
-        this.xmds = new XmdsClient(config);
-      } else if (transport === 'rest') {
-        log.info('Using REST transport (forced)');
-        this.xmds = new RestClient(config);
-      } else {
-        // Auto-detect: try REST → SOAP
-        if (await RestClient.isAvailable(config.cmsUrl, { maxRetries: 0 })) {
-          this.xmds = new RestClient(config);
-          log.info('Using REST transport (auto-detected)');
-        } else {
-          log.warn('REST unavailable, falling back to XMDS/SOAP');
-          this.xmds = new XmdsClient(config);
-        }
-      }
+      // Use ProtocolDetector for auto-detection with re-probe support
+      this.protocolDetector = new ProtocolDetector(config.cmsUrl, RestClient, XmdsClient);
+      const forceProtocol = (transport === 'auto') ? undefined : transport;
+      const { client } = await this.protocolDetector.detect(config, forceProtocol);
+      this.xmds = client;
 
       // Initialize stats collector
       this.statsCollector = new StatsCollector();
@@ -678,7 +670,7 @@ class PwaPlayer {
       // file cached) — avoids 404s from probing before downloads complete.
     });
 
-    this.core.on('collection-error', (error: any) => {
+    this.core.on('collection-error', async (error: any) => {
       this.updateStatus(`Collection error: ${error}`, 'error');
 
       // Report fault to CMS (triggers dashboard alert)
@@ -687,6 +679,20 @@ class PwaPlayer {
         `Collection cycle failed: ${error?.message || error}`
       );
       this.submitFault('COLLECTION_FAILED', `Collection cycle failed: ${error?.message || error}`);
+
+      // Re-probe CMS protocol on connection errors (CMS may have been upgraded)
+      if (this.protocolDetector && this.protocolDetector.getProtocol() !== null) {
+        try {
+          const { client, protocol, changed } = await this.protocolDetector.reprobe(config);
+          if (changed && client) {
+            log.info(`Protocol switched to ${protocol} after connection error`);
+            this.xmds = client;
+            this.core.xmds = client;
+          }
+        } catch (reprobeError) {
+          log.warn('Protocol re-probe failed:', reprobeError);
+        }
+      }
     });
 
     this.core.on('xmr-connected', (url: string) => {

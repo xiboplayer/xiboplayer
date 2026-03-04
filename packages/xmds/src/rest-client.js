@@ -526,7 +526,13 @@ export class RestClient {
         (window.electronAPI?.isElectron || window.location.hostname === 'localhost');
       const base = isProxy ? '' : cmsUrl.replace(/\/+$/, '');
       const url = `${base}${PLAYER_API}/health`;
-      const response = await fetchWithRetry(url, { method: 'GET' }, retryOptions || { maxRetries: 0 });
+      const timeoutMs = retryOptions?.timeoutMs || 3000;
+      const fetchOptions = { method: 'GET' };
+      // Apply timeout via AbortSignal (short timeout avoids delaying startup)
+      if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+        fetchOptions.signal = AbortSignal.timeout(timeoutMs);
+      }
+      const response = await fetchWithRetry(url, fetchOptions, retryOptions || { maxRetries: 0 });
       if (!response.ok) return false;
       const data = await response.json();
       return data.version === 2 && data.status === 'ok';
