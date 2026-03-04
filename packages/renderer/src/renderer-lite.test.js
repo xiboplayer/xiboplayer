@@ -2238,4 +2238,184 @@ describe('RendererLite', () => {
       expect(layout.regions[0].widgets[0].commands).toEqual([]);
     });
   });
+
+  describe('Canvas Regions (#186)', () => {
+    it('should parse region with type="canvas" as isCanvas', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" type="canvas" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>img1.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="15" fileId="2">
+              <options><uri>img2.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+
+      expect(layout.regions).toHaveLength(1);
+      expect(layout.regions[0].isCanvas).toBe(true);
+      expect(layout.regions[0].widgets).toHaveLength(2);
+    });
+
+    it('should auto-detect canvas from type="global" widget', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="global" duration="30" fileId="1">
+              <options></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+
+      expect(layout.regions[0].isCanvas).toBe(true);
+    });
+
+    it('should NOT mark normal regions as canvas', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+
+      expect(layout.regions[0].isCanvas).toBe(false);
+    });
+
+    it('should store isCanvas flag in region state after createRegion', async () => {
+      const regionConfig = {
+        id: 'r1',
+        width: 1920,
+        height: 1080,
+        top: 0,
+        left: 0,
+        zindex: 0,
+        isCanvas: true,
+        widgets: []
+      };
+
+      await renderer.createRegion(regionConfig);
+
+      const region = renderer.regions.get('r1');
+      expect(region.isCanvas).toBe(true);
+    });
+
+    it('should render all canvas widgets simultaneously', async () => {
+      vi.useFakeTimers();
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" type="canvas" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>img1.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="15" fileId="2">
+              <options><uri>img2.png</uri></options>
+            </media>
+            <media id="m3" type="image" duration="20" fileId="3">
+              <options><uri>img3.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      const region = renderer.regions.get('r1');
+      expect(region).toBeDefined();
+      expect(region.isCanvas).toBe(true);
+
+      // All 3 widgets should be visible simultaneously
+      let visibleCount = 0;
+      for (const [, el] of region.widgetElements) {
+        if (el.style.visibility === 'visible') visibleCount++;
+      }
+      expect(visibleCount).toBe(3);
+
+      // Clean up
+      await vi.advanceTimersByTimeAsync(60000);
+      await renderPromise;
+      vi.useRealTimers();
+    });
+
+    it('should not cycle canvas region widgets', async () => {
+      vi.useFakeTimers();
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" type="canvas" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="5" fileId="1">
+              <options><uri>img1.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="5" fileId="2">
+              <options><uri>img2.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      const region = renderer.regions.get('r1');
+
+      // After widget durations expire, both should still be visible (no cycling)
+      await vi.advanceTimersByTimeAsync(10000);
+
+      let visibleCount = 0;
+      for (const [, el] of region.widgetElements) {
+        if (el.style.visibility === 'visible') visibleCount++;
+      }
+      expect(visibleCount).toBe(2);
+
+      // Clean up
+      await vi.advanceTimersByTimeAsync(60000);
+      await renderPromise;
+      vi.useRealTimers();
+    });
+
+    it('should mark canvas region complete after max widget duration', async () => {
+      vi.useFakeTimers();
+
+      const xlf = `
+        <layout width="1920" height="1080">
+          <region id="r1" type="canvas" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="5" fileId="1">
+              <options><uri>img1.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="10" fileId="2">
+              <options><uri>img2.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      const region = renderer.regions.get('r1');
+      expect(region.complete).toBe(false);
+
+      // Advance past max widget duration (10s)
+      await vi.advanceTimersByTimeAsync(9000);
+      expect(region.complete).toBe(true);
+
+      // Clean up
+      await vi.advanceTimersByTimeAsync(60000);
+      await renderPromise;
+      vi.useRealTimers();
+    });
+  });
 });

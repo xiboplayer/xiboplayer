@@ -468,6 +468,41 @@ describe('parseLayoutDuration', () => {
     });
   });
 
+  describe('Canvas region duration (#186)', () => {
+    it('should use max widget duration for canvas regions (not sum)', () => {
+      const result = parseLayoutDuration(xlf({
+        regions: [
+          { type: 'canvas', widgets: [
+            { duration: 10, useDuration: 1 },
+            { duration: 30, useDuration: 1 },
+            { duration: 20, useDuration: 1 },
+          ]},
+        ],
+      }));
+      // Canvas: max(10, 30, 20) = 30, not sum(10+30+20) = 60
+      expect(result).toEqual({ duration: 30, isDynamic: false });
+    });
+
+    it('should use sum for normal regions alongside canvas', () => {
+      const result = parseLayoutDuration(xlf({
+        regions: [
+          { type: 'canvas', widgets: [
+            { duration: 10, useDuration: 1 },
+            { duration: 20, useDuration: 1 },
+          ]},
+          { widgets: [
+            { duration: 15, useDuration: 1 },
+            { duration: 25, useDuration: 1 },
+          ]},
+        ],
+      }));
+      // Canvas region: max(10, 20) = 20
+      // Normal region: sum(15+25) = 40
+      // Layout: max(20, 40) = 40
+      expect(result).toEqual({ duration: 40, isDynamic: false });
+    });
+  });
+
   describe('videoDurations (Phase 2 probing)', () => {
     it('should use probed duration when fileId matches', () => {
       const videoDurations = new Map([['vid1', 45]]);

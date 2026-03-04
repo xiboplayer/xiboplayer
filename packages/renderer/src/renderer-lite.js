@@ -411,6 +411,7 @@ export class RendererLite {
     const regionAndDrawerEls = layoutEl.querySelectorAll(':scope > region, :scope > drawer');
     for (const regionEl of regionAndDrawerEls) {
       const isDrawer = regionEl.tagName === 'drawer';
+      const regionType = regionEl.getAttribute('type') || null;
       const region = {
         id: regionEl.getAttribute('id'),
         width: parseInt(regionEl.getAttribute('width') || '0'),
@@ -426,6 +427,7 @@ export class RendererLite {
         transitionDirection: null,
         loop: true, // Default: cycle widgets. Spec: loop=0 means single media stays visible
         isDrawer,
+        isCanvas: regionType === 'canvas', // Canvas regions render all widgets simultaneously
         widgets: []
       };
 
@@ -468,10 +470,20 @@ export class RendererLite {
         region.widgets.push(widget);
       }
 
+      // Auto-detect canvas from CMS "global" widget (CMS bundles canvas sub-widgets
+      // into a single type="global" media element in the XLF)
+      if (!region.isCanvas && region.widgets.some(w => w.type === 'global')) {
+        region.isCanvas = true;
+      }
+
       layout.regions.push(region);
 
       if (isDrawer) {
         this.log.info(`Parsed drawer: id=${region.id} with ${region.widgets.length} widgets`);
+      }
+
+      if (region.isCanvas) {
+        this.log.info(`Parsed canvas region: id=${region.id} with ${region.widgets.length} widgets (all render simultaneously)`);
       }
     }
 
@@ -1176,6 +1188,7 @@ export class RendererLite {
       height: regionConfig.height * sf,
       complete: false, // Track if region has played all widgets once
       isDrawer: regionConfig.isDrawer || false,
+      isCanvas: regionConfig.isCanvas || false, // Canvas regions render all widgets simultaneously
       widgetElements: new Map() // widgetId -> DOM element (for element reuse)
     });
   }
@@ -1449,13 +1462,15 @@ export class RendererLite {
       region.element.appendChild(element);
     }
 
-    // Hide all other widgets in region
+    // Hide all other widgets in region (skip for canvas — all widgets stay visible)
     // Cancel fill:forwards animations first — they override inline styles
-    for (const [widgetId, widgetEl] of region.widgetElements) {
-      if (widgetId !== widget.id) {
-        widgetEl.getAnimations?.().forEach(a => a.cancel());
-        widgetEl.style.visibility = 'hidden';
-        widgetEl.style.opacity = '0';
+    if (!region.isCanvas) {
+      for (const [widgetId, widgetEl] of region.widgetElements) {
+        if (widgetId !== widget.id) {
+          widgetEl.getAnimations?.().forEach(a => a.cancel());
+          widgetEl.style.visibility = 'hidden';
+          widgetEl.style.opacity = '0';
+        }
       }
     }
 
@@ -1722,6 +1737,13 @@ export class RendererLite {
   _startRegionCycle(region, regionId, showFn, hideFn, onCycleComplete) {
     if (!region || region.widgets.length === 0) return;
 
+    // Canvas regions: render ALL widgets simultaneously (stacked), no cycling.
+    // Duration = max widget duration; region completes when the longest widget expires.
+    if (region.isCanvas) {
+      this._startCanvasRegion(region, regionId, showFn, onCycleComplete);
+      return;
+    }
+
     // Non-looping region with a single widget: show it and stay (spec: loop=0)
     if (region.widgets.length === 1) {
       showFn(regionId, 0);
@@ -1742,6 +1764,37 @@ export class RendererLite {
     };
 
     playNext();
+  }
+
+  /**
+   * Start a canvas region — render all widgets simultaneously (stacked).
+   * Canvas regions show every widget at once rather than cycling through them.
+   * The region duration is the maximum widget duration.
+   * @param {Object} region - Region state
+   * @param {string} regionId - Region ID
+   * @param {Function} showFn - Show widget function (regionId, widgetIndex)
+   * @param {Function} onCycleComplete - Callback when region completes
+   */
+  _startCanvasRegion(region, regionId, showFn, onCycleComplete) {
+    // Show all widgets at once
+    for (let i = 0; i < region.widgets.length; i++) {
+      showFn(regionId, i);
+    }
+
+    // Mark region as complete after max widget duration
+    const maxDuration = Math.max(...region.widgets.map(w => w.duration)) * 1000;
+    if (maxDuration > 0) {
+      region.timer = setTimeout(() => {
+        if (!region.complete) {
+          region.complete = true;
+          onCycleComplete?.();
+        }
+      }, maxDuration);
+    } else {
+      // No duration — immediately complete
+      region.complete = true;
+      onCycleComplete?.();
+    }
   }
 
   /**
@@ -2947,6 +3000,7 @@ export class RendererLite {
           width: regionConfig.width * sf,
           height: regionConfig.height * sf,
           complete: false,
+          isCanvas: regionConfig.isCanvas || false,
           widgetElements: new Map()
         });
       }
