@@ -9,9 +9,13 @@
 
 import fs from 'fs';
 import path from 'path';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import { Readable, pipeline } from 'node:stream';
 import express from 'express';
 import cors from 'cors';
+
+const execPromise = promisify(exec);
 import { createLogger, registerLogSink, PLAYER_API, setPlayerApi, computeCmsId } from '@xiboplayer/utils';
 import { ContentStore } from './content-store.js';
 
@@ -147,7 +151,7 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
  * @param {function} [options.onLog] — log sink for cross-process forwarding; receives ({ level, name, args })
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler } = {}) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false } = {}) {
   const app = express();
 
   // Override Player API base path if configured (before registering routes)
@@ -269,6 +273,33 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     logServer.info('Quit requested — shutting down');
     res.json({ ok: true });
     setTimeout(() => process.exit(0), 100);
+  });
+
+  // ─── Shell Command Execution (#202) ─────────────────────────────
+  // Execute native shell commands from CMS (widget/display commands).
+  // Gated by allowShellCommands option (default: false).
+  // Used by Chromium kiosk (no IPC); Electron prefers its own IPC path.
+  app.post('/shell-command', express.json(), async (req, res) => {
+    if (!allowShellCommands) {
+      logServer.warn('Shell command rejected (allowShellCommands: false)');
+      return res.json({ success: false, reason: 'Shell commands disabled' });
+    }
+    const { commandString } = req.body || {};
+    if (!commandString) return res.json({ success: false, reason: 'Empty command' });
+
+    // Strip CMS type prefix (e.g., "shell|reboot" → "reboot")
+    const cmd = commandString.includes('|') ? commandString.split('|').slice(1).join('|') : commandString;
+    if (!cmd) return res.json({ success: false, reason: 'Empty command after prefix strip' });
+
+    logServer.info('[Shell] Executing:', cmd);
+    try {
+      const { stdout, stderr } = await execPromise(cmd, { timeout: 30000 });
+      logServer.info('[Shell] OK:', stdout.trim());
+      res.json({ success: true, stdout: stdout.trim(), stderr: stderr.trim() });
+    } catch (error) {
+      logServer.error('[Shell] Failed:', error.message);
+      res.json({ success: false, reason: error.message });
+    }
   });
 
   // ─── Auth Token ──────────────────────────────────────────────────
@@ -955,8 +986,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler } = {}) {
-  const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog, icHandler });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {

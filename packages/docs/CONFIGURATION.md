@@ -148,11 +148,17 @@ The `controls` object has two sub-sections:
 | `browser`           | string | `"chromium"` | Browser binary: `chromium`, `chrome`, or a custom path |
 | `extraBrowserFlags` | string | `""`         | Additional Chromium command-line flags (space-separated) |
 
+### Shell Commands
+
+| Key                  | Type    | Default | Description                          |
+|----------------------|---------|---------|--------------------------------------|
+| `allowShellCommands` | boolean | `false` | Allow CMS to execute shell commands on this display. **Security-sensitive** — only enable on trusted networks. Commands are sent via XMR or embedded in layout widgets. 30-second timeout per command. Electron uses IPC; Chromium uses an HTTP endpoint on the proxy server. |
+
 ### Electron-only
 
-| Key          | Type    | Default | Description                          |
-|--------------|---------|---------|--------------------------------------|
-| `autoLaunch` | boolean | `false` | Auto-start on login (registers with OS autostart) |
+| Key                  | Type    | Default | Description                          |
+|----------------------|---------|---------|--------------------------------------|
+| `autoLaunch`         | boolean | `false` | Auto-start on login (registers with OS autostart) |
 
 ## Platform Support Matrix
 
@@ -177,6 +183,7 @@ Not all keys apply to every platform. Shell-only keys are filtered out by `extra
 | `playerApiBase`     | yes | yes      | yes      |                          |
 | `googleGeoApiKey`   | yes | yes      | yes      |                          |
 | `autoLaunch`        | —   | yes      | —        | Electron-only            |
+| `allowShellCommands`| —   | yes      | yes      | Shell-only, default OFF    |
 | `browser`           | —   | —        | yes      | Chromium-only            |
 | `extraBrowserFlags` | —   | —        | yes      | Chromium-only            |
 

@@ -587,10 +587,11 @@ export const config = new Config();
  * Used by warnPlatformMismatch() to detect config.json mistakes.
  */
 const PLATFORM_KEYS = {
-  kioskMode:        ['electron', 'chromium'],
-  autoLaunch:       ['electron'],
-  browser:          ['chromium'],
-  extraBrowserFlags: ['chromium'],
+  kioskMode:          ['electron', 'chromium'],
+  autoLaunch:         ['electron'],
+  allowShellCommands: ['electron', 'chromium'],
+  browser:            ['chromium'],
+  extraBrowserFlags:  ['chromium'],
 };
 
 /**
@@ -619,6 +620,7 @@ export const SHELL_ONLY_KEYS = new Set([
   'fullscreen',
   'hideMouseCursor',
   'preventSleep',
+  'allowShellCommands',
   'width',
   'height',
   'relaxSslCerts',
