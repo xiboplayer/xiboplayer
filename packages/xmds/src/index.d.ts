@@ -36,4 +36,21 @@ export class XmdsClient {
   mediaInventory(inventoryXml: string): Promise<boolean>;
 }
 
+export class ProtocolDetector {
+  constructor(
+    cmsUrl: string,
+    RestClientClass: typeof RestClient,
+    XmdsClientClass: typeof XmdsClient,
+    options?: { probeTimeoutMs?: number }
+  );
+
+  protocol: 'rest' | 'xmds' | null;
+  lastProbeTime: number;
+
+  probe(): Promise<boolean>;
+  detect(config: any, forceProtocol?: 'rest' | 'xmds'): Promise<{ client: any; protocol: 'rest' | 'xmds' }>;
+  reprobe(config: any): Promise<{ client: any; protocol: 'rest' | 'xmds'; changed: boolean }>;
+  getProtocol(): 'rest' | 'xmds' | null;
+}
+
 export function parseScheduleResponse(data: any): any;
