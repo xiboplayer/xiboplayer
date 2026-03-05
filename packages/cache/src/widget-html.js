@@ -7,7 +7,7 @@
  * - CSS object-position fix for CMS template alignment
  *
  * URL rewriting is no longer needed — the CMS serves CSS with relative paths
- * (/api/v2/player/dependencies/font.otf), and the <base> tag resolves widget
+ * (${PLAYER_API}/dependencies/font.otf), and the <base> tag resolves widget
  * media references via mirror routes. Zero translation, zero regex.
  *
  * Runs on the main thread (needs window.location for URL construction).
@@ -25,7 +25,7 @@ const BASE = (typeof window !== 'undefined')
 
 /**
  * Store widget HTML in ContentStore for iframe loading.
- * Stored at mirror path /api/v2/player/widgets/{L}/{R}/{M} — same URL the
+ * Stored at mirror path ${PLAYER_API}/widgets/{L}/{R}/{M} — same URL the
  * CMS serves from, so iframes load directly from Express mirror routes.
  *
  * @param {string} layoutId - Layout ID
@@ -63,12 +63,13 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   }
 
   // Rewrite dependency URLs to local mirror paths. CMS sends absolute URLs
-  // like https://cms.example.com/api/v2/player/dependencies/bundle.min.js
-  // which fail due to CORS/auth. Replace with local /api/v2/player/dependencies/...
-  modifiedHtml = modifiedHtml.replace(
-    /https?:\/\/[^"'\s)]+?(\/api\/v2\/player\/dependencies\/[^"'\s?)]+)(\?[^"'\s)]*)?/g,
-    (_, path) => path
+  // like https://cms.example.com${PLAYER_API}/dependencies/bundle.min.js
+  // which fail due to CORS/auth. Replace with local PLAYER_API/dependencies/...
+  const depsPattern = new RegExp(
+    `https?://[^"'\\s)]+?(${PLAYER_API.replace(/\//g, '\\/')}/dependencies/[^"'\\s?)]+)(\\?[^"'\\s)]*)?`,
+    'g'
   );
+  modifiedHtml = modifiedHtml.replace(depsPattern, (_, path) => path);
 
   // Inject xiboICTargetId — XIC library reads this global before its IIFE runs
   // to set _lib.targetId, which is included in every IC HTTP request as {id: ...}

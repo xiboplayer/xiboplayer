@@ -2,11 +2,11 @@
  * RequestHandler - Handles fetch events for cached content
  *
  * With CMS mirror routes on the proxy, the SW's role is minimal:
- * - /api/v2/player/* requests pass through to Express (mirror routes serve them)
+ * - ${PLAYER_API}/* requests pass through to Express (mirror routes serve them)
  * - Static pages pass through to network
  *
  * No URL translation needed — the proxy serves at CMS paths directly.
- * Widget HTML is served by the Express mirror route at /api/v2/player/widgets/{L}/{R}/{M}.
+ * Widget HTML is served by the Express mirror route at ${PLAYER_API}/widgets/{L}/{R}/{M}.
  */
 
 import { BASE } from './sw-utils.js';

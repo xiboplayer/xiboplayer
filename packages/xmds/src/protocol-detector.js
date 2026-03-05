@@ -6,7 +6,7 @@
  *   - SOAP/XMDS — universal XML protocol (any vanilla Xibo CMS)
  *
  * Detection logic:
- *   1. GET {cmsUrl}/api/v2/player/health with a 3-second timeout
+ *   1. GET {cmsUrl}${PLAYER_API}/health with a 3-second timeout
  *   2. If 200 + valid JSON → REST
  *   3. If 404/error/timeout → SOAP (fallback)
  *

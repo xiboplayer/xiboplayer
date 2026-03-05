@@ -513,7 +513,7 @@ export class RestClient {
 
   /**
    * Probe whether the CMS supports API v2.
-   * GET /api/v2/player/health → { version: 2, status: "ok" }
+   * GET ${PLAYER_API}/health → { version: 2, status: "ok" }
    *
    * @param {string} cmsUrl - CMS base URL
    * @param {Object} [retryOptions] - Retry options for fetch

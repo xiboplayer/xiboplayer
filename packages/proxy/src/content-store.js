@@ -8,7 +8,7 @@
  *
  * File layout (mirrors CMS URL structure):
  *   {storeDir}/
- *     api/v2/player/
+ *     ${PLAYER_API}/
  *       media/42.bin                    — whole file (small media)
  *       media/42.meta.json              — { size, contentType, md5, createdAt }
  *       media/456/chunk-0.bin           — chunked file directory (large media)
@@ -23,7 +23,7 @@ import path from 'path';
 
 /**
  * Sanitize a store key into a safe relative path.
- * Accepts CMS URL paths (api/v2/player/media/42). Strips leading slashes only.
+ * Accepts CMS URL paths (${PLAYER_API}/media/42). Strips leading slashes only.
  */
 function keyToRelative(key) {
   return key.replace(/^\/+/, '');
@@ -372,7 +372,7 @@ export class ContentStore {
   /**
    * List all stored files with metadata.
    * Recursively walks the store directory to support deep key structures
-   * (e.g. api/v2/player/media/42.bin).
+   * (e.g. ${PLAYER_API}/media/42.bin).
    * @returns {Array<{ key: string, type: string, id: string, size: number, cachedAt: number, chunked: boolean }>}
    */
   list() {

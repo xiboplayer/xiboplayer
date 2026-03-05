@@ -8,9 +8,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { cacheWidgetHtml } from './widget-html.js';
+import { PLAYER_API } from '@xiboplayer/utils';
 
 const CMS_BASE = 'https://displays.superpantalles.com';
-const SIGNED_PARAMS = 'displayId=152&type=P&itemId=1&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260222T000000Z&X-Amz-Expires=1771803983&X-Amz-SignedHeaders=host&X-Amz-Signature=abc123';
 
 /**
  * RSS ticker widget HTML (layout 472, region 223, widget 193).
@@ -22,8 +22,8 @@ function makeRssTickerHtml() {
 <head>
 <meta charset="utf-8">
 <title>RSS Ticker</title>
-<script src="/api/v2/player/dependencies/bundle.min.js"></script>
-<link rel="stylesheet" href="/api/v2/player/dependencies/fonts.css">
+<script src="${PLAYER_API}/dependencies/bundle.min.js"></script>
+<link rel="stylesheet" href="${PLAYER_API}/dependencies/fonts.css">
 <style>.rss-item { padding: 10px; }</style>
 </head>
 <body>
@@ -47,8 +47,8 @@ function makePdfWidgetHtml() {
 <html>
 <head>
 <meta charset="utf-8">
-<script src="/api/v2/player/dependencies/bundle.min.js"></script>
-<link rel="stylesheet" href="/api/v2/player/dependencies/fonts.css"></link>
+<script src="${PLAYER_API}/dependencies/bundle.min.js"></script>
+<link rel="stylesheet" href="${PLAYER_API}/dependencies/fonts.css"></link>
 </head>
 <body>
 <object data="11.pdf" type="application/pdf" width="100%" height="100%"></object>
@@ -86,9 +86,11 @@ describe('cacheWidgetHtml', () => {
     global.fetch = createFetchMock();
   });
 
+  const storePrefix = `/store${PLAYER_API}/widgets/`;
+
   function getStoredWidget() {
     for (const [key, value] of storeContents) {
-      if (key.startsWith('/store/api/v2/player/widgets/')) return value;
+      if (key.startsWith(storePrefix)) return value;
     }
     return undefined;
   }
@@ -101,7 +103,7 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', html);
 
       const stored = getStoredWidget();
-      expect(stored).toContain('<base href="/api/v2/player/media/file/">');
+      expect(stored).toContain(`<base href="${PLAYER_API}/media/file/">`);
     });
 
     it('injects <base> tag when no <head> tag exists', async () => {
@@ -109,7 +111,7 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', html);
 
       const stored = getStoredWidget();
-      expect(stored).toContain('<base href="/api/v2/player/media/file/">');
+      expect(stored).toContain(`<base href="${PLAYER_API}/media/file/">`);
     });
   });
 
@@ -120,8 +122,8 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
       const stored = getStoredWidget();
-      expect(stored).toContain('/api/v2/player/dependencies/bundle.min.js');
-      expect(stored).toContain('/api/v2/player/dependencies/fonts.css');
+      expect(stored).toContain(`${PLAYER_API}/dependencies/bundle.min.js`);
+      expect(stored).toContain(`${PLAYER_API}/dependencies/fonts.css`);
     });
 
     it('preserves the data URL (193.json) for resolution via base tag', async () => {
@@ -143,7 +145,7 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
       // Only the widget HTML PUT should be fetched — no proactive resource fetches
-      const putCalls = fetchedUrls.filter(u => u.startsWith('/store/api/v2/player/widgets/'));
+      const putCalls = fetchedUrls.filter(u => u.startsWith(storePrefix));
       expect(putCalls.length).toBe(1);
     });
 
@@ -151,7 +153,7 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
       const keys = [...storeContents.keys()];
-      expect(keys.some(k => k.includes('/store/api/v2/player/widgets/472/223/193'))).toBe(true);
+      expect(keys.some(k => k.includes(`${storePrefix}472/223/193`))).toBe(true);
     });
   });
 
@@ -169,7 +171,7 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '221', '190', makePdfWidgetHtml());
 
       const keys = [...storeContents.keys()];
-      expect(keys.some(k => k.includes('/store/api/v2/player/widgets/472/221/190'))).toBe(true);
+      expect(keys.some(k => k.includes(`${storePrefix}472/221/190`))).toBe(true);
     });
   });
 
@@ -257,8 +259,8 @@ describe('cacheWidgetHtml', () => {
       await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
 
       const keys = [...storeContents.keys()];
-      expect(keys.some(k => k.includes('/store/api/v2/player/widgets/472/221/190'))).toBe(true);
-      expect(keys.some(k => k.includes('/store/api/v2/player/widgets/472/223/193'))).toBe(true);
+      expect(keys.some(k => k.includes(`${storePrefix}472/221/190`))).toBe(true);
+      expect(keys.some(k => k.includes(`${storePrefix}472/223/193`))).toBe(true);
     });
   });
 });

@@ -640,7 +640,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   // ─── Cache-through Mirror Routes ────────────────────────────────────
   // Serve from store on hit, fetch from CMS on miss. Same URL paths as CMS.
 
-  // Strip leading slash for store key: /api/v2/player → api/v2/player
+  // Strip leading slash for store key: ${PLAYER_API} → STORE_PREFIX
   const STORE_PREFIX = PLAYER_API.slice(1);
 
   // HEAD helper — check store existence (used for all mirror routes)
@@ -728,11 +728,11 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   });
 
   // ─── CMS API Forward Proxy ─────────────────────────────────────────
-  // Forward unmatched /api/* requests to the CMS.
+  // Forward unmatched /api/* and /player/api/* requests to the CMS.
   // Specific mirror routes (media, widgets, dependencies) match first;
-  // this catch-all handles Player API + CMS API (OAuth2, display management).
+  // this catch-all handles health, auth, display mgmt, and CMS API (OAuth2).
   const logApi = createLogger('API-Proxy');
-  app.all('/api/{*splat}', async (req, res) => {
+  app.all(['/api/{*splat}', `${PLAYER_API}/{*splat}`], async (req, res) => {
     const cmsUrl = currentPwaConfig?.cmsUrl;
     if (!cmsUrl) return res.status(502).json({ error: 'CMS URL not configured' });
 
