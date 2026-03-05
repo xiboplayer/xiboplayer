@@ -894,6 +894,9 @@ export class RendererLite {
           if (region.isDrawer && nextIndex === 0) {
             region.element.style.display = 'none';
             this.log.info(`Drawer region ${regionId} hidden (cycle complete)`);
+          } else if (region.isDrawer) {
+            // Continue cycling through remaining drawer widgets (will hide on wrap to 0)
+            this.navigateToWidget(region.widgets[nextIndex].id);
           } else {
             this.startRegion(regionId);
           }

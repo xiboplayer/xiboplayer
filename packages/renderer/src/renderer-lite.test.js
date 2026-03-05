@@ -1789,6 +1789,57 @@ describe('RendererLite', () => {
 
       vi.useRealTimers();
     });
+
+    it('should hide multi-widget drawer after cycling through all widgets', async () => {
+      vi.useFakeTimers();
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="60">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="60" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+          <drawer id="d1" width="400" height="300" top="100" left="100">
+            <media id="dm1" type="image" duration="3" fileId="2">
+              <options><uri>d1.png</uri></options>
+            </media>
+            <media id="dm2" type="image" duration="3" fileId="3">
+              <options><uri>d2.png</uri></options>
+            </media>
+            <media id="dm3" type="image" duration="3" fileId="4">
+              <options><uri>d3.png</uri></options>
+            </media>
+          </drawer>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(100);
+      await renderPromise;
+
+      const drawerRegion = renderer.regions.get('d1');
+      expect(drawerRegion.element.style.display).toBe('none');
+
+      // Navigate to first drawer widget
+      renderer.navigateToWidget('dm1');
+      expect(drawerRegion.element.style.display).toBe('');
+      expect(drawerRegion.currentIndex).toBe(0);
+
+      // After dm1 duration → advances to dm2, still visible
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(drawerRegion.element.style.display).toBe('');
+
+      // After dm2 duration → advances to dm3, still visible
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(drawerRegion.element.style.display).toBe('');
+
+      // After dm3 duration → wraps to 0, drawer hidden
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(drawerRegion.element.style.display).toBe('none');
+
+      vi.useRealTimers();
+    });
   });
 
   describe('Sub-Playlist (#10)', () => {

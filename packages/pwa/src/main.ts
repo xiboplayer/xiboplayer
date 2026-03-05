@@ -795,6 +795,15 @@ class PwaPlayer {
       await this.prepareAndRenderLayout(layoutId);
     });
 
+    // Navigate to widget (navWidget action via triggerCode from schedule-level actions)
+    this.core.on('navigate-to-widget', (action: any) => {
+      if (action.targetId) {
+        this.renderer.navigateToWidget(action.targetId);
+      } else {
+        log.warn('navigate-to-widget action has no targetId:', action);
+      }
+    });
+
     // Timeline overlay — visualize upcoming schedule
     this.core.on('timeline-updated', (timeline: any[]) => {
       this.timelineOverlay?.update(timeline, this.core.getCurrentLayoutId());
