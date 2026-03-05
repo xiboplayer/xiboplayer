@@ -112,15 +112,16 @@ export class TimelineOverlay {
 
     if (timeline !== null) {
       this.timeline = timeline;
-      // Lock currentDuration from matching entry's .duration (only once per layout)
-      if (this.currentDuration === null && this.currentLayoutId !== null) {
-        const match = timeline.find(e =>
-          parseInt(e.layoutFile.replace('.xlf', ''), 10) === this.currentLayoutId
-        );
-        if (match) {
-          this.currentDuration = match.duration;
-          this.currentIsDefault = match.isDefault;
-        }
+    }
+
+    // Lock currentDuration from matching timeline entry (try on every update)
+    if (this.currentDuration === null && this.currentLayoutId !== null && this.timeline.length > 0) {
+      const match = this.timeline.find(e =>
+        parseInt(e.layoutFile.replace('.xlf', ''), 10) === this.currentLayoutId
+      );
+      if (match) {
+        this.currentDuration = match.duration;
+        this.currentIsDefault = match.isDefault;
       }
     }
 
