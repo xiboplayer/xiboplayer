@@ -9,6 +9,7 @@ export interface PlayerCoreOptions {
   xmrWrapper: any;
   statsCollector?: any;
   displaySettings?: any;
+  cmsId?: string;
 }
 
 export class PlayerCore {
