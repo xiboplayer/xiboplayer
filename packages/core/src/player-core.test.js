@@ -2305,9 +2305,9 @@ describe('PlayerCore', () => {
       expect(core._lastTimelineFingerprint).not.toBe(firstFingerprint);
     });
 
-    it('should not emit timeline-updated when durations are empty', () => {
+    it('should emit timeline-updated even when durations are empty (uses queue fallback durations)', () => {
       setupTimelineSupport();
-      // _layoutDurations is empty (default state)
+      // _layoutDurations is empty — timeline uses queue's baked-in durations
       expect(core._layoutDurations.size).toBe(0);
 
       const spy = createSpy();
@@ -2315,7 +2315,7 @@ describe('PlayerCore', () => {
 
       core.logUpcomingTimeline();
 
-      expect(spy).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalled();
     });
 
     it('should not emit timeline-updated when schedule lacks time queries', () => {

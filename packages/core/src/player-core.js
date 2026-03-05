@@ -1684,7 +1684,6 @@ export class PlayerCore extends EventEmitter {
    * Emits 'timeline-updated' with the full timeline array.
    */
   logUpcomingTimeline() {
-    if (this._layoutDurations.size === 0) return;
     if (!this.schedule.getLayoutsAtTime) return; // Schedule doesn't support time queries
 
     // Fingerprint inputs: schedule CRC + sorted durations + current layout + media status.
