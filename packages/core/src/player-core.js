@@ -1426,6 +1426,8 @@ export class PlayerCore extends EventEmitter {
     entry.failures++;
     entry.reason = reason;
 
+    this._statusCode = 3; // Error — layout failed to render
+
     if (!entry.blacklisted && entry.failures >= this._blacklistThreshold) {
       entry.blacklisted = true;
       log.warn(`Layout ${id} blacklisted after ${entry.failures} consecutive failures: ${reason}`);
