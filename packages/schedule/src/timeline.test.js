@@ -116,11 +116,12 @@ describe('calculateTimeline', () => {
     });
   });
 
-  describe('currentLayoutStartedAt (remaining time adjustment)', () => {
-    it('should adjust first entry duration to remaining time', () => {
+  describe('currentLayoutStartedAt (no adjustment — queuePosition already advanced)', () => {
+    it('should not adjust first entry duration since queue has advanced past current layout', () => {
       const queue = [{ layoutId: '100.xlf', duration: 60 }];
 
-      // Layout started 20 seconds ago → 40 seconds remaining
+      // currentLayoutStartedAt is ignored — the first timeline entry is the
+      // NEXT layout (queuePosition already advanced via popNextFromQueue)
       const startedAt = new Date(NOW.getTime() - 20000);
 
       const timeline = calculateTimeline(queue, 0, {
@@ -128,13 +129,12 @@ describe('calculateTimeline', () => {
         currentLayoutStartedAt: startedAt,
       });
 
-      expect(timeline[0].duration).toBe(40); // 60 - 20 = 40
+      expect(timeline[0].duration).toBe(60); // Full duration, no adjustment
     });
 
-    it('should clamp remaining time to at least 1 second', () => {
+    it('should use full duration even when layout would be overdue', () => {
       const queue = [{ layoutId: '100.xlf', duration: 30 }];
 
-      // Layout started 60 seconds ago but duration is only 30 → already overdue
       const startedAt = new Date(NOW.getTime() - 60000);
 
       const timeline = calculateTimeline(queue, 0, {
@@ -142,10 +142,10 @@ describe('calculateTimeline', () => {
         currentLayoutStartedAt: startedAt,
       });
 
-      expect(timeline[0].duration).toBeGreaterThanOrEqual(1);
+      expect(timeline[0].duration).toBe(30); // Full duration
     });
 
-    it('should only adjust first entry, not subsequent', () => {
+    it('should use full duration for all entries', () => {
       const queue = [{ layoutId: '100.xlf', duration: 60 }];
       const startedAt = new Date(NOW.getTime() - 20000);
 
@@ -154,7 +154,7 @@ describe('calculateTimeline', () => {
         currentLayoutStartedAt: startedAt,
       });
 
-      expect(timeline[0].duration).toBe(40);
+      expect(timeline[0].duration).toBe(60); // Full duration
       expect(timeline[1].duration).toBe(60); // Full duration
     });
   });

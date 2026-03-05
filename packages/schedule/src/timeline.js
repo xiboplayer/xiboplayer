@@ -187,12 +187,11 @@ export function calculateTimeline(queue, queuePosition, options = {}) {
     // otherwise fall back to the queue's baked-in duration
     let dur = (durations && durations.get(entry.layoutId)) || entry.duration;
 
-    // First entry: use remaining duration if we know when the current layout started
-    if (isFirstEntry && currentLayoutStartedAt) {
-      const elapsedSec = (from.getTime() - currentLayoutStartedAt.getTime()) / 1000;
-      dur = Math.max(1, Math.round(dur - elapsedSec));
-      isFirstEntry = false;
-    }
+    // Note: queuePosition has already advanced past the current layout
+    // (via popNextFromQueue), so the first entry here is the NEXT layout.
+    // No elapsed-time adjustment needed — the overlay handles countdown
+    // for the current layout via wall-clock layoutStartedAt.
+    isFirstEntry = false;
 
     const endMs = currentTime.getTime() + dur * 1000;
 
