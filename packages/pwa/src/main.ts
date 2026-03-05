@@ -155,7 +155,7 @@ class PwaPlayer {
       }
     );
 
-    // Create PlayerCore
+    // Create PlayerCore (with CMS-namespaced offline cache DB)
     this.core = new PlayerCore({
       config,
       xmds: this.xmds,
@@ -164,7 +164,8 @@ class PwaPlayer {
       renderer: this.renderer,
       xmrWrapper: XmrWrapper,
       statsCollector: this.statsCollector,
-      displaySettings: this.displaySettings
+      displaySettings: this.displaySettings,
+      cmsId: config.activeCmsId,
     });
 
     // Setup platform-specific event handlers
@@ -396,15 +397,16 @@ class PwaPlayer {
       const { client } = await this.protocolDetector.detect(config, forceProtocol);
       this.xmds = client;
 
-      // Initialize stats collector
-      this.statsCollector = new StatsCollector();
+      // Initialize stats collector (namespaced by CMS ID)
+      const cmsId = config.activeCmsId;
+      this.statsCollector = new StatsCollector(cmsId);
       await this.statsCollector.init();
-      log.info('Stats collector initialized');
+      log.info(`Stats collector initialized${cmsId ? ` (CMS: ${cmsId})` : ''}`);
 
-      // Initialize log reporter for CMS log submission
-      this.logReporter = new LogReporter();
+      // Initialize log reporter for CMS log submission (namespaced by CMS ID)
+      this.logReporter = new LogReporter(cmsId);
       await this.logReporter.init();
-      log.info('Log reporter initialized');
+      log.info(`Log reporter initialized${cmsId ? ` (CMS: ${cmsId})` : ''}`);
 
       // Bridge logger output to LogReporter for CMS submission
       registerLogSink(({ level, name, args }: { level: string; name: string; args: any[] }) => {

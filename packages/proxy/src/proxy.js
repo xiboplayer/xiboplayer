@@ -12,7 +12,7 @@ import path from 'path';
 import { Readable } from 'node:stream';
 import express from 'express';
 import cors from 'cors';
-import { createLogger, registerLogSink, PLAYER_API, setPlayerApi } from '@xiboplayer/utils';
+import { createLogger, registerLogSink, PLAYER_API, setPlayerApi, computeCmsId } from '@xiboplayer/utils';
 import { ContentStore } from './content-store.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
@@ -180,6 +180,15 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     // Update in-memory config — merge all POSTed fields (takes effect on next page load injection)
     currentPwaConfig = { ...(currentPwaConfig || {}), ...req.body };
 
+    // Reinitialize ContentStore if CMS URL changed (new CMS-namespaced directory)
+    if (dataDir && cmsUrl) {
+      const newCmsId = computeCmsId(cmsUrl);
+      if (newCmsId) {
+        currentPwaConfig.cmsId = newCmsId;
+        store = initContentStore(newCmsId);
+      }
+    }
+
     // Write config.json — merge with existing file to preserve non-POSTed keys (e.g. controls)
     if (configFilePath) {
       fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
@@ -232,12 +241,22 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
 
 
   // ─── ContentStore initialization ──────────────────────────────────
+  // Namespace by CMS ID when available: cache/{cmsId}/media/
+  // Falls back to flat media/ for backward compat when no cmsId.
   let store = null;
-  if (dataDir) {
-    store = new ContentStore(path.join(dataDir, 'media'));
-    store.init();
-    logProxy.info(`ContentStore enabled: ${path.join(dataDir, 'media')}`);
+  function initContentStore(cmsId) {
+    if (!dataDir) return null;
+    const storeDir = cmsId
+      ? path.join(dataDir, 'cache', cmsId, 'media')
+      : path.join(dataDir, 'media');
+    const s = new ContentStore(storeDir);
+    s.init();
+    logProxy.info(`ContentStore enabled: ${storeDir}`);
+    return s;
   }
+
+  const initialCmsId = pwaConfig?.cmsId || (pwaConfig?.cmsUrl ? computeCmsId(pwaConfig.cmsUrl) : null);
+  store = initContentStore(initialCmsId);
 
   // ─── Quit ────────────────────────────────────────────────────────
   // Allow the PWA to request a clean shutdown (Ctrl+Q in Chromium kiosk).
@@ -834,11 +853,23 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     return `<script>
 (function(){
   try {
-    var existing = {};
-    try { existing = JSON.parse(localStorage.getItem('xibo_config') || '{}'); } catch(e) {}
     var injected = ${configJson};
-    var merged = Object.assign({}, existing, injected);
-    localStorage.setItem('xibo_config', JSON.stringify(merged));
+    var GLOBAL_KEYS = { hardwareKey: 1, xmrPubKey: 1, xmrPrivKey: 1 };
+    var globalData = {};
+    try { globalData = JSON.parse(localStorage.getItem('xibo_global') || '{}'); } catch(e) {}
+    var cmsData = {};
+    for (var k in injected) {
+      if (GLOBAL_KEYS[k]) globalData[k] = injected[k];
+      else cmsData[k] = injected[k];
+    }
+    localStorage.setItem('xibo_global', JSON.stringify(globalData));
+    if (injected.cmsId) {
+      var cmsKey = 'xibo_cms:' + injected.cmsId;
+      var existingCms = {};
+      try { existingCms = JSON.parse(localStorage.getItem(cmsKey) || '{}'); } catch(e) {}
+      localStorage.setItem(cmsKey, JSON.stringify(Object.assign({}, existingCms, cmsData)));
+      localStorage.setItem('xibo_active_cms', injected.cmsId);
+    }
   } catch(e) { console.warn('ConfigInject failed:', e); }
 })();
 </script>`;

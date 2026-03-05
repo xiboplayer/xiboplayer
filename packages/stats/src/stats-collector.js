@@ -12,7 +12,7 @@ import { createLogger } from '@xiboplayer/utils';
 const log = createLogger('@xiboplayer/stats');
 
 // IndexedDB configuration
-const DB_NAME = 'xibo-player-stats';
+const DB_BASE = 'xibo-player-stats';
 const DB_VERSION = 1;
 const STATS_STORE = 'stats';
 
@@ -38,8 +38,12 @@ const STATS_STORE = 'stats';
  * await collector.clearSubmittedStats(stats);
  */
 export class StatsCollector {
-  constructor() {
+  /**
+   * @param {string} [cmsId] - Optional CMS ID for namespaced IndexedDB
+   */
+  constructor(cmsId) {
     this.db = null;
+    this._dbName = cmsId ? `${DB_BASE}-${cmsId}` : DB_BASE;
     this.inProgressStats = new Map(); // Track in-progress stats by key
   }
 
@@ -67,7 +71,7 @@ export class StatsCollector {
         return;
       }
 
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = indexedDB.open(this._dbName, DB_VERSION);
 
       request.onerror = () => {
         const error = new Error(`Failed to open IndexedDB: ${request.error}`);
