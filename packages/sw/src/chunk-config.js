@@ -69,12 +69,12 @@ export function calculateChunkConfig(log) {
     concurrency = 4;
     log.info('4GB-RAM config: 50 MB chunks, 200 MB cache, 4 concurrent downloads');
   } else {
-    // 8+ GB RAM - generous
+    // 8+ GB RAM - generous but heap-safe (100 MB × 4 = 400 MB peak, within 768 MB V8 heap)
     chunkSize = 100 * 1024 * 1024;
     blobCacheSize = 500;
     threshold = 200 * 1024 * 1024;
-    concurrency = 6;
-    log.info('High-RAM config: 100 MB chunks, 500 MB cache, 6 concurrent downloads');
+    concurrency = 4;
+    log.info('High-RAM config: 100 MB chunks, 500 MB cache, 4 concurrent downloads');
   }
 
   return { chunkSize, blobCacheSize, threshold, concurrency };
