@@ -383,10 +383,7 @@ class PwaPlayer {
       //   transport: "auto"   → probe REST → SOAP fallback (default)
       //   /player/pwa-xmds/   → forced SOAP (URL-based override)
       //   ?transport=xmds     → forced SOAP (query param override)
-      const cfgTransport = (() => {
-        try { return JSON.parse(localStorage.getItem('xibo_config') || '{}').transport; }
-        catch { return undefined; }
-      })();
+      const cfgTransport = config.transport !== 'auto' ? config.transport : undefined;
       const urlTransport = new URLSearchParams(window.location.search).get('transport');
       const transport = urlTransport
         || (PLAYER_BASE.includes('pwa-xmds') ? 'xmds' : null)
@@ -419,7 +416,7 @@ class PwaPlayer {
       // Forward console logs to proxy stdout (for journald/log analysis).
       // Controlled by debug.consoleLogs in config.json.
       // Optional debug.consoleLogsInterval (seconds) sets the batch flush interval (default 10s).
-      const debugConfig = JSON.parse(localStorage.getItem('xibo_config') || '{}')?.debug;
+      const debugConfig = config.debug;
       if (debugConfig?.consoleLogs) {
         const flushIntervalMs = (debugConfig.consoleLogsInterval || 10) * 1000;
         let batch: Array<{ level: string; name: string; message: string; ts: string }> = [];
@@ -1019,12 +1016,9 @@ class PwaPlayer {
     log.info('Remote controls initialized (keyboard + MediaSession)');
   }
 
-  /** Read controls config from localStorage (injected by proxy from config.json). */
+  /** Read controls config (injected by proxy from config.json into localStorage). */
   private getControls(): Record<string, any> {
-    try {
-      const cfg = JSON.parse(localStorage.getItem('xibo_config') || '{}');
-      return cfg.controls || {};
-    } catch { return {}; }
+    return config.controls;
   }
 
   /**

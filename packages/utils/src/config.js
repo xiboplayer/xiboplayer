@@ -331,6 +331,10 @@ export class Config {
 
   get googleGeoApiKey() { return this.data.googleGeoApiKey || ''; }
   set googleGeoApiKey(val) { this.data.googleGeoApiKey = val; this.save(); }
+
+  get controls() { return this.data.controls || {}; }
+  get transport() { return this.data.transport || 'auto'; }
+  get debug() { return this.data.debug || {}; }
 }
 
 export const config = new Config();
@@ -343,7 +347,7 @@ export const config = new Config();
  * to extractPwaConfig().
  *
  * Electron extras:  autoLaunch
- * Chromium extras:  browser, extraBrowserFlags, relaxSslCerts
+ * Chromium extras:  browser, extraBrowserFlags
  */
 export const SHELL_ONLY_KEYS = new Set([
   'serverPort',
@@ -353,6 +357,7 @@ export const SHELL_ONLY_KEYS = new Set([
   'preventSleep',
   'width',
   'height',
+  'relaxSslCerts',
 ]);
 
 /**
