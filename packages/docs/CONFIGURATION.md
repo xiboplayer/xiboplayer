@@ -44,9 +44,10 @@ See [PER_CMS_CACHE.md](PER_CMS_CACHE.md) for the full design rationale and cache
 
 ### Server
 
-| Key          | Type   | Default          | Description                          |
-|--------------|--------|------------------|--------------------------------------|
-| `serverPort` | number | `8765` (Electron) / `8766` (Chromium) | Local proxy server port |
+| Key              | Type   | Default          | Description                          |
+|------------------|--------|------------------|--------------------------------------|
+| `serverPort`     | number | `8765` (Electron) / `8766` (Chromium) | Local proxy server port |
+| `listenAddress`  | string | `"localhost"`    | Network interface to bind the proxy server. Set to `"0.0.0.0"` to allow LAN connections (required for cross-device video wall sync). |
 
 ### Window & Display
 
@@ -170,6 +171,7 @@ Not all keys apply to every platform. Shell-only keys are filtered out by `extra
 | `cmsKey`            | yes | yes      | yes      |                          |
 | `displayName`       | yes | yes      | yes      |                          |
 | `serverPort`        | —   | yes      | yes      | Shell-only               |
+| `listenAddress`     | —   | yes      | yes      | Shell-only, default `localhost` |
 | `kioskMode`         | —   | yes      | yes      | Shell-only               |
 | `fullscreen`        | —   | yes      | yes      | Shell-only               |
 | `hideMouseCursor`   | —   | yes      | yes      | Shell-only               |
@@ -247,6 +249,20 @@ In the browser (PWA), `localStorage` is the primary source; env vars are not ava
 ```
 
 All other defaults (kiosk mode, fullscreen, hidden cursor, WARNING log level) apply automatically.
+
+## Example: Video Wall Lead
+
+```json
+{
+  "cmsUrl": "https://cms.example.com",
+  "cmsKey": "yourKey",
+  "displayName": "videowall-lead",
+  "listenAddress": "0.0.0.0",
+  "preventSleep": true
+}
+```
+
+The `listenAddress: "0.0.0.0"` opens the proxy server to LAN connections, allowing follower devices to connect to the WebSocket sync relay at `ws://<lead-ip>:8765/sync`. Sync group and publisher port are configured in the CMS display settings. Follower devices only need standard CMS connection settings — no `listenAddress` override needed.
 
 ## CLI Flags
 
