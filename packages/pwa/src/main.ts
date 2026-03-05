@@ -762,6 +762,19 @@ class PwaPlayer {
       this.core.executeCommand(command.code);
     });
 
+    // Native command execution (#202) — shell commands delegated by PlayerCore
+    this.core.on('execute-native-command', async (data: any) => {
+      if ((window as any).electronAPI?.executeShellCommand) {
+        const result = await (window as any).electronAPI.executeShellCommand({
+          commandString: data.commandString,
+        });
+        this.core.emit('command-result', { code: data.code, ...result });
+      } else {
+        log.warn('Native command not supported on this platform:', data.code);
+        this.core.emit('command-result', { code: data.code, success: false, reason: 'Platform does not support native commands' });
+      }
+    });
+
     // Display settings events
     if (this.displaySettings) {
       this.displaySettings.on('interval-changed', (newInterval: number) => {
@@ -1476,6 +1489,13 @@ class PwaPlayer {
           log.error('Failed to end widget stat:', err);
         });
       }
+    });
+
+    // Widget commands (#202) — execute commands embedded in layout widgets
+    this.renderer.on('widgetCommand', (data: any) => {
+      log.info('Widget command:', data.commandCode);
+      const commands = { [data.commandCode]: { commandString: data.commandString } };
+      this.core.executeCommand(data.commandCode, commands);
     });
 
     this.renderer.on('error', (error: any) => {
