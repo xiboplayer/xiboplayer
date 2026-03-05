@@ -50,7 +50,7 @@ import { DataConnectorManager } from './data-connectors.js';
 const log = createLogger('PlayerCore');
 
 // IndexedDB database/store for offline cache
-const OFFLINE_DB_NAME = 'xibo-offline-cache';
+const OFFLINE_DB_BASE = 'xibo-offline-cache';
 const OFFLINE_DB_VERSION = 1;
 const OFFLINE_STORE = 'cache';
 
@@ -60,9 +60,10 @@ function parseLayoutFile(f) {
 }
 
 /** Open the offline cache IndexedDB (creates store on first use) */
-function openOfflineDb() {
+function openOfflineDb(cmsId) {
+  const dbName = cmsId ? `${OFFLINE_DB_BASE}-${cmsId}` : OFFLINE_DB_BASE;
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+    const req = indexedDB.open(dbName, OFFLINE_DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
@@ -87,6 +88,9 @@ export class PlayerCore extends EventEmitter {
     this.XmrWrapper = options.xmrWrapper;
     this.statsCollector = options.statsCollector; // Optional: proof of play tracking
     this.displaySettings = options.displaySettings; // Optional: CMS display settings manager
+
+    // CMS ID for namespaced IndexedDB databases
+    this._cmsId = options.cmsId || null;
 
     // Data connectors manager (real-time data for widgets)
     this.dataConnectorManager = new DataConnectorManager();
@@ -177,7 +181,7 @@ export class PlayerCore extends EventEmitter {
   /** Load offline cache from IndexedDB into memory on startup */
   async _initOfflineCache() {
     try {
-      const db = await openOfflineDb();
+      const db = await openOfflineDb(this._cmsId);
       const tx = db.transaction(OFFLINE_STORE, 'readonly');
       const store = tx.objectStore(OFFLINE_STORE);
 
@@ -206,7 +210,7 @@ export class PlayerCore extends EventEmitter {
   async _offlineSave(key, data) {
     this._offlineCache[key] = data;
     try {
-      const db = await openOfflineDb();
+      const db = await openOfflineDb(this._cmsId);
       const tx = db.transaction(OFFLINE_STORE, 'readwrite');
       tx.objectStore(OFFLINE_STORE).put(data, key);
       await new Promise((resolve, reject) => {

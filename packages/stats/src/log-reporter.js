@@ -12,7 +12,7 @@ import { createLogger } from '@xiboplayer/utils';
 const log = createLogger('@xiboplayer/stats');
 
 // IndexedDB configuration
-const DB_NAME = 'xibo-player-logs';
+const DB_BASE = 'xibo-player-logs';
 const DB_VERSION = 1;
 const LOGS_STORE = 'logs';
 
@@ -37,8 +37,12 @@ const LOGS_STORE = 'logs';
  * await reporter.clearSubmittedLogs(logs);
  */
 export class LogReporter {
-  constructor() {
+  /**
+   * @param {string} [cmsId] - Optional CMS ID for namespaced IndexedDB
+   */
+  constructor(cmsId) {
     this.db = null;
+    this._dbName = cmsId ? `${DB_BASE}-${cmsId}` : DB_BASE;
     this._reportedFaults = new Map(); // code -> timestamp (deduplication)
   }
 
@@ -66,7 +70,7 @@ export class LogReporter {
         return;
       }
 
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = indexedDB.open(this._dbName, DB_VERSION);
 
       request.onerror = () => {
         const error = new Error(`Failed to open IndexedDB: ${request.error}`);

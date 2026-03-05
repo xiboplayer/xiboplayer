@@ -1,7 +1,8 @@
 /**
  * Config Tests
  *
- * Tests for configuration management with localStorage persistence
+ * Tests for configuration management with split localStorage persistence
+ * (xibo_global + xibo_cms:{cmsId} + xibo_active_cms)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -24,7 +25,27 @@ vi.mock('@xiboplayer/crypto', () => {
   };
 });
 
-import { Config } from './config.js';
+import { Config, computeCmsId, fnvHash } from './config.js';
+
+/**
+ * Seed split localStorage with a full config (global + CMS-scoped).
+ * Helper to set up pre-existing config in the new format.
+ */
+function seedConfig(storage, data) {
+  const GLOBAL_KEYS = new Set(['hardwareKey', 'xmrPubKey', 'xmrPrivKey']);
+  const global = {};
+  const cms = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (GLOBAL_KEYS.has(k)) global[k] = v;
+    else cms[k] = v;
+  }
+  storage.setItem('xibo_global', JSON.stringify(global));
+  const cmsId = computeCmsId(data.cmsUrl);
+  if (cmsId) {
+    storage.setItem(`xibo_cms:${cmsId}`, JSON.stringify(cms));
+    storage.setItem('xibo_active_cms', cmsId);
+  }
+}
 
 describe('Config', () => {
   let config;
@@ -32,7 +53,7 @@ describe('Config', () => {
   let mockRandomUUID;
 
   beforeEach(() => {
-    // Mock localStorage
+    // Mock localStorage (with key/length for iteration in listCmsProfiles)
     mockLocalStorage = {
       data: {},
       getItem(key) {
@@ -46,6 +67,12 @@ describe('Config', () => {
       },
       clear() {
         this.data = {};
+      },
+      key(index) {
+        return Object.keys(this.data)[index] || null;
+      },
+      get length() {
+        return Object.keys(this.data).length;
       }
     };
 
@@ -91,14 +118,14 @@ describe('Config', () => {
       expect(hwKey).toBe('pwa-1234567812344567890123456789');
     });
 
-    it('should save config to localStorage on creation', () => {
+    it('should save config to split localStorage on creation', () => {
       config = new Config();
 
-      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
-      expect(stored).toEqual(config.data);
+      const global = JSON.parse(mockLocalStorage.getItem('xibo_global'));
+      expect(global.hardwareKey).toBe(config.data.hardwareKey);
     });
 
-    it('should load existing config from localStorage', () => {
+    it('should load existing config from split localStorage', () => {
       const existingConfig = {
         cmsUrl: 'https://test.cms.com',
         cmsKey: 'test-key',
@@ -107,23 +134,25 @@ describe('Config', () => {
         xmrChannel: '12345678-1234-4567-8901-234567890abc'
       };
 
-      mockLocalStorage.setItem('xibo_config', JSON.stringify(existingConfig));
+      seedConfig(mockLocalStorage, existingConfig);
 
       config = new Config();
 
-      expect(config.data).toEqual(existingConfig);
+      expect(config.data.cmsUrl).toBe('https://test.cms.com');
+      expect(config.data.cmsKey).toBe('test-key');
+      expect(config.data.displayName).toBe('Test Display');
+      expect(config.data.hardwareKey).toBe('pwa-existinghardwarekey1234567');
+      expect(config.data.xmrChannel).toBe('12345678-1234-4567-8901-234567890abc');
     });
 
     it('should regenerate hardware key if invalid in stored config', () => {
-      const invalidConfig = {
+      seedConfig(mockLocalStorage, {
         cmsUrl: 'https://test.cms.com',
         cmsKey: 'test-key',
         displayName: 'Test Display',
         hardwareKey: 'short', // Invalid: too short
         xmrChannel: '12345678-1234-4567-8901-234567890abc'
-      };
-
-      mockLocalStorage.setItem('xibo_config', JSON.stringify(invalidConfig));
+      });
 
       config = new Config();
 
@@ -132,7 +161,7 @@ describe('Config', () => {
     });
 
     it('should handle corrupted JSON in localStorage', () => {
-      mockLocalStorage.setItem('xibo_config', 'invalid-json{');
+      mockLocalStorage.setItem('xibo_global', 'invalid-json{');
 
       config = new Config();
 
@@ -307,11 +336,12 @@ describe('Config', () => {
       expect(config.data.cmsUrl).toBe('https://new.cms.com');
     });
 
-    it('should save to localStorage when cmsUrl set', () => {
+    it('should save to split localStorage when cmsUrl set', () => {
       config.cmsUrl = 'https://test.com';
 
-      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
-      expect(stored.cmsUrl).toBe('https://test.com');
+      const cmsId = computeCmsId('https://test.com');
+      const cms = JSON.parse(mockLocalStorage.getItem(`xibo_cms:${cmsId}`));
+      expect(cms.cmsUrl).toBe('https://test.com');
     });
 
     it('should get/set cmsKey', () => {
@@ -383,22 +413,24 @@ describe('Config', () => {
       config = new Config();
     });
 
-    it('should save current config to localStorage', () => {
+    it('should save current config to split localStorage', () => {
       config.data.cmsUrl = 'https://manual.com';
       config.data.cmsKey = 'manual-key';
 
       config.save();
 
-      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
-      expect(stored.cmsUrl).toBe('https://manual.com');
-      expect(stored.cmsKey).toBe('manual-key');
+      const cmsId = computeCmsId('https://manual.com');
+      const cms = JSON.parse(mockLocalStorage.getItem(`xibo_cms:${cmsId}`));
+      expect(cms.cmsUrl).toBe('https://manual.com');
+      expect(cms.cmsKey).toBe('manual-key');
     });
 
     it('should auto-save when setters used', () => {
       config.cmsUrl = 'https://auto.com';
 
-      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
-      expect(stored.cmsUrl).toBe('https://auto.com');
+      const cmsId = computeCmsId('https://auto.com');
+      const cms = JSON.parse(mockLocalStorage.getItem(`xibo_cms:${cmsId}`));
+      expect(cms.cmsUrl).toBe('https://auto.com');
     });
   });
 
@@ -419,12 +451,12 @@ describe('Config', () => {
 
   describe('Edge Cases', () => {
     it('should handle missing hardwareKey in loaded config', () => {
-      mockLocalStorage.setItem('xibo_config', JSON.stringify({
+      seedConfig(mockLocalStorage, {
         cmsUrl: 'https://test.com',
         cmsKey: 'test-key',
         displayName: 'Test'
         // hardwareKey missing
-      }));
+      });
 
       config = new Config();
 
@@ -433,13 +465,13 @@ describe('Config', () => {
     });
 
     it('should handle null values in config', () => {
-      mockLocalStorage.setItem('xibo_config', JSON.stringify({
+      seedConfig(mockLocalStorage, {
         cmsUrl: null,
         cmsKey: null,
         displayName: null,
         hardwareKey: 'pwa-1234567812344567890123456789',
         xmrChannel: '12345678-1234-4567-8901-234567890abc'
-      }));
+      });
 
       config = new Config();
 
@@ -506,12 +538,12 @@ describe('Config', () => {
       expect(config.data.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
     });
 
-    it('should persist keys to localStorage', async () => {
+    it('should persist keys to xibo_global', async () => {
       await config.ensureXmrKeyPair();
 
-      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
-      expect(stored.xmrPubKey).toMatch(/^-----BEGIN PUBLIC KEY-----/);
-      expect(stored.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+      const global = JSON.parse(mockLocalStorage.getItem('xibo_global'));
+      expect(global.xmrPubKey).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+      expect(global.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
     });
 
     it('should be idempotent — second call preserves existing keys', async () => {
@@ -577,6 +609,190 @@ describe('Config', () => {
       await config.ensureXmrKeyPair();
 
       expect(config.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+    });
+  });
+
+  describe('Per-CMS Namespacing', () => {
+    describe('fnvHash()', () => {
+      it('should produce 12-char hex string', () => {
+        expect(fnvHash('test')).toMatch(/^[0-9a-f]{12}$/);
+      });
+
+      it('should be deterministic', () => {
+        expect(fnvHash('hello')).toBe(fnvHash('hello'));
+      });
+
+      it('should differ for different inputs', () => {
+        expect(fnvHash('hello')).not.toBe(fnvHash('world'));
+      });
+    });
+
+    describe('computeCmsId()', () => {
+      it('should produce hostname-hash format', () => {
+        const id = computeCmsId('https://displays.superpantalles.com');
+        expect(id).toMatch(/^displays\.superpantalles\.com-[0-9a-f]{12}$/);
+      });
+
+      it('should handle localhost with port', () => {
+        const id = computeCmsId('http://localhost:8080');
+        expect(id).toMatch(/^localhost-[0-9a-f]{12}$/);
+      });
+
+      it('should return null for empty URL', () => {
+        expect(computeCmsId('')).toBeNull();
+        expect(computeCmsId(null)).toBeNull();
+        expect(computeCmsId(undefined)).toBeNull();
+      });
+
+      it('should be deterministic for same URL', () => {
+        const id1 = computeCmsId('https://cms.example.com');
+        const id2 = computeCmsId('https://cms.example.com');
+        expect(id1).toBe(id2);
+      });
+
+      it('should differ for different URLs', () => {
+        const id1 = computeCmsId('https://cms1.example.com');
+        const id2 = computeCmsId('https://cms2.example.com');
+        expect(id1).not.toBe(id2);
+      });
+
+      it('should handle invalid URL gracefully', () => {
+        const id = computeCmsId('not-a-url');
+        expect(id).toMatch(/^unknown-[0-9a-f]{12}$/);
+      });
+    });
+
+    describe('activeCmsId', () => {
+      it('should return null when no CMS configured', () => {
+        config = new Config();
+        expect(config.activeCmsId).toBeNull();
+      });
+
+      it('should return CMS ID when configured', () => {
+        seedConfig(mockLocalStorage, {
+          cmsUrl: 'https://test.cms.com',
+          cmsKey: 'key',
+          displayName: 'Test',
+          hardwareKey: 'pwa-existinghardwarekey1234567',
+          xmrChannel: '12345678-1234-4567-8901-234567890abc',
+        });
+
+        config = new Config();
+        expect(config.activeCmsId).toBe(computeCmsId('https://test.cms.com'));
+      });
+    });
+
+    describe('switchCms()', () => {
+      it('should switch to a new CMS and preserve hardwareKey', () => {
+        seedConfig(mockLocalStorage, {
+          cmsUrl: 'https://cms1.com',
+          cmsKey: 'key1',
+          displayName: 'Display on CMS1',
+          hardwareKey: 'pwa-existinghardwarekey1234567',
+          xmrChannel: '12345678-1234-4567-8901-234567890abc',
+        });
+
+        config = new Config();
+        const hwKey = config.hardwareKey;
+
+        const result = config.switchCms('https://cms2.com');
+
+        expect(result.isNew).toBe(true);
+        expect(result.cmsId).toBe(computeCmsId('https://cms2.com'));
+        expect(config.hardwareKey).toBe(hwKey); // Same device identity
+        expect(config.cmsUrl).toBe('https://cms2.com');
+        expect(config.cmsKey).toBe(''); // New CMS, no key yet
+      });
+
+      it('should switch back to a previously known CMS', () => {
+        seedConfig(mockLocalStorage, {
+          cmsUrl: 'https://cms1.com',
+          cmsKey: 'key1',
+          displayName: 'Display on CMS1',
+          hardwareKey: 'pwa-existinghardwarekey1234567',
+          xmrChannel: '12345678-1234-4567-8901-234567890abc',
+        });
+
+        config = new Config();
+
+        // Switch to CMS2
+        config.switchCms('https://cms2.com');
+        config.cmsKey = 'key2';
+        config.displayName = 'Display on CMS2';
+
+        // Switch back to CMS1
+        const result = config.switchCms('https://cms1.com');
+
+        expect(result.isNew).toBe(false);
+        expect(config.cmsKey).toBe('key1');
+        expect(config.displayName).toBe('Display on CMS1');
+      });
+    });
+
+    describe('listCmsProfiles()', () => {
+      it('should list all CMS profiles', () => {
+        seedConfig(mockLocalStorage, {
+          cmsUrl: 'https://cms1.com',
+          cmsKey: 'key1',
+          displayName: 'Display 1',
+          hardwareKey: 'pwa-existinghardwarekey1234567',
+          xmrChannel: '12345678-1234-4567-8901-234567890abc',
+        });
+
+        config = new Config();
+        config.switchCms('https://cms2.com');
+        config.displayName = 'Display 2';
+        config.save();
+
+        const profiles = config.listCmsProfiles();
+
+        expect(profiles.length).toBe(2);
+        expect(profiles.find(p => p.cmsUrl === 'https://cms1.com')).toBeTruthy();
+        expect(profiles.find(p => p.cmsUrl === 'https://cms2.com')).toBeTruthy();
+        // Only one should be active
+        expect(profiles.filter(p => p.isActive).length).toBe(1);
+      });
+    });
+
+    describe('Split storage save/load', () => {
+      it('should write split keys on save', () => {
+        config = new Config();
+        config.data.cmsUrl = 'https://test.com';
+        config.data.cmsKey = 'k';
+        config.save();
+
+        // Global key should exist
+        expect(mockLocalStorage.getItem('xibo_global')).toBeTruthy();
+        // CMS key should exist
+        const cmsId = computeCmsId('https://test.com');
+        expect(mockLocalStorage.getItem(`xibo_cms:${cmsId}`)).toBeTruthy();
+
+        // Global should have hardwareKey, not cmsUrl
+        const global = JSON.parse(mockLocalStorage.getItem('xibo_global'));
+        expect(global.hardwareKey).toBeTruthy();
+        expect(global.cmsUrl).toBeUndefined();
+
+        // CMS should have cmsUrl, not hardwareKey
+        const cms = JSON.parse(mockLocalStorage.getItem(`xibo_cms:${cmsId}`));
+        expect(cms.cmsUrl).toBe('https://test.com');
+        expect(cms.hardwareKey).toBeUndefined();
+      });
+
+      it('should reload from split storage correctly', () => {
+        // Write config
+        config = new Config();
+        config.data.cmsUrl = 'https://reload.com';
+        config.data.cmsKey = 'reload-key';
+        config.data.displayName = 'Reload Test';
+        config.save();
+
+        // Reload
+        const config2 = new Config();
+        expect(config2.cmsUrl).toBe('https://reload.com');
+        expect(config2.cmsKey).toBe('reload-key');
+        expect(config2.displayName).toBe('Reload Test');
+        expect(config2.hardwareKey).toBe(config.hardwareKey);
+      });
     });
   });
 });

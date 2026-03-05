@@ -1,14 +1,69 @@
 /**
  * Configuration management with priority: env vars → localStorage → defaults
  *
+ * Storage layout (per-CMS namespacing):
+ *   xibo_global       — device identity: hardwareKey, xmrPubKey, xmrPrivKey
+ *   xibo_cms:{cmsId}  — CMS-scoped: cmsUrl, cmsKey, displayName, xmrChannel, ...
+ *   xibo_active_cms   — string cmsId of the currently active CMS
+ *   xibo_config       — legacy flat key (written for rollback compatibility)
+ *
  * In Node.js (tests, CLI): environment variables are the only source.
  * In browser (PWA player): localStorage is primary, env vars override if set.
  */
 import { generateRsaKeyPair, isValidPemKey } from '@xiboplayer/crypto';
 
-const STORAGE_KEY = 'xibo_config';
+const GLOBAL_KEY = 'xibo_global';         // Device identity (all CMSes)
+const CMS_PREFIX = 'xibo_cms:';           // Per-CMS config prefix
+const ACTIVE_CMS_KEY = 'xibo_active_cms'; // Active CMS ID
 const HW_DB_NAME = 'xibo-hw-backup';
 const HW_DB_VERSION = 1;
+
+// Keys that belong to device identity (global, not CMS-scoped)
+const GLOBAL_KEYS = new Set(['hardwareKey', 'xmrPubKey', 'xmrPrivKey']);
+
+/**
+ * FNV-1a hash producing a 12-character hex string.
+ * Deterministic: same input always produces same output.
+ * @param {string} str - Input string to hash
+ * @returns {string} 12-character lowercase hex string
+ */
+export function fnvHash(str) {
+  let hash = 2166136261; // FNV offset basis
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  hash = hash >>> 0;
+
+  // Extend to 12 chars with a second round using a different seed
+  let hash2 = hash + 1234567;
+  for (let i = 0; i < str.length; i++) {
+    hash2 ^= str.charCodeAt(i) + 1;
+    hash2 += (hash2 << 1) + (hash2 << 4) + (hash2 << 7) + (hash2 << 8) + (hash2 << 24);
+  }
+  hash2 = hash2 >>> 0;
+
+  return (hash.toString(16).padStart(8, '0') + hash2.toString(16).padStart(8, '0')).substring(0, 12);
+}
+
+/**
+ * Compute a deterministic CMS ID from a CMS URL.
+ * Format: {hostname}-{fnvHash12}
+ *
+ * @param {string} cmsUrl - Full CMS URL (e.g. "https://displays.superpantalles.com")
+ * @returns {string} CMS ID (e.g. "displays.superpantalles.com-a1b2c3d4e5f6")
+ */
+export function computeCmsId(cmsUrl) {
+  if (!cmsUrl) return null;
+  try {
+    const url = new URL(cmsUrl);
+    const origin = url.origin;
+    return `${url.hostname}-${fnvHash(origin)}`;
+  } catch (e) {
+    // Invalid URL — hash the raw string
+    return `unknown-${fnvHash(cmsUrl)}`;
+  }
+}
 
 /**
  * Check for environment variable config (highest priority).
@@ -35,6 +90,7 @@ function loadFromEnv() {
 
 export class Config {
   constructor() {
+    this._activeCmsId = null;
     this.data = this.load();
     // Async: try to restore hardware key from IndexedDB if localStorage lost it
     // (only when not running from env vars)
@@ -56,19 +112,63 @@ export class Config {
       return { cmsUrl: '', cmsKey: '', displayName: '', hardwareKey: '', xmrChannel: '' };
     }
 
-    // Try to load from localStorage
-    const json = localStorage.getItem(STORAGE_KEY);
-    let config = {};
+    // Load from split storage (or fresh install)
+    const globalJson = localStorage.getItem(GLOBAL_KEY);
 
-    if (json) {
+    if (globalJson) {
+      return this._loadSplit();
+    }
+
+    // Fresh install — no config at all
+    return this._loadFresh();
+  }
+
+  /**
+   * Load from split storage (new format).
+   * Merges xibo_global + xibo_cms:{activeCmsId} into a single data object.
+   */
+  _loadSplit() {
+    let global = {};
+    try {
+      global = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
+    } catch (e) {
+      console.error('[Config] Failed to parse xibo_global:', e);
+    }
+
+    // Determine active CMS
+    const activeCmsId = localStorage.getItem(ACTIVE_CMS_KEY) || null;
+    this._activeCmsId = activeCmsId;
+
+    let cmsConfig = {};
+    if (activeCmsId) {
       try {
-        config = JSON.parse(json);
+        const cmsJson = localStorage.getItem(CMS_PREFIX + activeCmsId);
+        if (cmsJson) cmsConfig = JSON.parse(cmsJson);
       } catch (e) {
-        console.error('[Config] Failed to parse localStorage config:', e);
+        console.error('[Config] Failed to parse CMS config:', e);
       }
     }
 
-    // ── Single validation gate (same path for fresh + pre-seeded) ──
+    // Merge global + CMS-scoped
+    const config = { ...global, ...cmsConfig };
+
+    // Validate and generate missing keys
+    return this._validateConfig(config);
+  }
+
+  /**
+   * Fresh install — no existing config.
+   */
+  _loadFresh() {
+    const config = {};
+    return this._validateConfig(config);
+  }
+
+  /**
+   * Validate config, generate missing hardwareKey/xmrChannel.
+   * Shared by all load paths.
+   */
+  _validateConfig(config) {
     let changed = false;
 
     if (!config.hardwareKey || config.hardwareKey.length < 10) {
@@ -91,11 +191,154 @@ export class Config {
     config.cmsKey = config.cmsKey || '';
     config.displayName = config.displayName || '';
 
-    if (changed) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    if (changed && typeof localStorage !== 'undefined') {
+      // Save via split storage
+      this._saveSplit(config);
     }
 
     return config;
+  }
+
+  save() {
+    if (typeof localStorage === 'undefined') return;
+    this._saveSplit(this.data);
+  }
+
+  /**
+   * Write data to split storage: xibo_global + xibo_cms:{id} + legacy xibo_config.
+   */
+  _saveSplit(data) {
+    if (typeof localStorage === 'undefined') return;
+
+    // Split into global and CMS-scoped
+    const global = {};
+    const cmsScoped = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (GLOBAL_KEYS.has(key)) {
+        global[key] = value;
+      } else {
+        cmsScoped[key] = value;
+      }
+    }
+
+    localStorage.setItem(GLOBAL_KEY, JSON.stringify(global));
+
+    // Compute CMS ID (may update if cmsUrl changed)
+    const cmsId = computeCmsId(data.cmsUrl);
+    if (cmsId) {
+      localStorage.setItem(CMS_PREFIX + cmsId, JSON.stringify(cmsScoped));
+      localStorage.setItem(ACTIVE_CMS_KEY, cmsId);
+      this._activeCmsId = cmsId;
+    }
+  }
+
+  /**
+   * Switch to a different CMS. Saves the current CMS profile,
+   * loads (or creates) the target CMS profile.
+   *
+   * @param {string} cmsUrl - New CMS URL to switch to
+   * @returns {{ cmsId: string, isNew: boolean }} The new CMS ID and whether it was newly created
+   */
+  switchCms(cmsUrl) {
+    if (typeof localStorage === 'undefined') {
+      throw new Error('switchCms requires localStorage (browser only)');
+    }
+
+    // Save current state
+    this.save();
+
+    const newCmsId = computeCmsId(cmsUrl);
+    if (!newCmsId) throw new Error('Invalid CMS URL');
+
+    // Try to load existing CMS profile
+    const existingJson = localStorage.getItem(CMS_PREFIX + newCmsId);
+    let cmsConfig = {};
+    let isNew = true;
+
+    if (existingJson) {
+      try {
+        cmsConfig = JSON.parse(existingJson);
+        isNew = false;
+        console.log(`[Config] Switching to existing CMS profile: ${newCmsId}`);
+      } catch (e) {
+        console.error('[Config] Failed to parse target CMS config:', e);
+      }
+    } else {
+      console.log(`[Config] Creating new CMS profile: ${newCmsId}`);
+      cmsConfig = {
+        cmsUrl,
+        cmsKey: '',
+        displayName: '',
+        xmrChannel: this.generateXmrChannel(),
+      };
+      localStorage.setItem(CMS_PREFIX + newCmsId, JSON.stringify(cmsConfig));
+    }
+
+    // Update active CMS
+    localStorage.setItem(ACTIVE_CMS_KEY, newCmsId);
+    this._activeCmsId = newCmsId;
+
+    // Merge global + new CMS config into data
+    let global = {};
+    try {
+      global = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
+    } catch (_) {}
+
+    this.data = { ...global, ...cmsConfig };
+
+    // Ensure cmsUrl is set (in case the profile was pre-existing without it)
+    if (!this.data.cmsUrl) {
+      this.data.cmsUrl = cmsUrl;
+    }
+
+    return { cmsId: newCmsId, isNew };
+  }
+
+  /**
+   * List all CMS profiles stored in localStorage.
+   * @returns {Array<{ cmsId: string, cmsUrl: string, displayName: string, isActive: boolean }>}
+   */
+  listCmsProfiles() {
+    if (typeof localStorage === 'undefined') return [];
+
+    const profiles = [];
+    const activeCmsId = localStorage.getItem(ACTIVE_CMS_KEY) || null;
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key.startsWith(CMS_PREFIX)) continue;
+
+      const cmsId = key.slice(CMS_PREFIX.length);
+      try {
+        const data = JSON.parse(localStorage.getItem(key));
+        profiles.push({
+          cmsId,
+          cmsUrl: data.cmsUrl || '',
+          displayName: data.displayName || '',
+          isActive: cmsId === activeCmsId,
+        });
+      } catch (_) {}
+    }
+
+    return profiles;
+  }
+
+  /**
+   * Get the active CMS ID (deterministic hash of the CMS URL origin).
+   * Returns null if no CMS is configured.
+   * @returns {string|null}
+   */
+  get activeCmsId() {
+    // Return cached value if available
+    if (this._activeCmsId) return this._activeCmsId;
+    // Compute from current cmsUrl
+    const id = computeCmsId(this.data?.cmsUrl);
+    this._activeCmsId = id;
+    return id;
+  }
+
+  isConfigured() {
+    return !!(this.data.cmsUrl && this.data.cmsKey && this.data.displayName);
   }
 
   /**
@@ -177,16 +420,6 @@ export class Config {
     } catch (e) {
       // IndexedDB not available — that's fine
     }
-  }
-
-  save() {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
-    }
-  }
-
-  isConfigured() {
-    return !!(this.data.cmsUrl && this.data.cmsKey && this.data.displayName);
   }
 
   generateStableHardwareKey() {
