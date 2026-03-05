@@ -18,7 +18,8 @@
   "dependencies": {
     "@xiboplayer/utils": "workspace:*",
     "express": "^5.2.1",
-    "cors": "^2.8.6"
+    "cors": "^2.8.6",
+    "ws": "^8.0.0"
   },
   "devDependencies": {
     "vitest": "^2.0.0"
