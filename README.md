@@ -52,8 +52,14 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Configurable client identity** — clientType/clientVersion/clientCode in RegisterDisplay
 - **Fault reporting agent** — independent 60s fault submission cycle for faster CMS alerts
 - **Layout blacklisting** — tracks consecutive render failures, auto-blacklists after 3 failures, reports to CMS via BlackList XMDS
+- **Canvas regions** — full canvas region support alongside standard regions
+- **Protocol auto-detection** — probes REST API at startup, auto-selects REST or SOAP transport
+- **Persistent layout durations** — durations cached in IndexedDB for correct timeline on restart
+- **XIC event handlers** — renderer fires XIC interactive control events for widget interactions
+- **Download resume** — incomplete chunked downloads resume from last successful chunk
+- **Missing media overlay** — timeline highlights layouts with uncached media in red
 - **CMS REST API client** — 77 methods covering layouts, campaigns, schedules, commands, displays, playlists, datasets, notifications, folders, tags, and display group actions
-- **1263 tests** across 31 test suites
+- **1345 tests** across 35 test suites
 
 ## Packages
 
@@ -147,7 +153,7 @@ Layout features: proportional scaling with ResizeObserver, overlay support (z-in
 
 | Player | Platform | Install |
 |--------|----------|---------|
-| [xiboplayer-pwa](https://github.com/xibo-players/xiboplayer-pwa) | Any browser | Hosted on your CMS |
+| [xiboplayer-pwa](packages/pwa) | Any browser | Hosted on your CMS |
 | [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) | Fedora / Ubuntu | `dnf install xiboplayer-electron` |
 | [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Fedora / Ubuntu | `dnf install xiboplayer-chromium` |
 | [xibo-kiosk](https://github.com/xibo-players/xibo-kiosk) | Fedora / Ubuntu | `dnf install xibo-kiosk` |
@@ -170,7 +176,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1263 tests across 31 suites)
+pnpm test              # run all tests (1345 tests across 35 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```

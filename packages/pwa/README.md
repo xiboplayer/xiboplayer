@@ -1,6 +1,6 @@
 # Xibo Player PWA
 
-Lightweight PWA Xibo digital signage player built on the [`@xiboplayer` SDK](https://github.com/xibo-players/xiboplayer).
+Lightweight PWA Xibo digital signage player built on the [`@xiboplayer` SDK](https://github.com/xibo-players/xiboplayer). Part of the SDK monorepo at `packages/pwa/`.
 
 ## CMS Communication
 

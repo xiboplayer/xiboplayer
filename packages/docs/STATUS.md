@@ -1,14 +1,39 @@
-# PWA Player Status - v0.6.0
+# PWA Player Status - v0.6.3
 
 ## Current Status: PRODUCTION READY
 
 **Feature Parity:** ~98% vs upstream Xibo players
-**Last Updated:** 2026-03-01
+**Last Updated:** 2026-03-05
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
 
-## What's New in v0.6.0
+## What's New in v0.6.3
 
-### Full REST API Support
+### Canvas Regions
+- Full canvas region support — layouts with canvas-type regions render correctly alongside standard regions
+
+### Protocol Auto-Detection
+- Player probes `/api/v2/player/auth` at startup and auto-selects REST or SOAP transport
+- Zero configuration — works with any CMS version
+
+### Persistent Layout Durations (IndexedDB)
+- Layout durations cached in IndexedDB — on restart, the timeline and queue use correct durations immediately instead of 60s defaults
+- Three-phase correction: XLF parse → video metadata probe → renderer DURATION comments
+
+### XIC Interactive Control Handlers
+- Renderer fires XIC events for widget interactions — enables interactive digital signage workflows
+
+### Missing Media Timeline Overlay
+- Timeline overlay highlights layouts with missing/uncached media in red
+- Helps diagnose content delivery issues at a glance
+
+### Download Resume
+- Incomplete chunked downloads resume from last successful chunk instead of re-downloading entirely
+
+### Sub-Playlist & Drawer Fixes
+- Sub-playlist playCount enforcement — widgets respect their configured play count per cycle
+- Drawer navigation via triggerCode and multi-widget re-hide works correctly
+
+### Full REST API Support (v0.6.0)
 First Xibo player to implement the complete CMS REST API (`/api/v2/player/*`). See [REST.md](REST.md) for full documentation.
 
 - **Auto-detection** — player probes `/api/v2/player/auth` and falls back to SOAP
@@ -16,11 +41,6 @@ First Xibo player to implement the complete CMS REST API (`/api/v2/player/*`). S
 - **ETag 304 caching** — unchanged schedule/media responses return 0 bytes
 - **Dependency pipeline** — widget assets (JS, CSS, fonts, images) downloaded via dedicated endpoints
 - **No SOAP dependency** — works on CMS deployments without PHP ext-soap
-
-### PDF Memory Leak Fix
-- Removed bogus `pdf.cleanup()` call (PDFDocumentProxy has no cleanup method)
-- Active render tasks cancelled on widget teardown
-- Single reusable canvas with proper GPU memory release
 
 ## What Works
 
@@ -142,8 +162,8 @@ All 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already
 ## Test Suite
 
 ```
-Tests:  1295 passed | 7 skipped (1302 total)
-Files:  33 test files (all passed)
+Tests:  1345 passed | 5 skipped (1350 total)
+Files:  35 test files (all passed)
 Time:   ~12s
 ```
 
@@ -162,10 +182,10 @@ Time:   ~12s
 
 | Category | Lines | Files |
 |----------|-------|-------|
-| Core packages (src) | ~19,500 | 69 source files |
+| Core packages (src) | ~22,200 | 67 source files |
 | Platform (PWA) | ~2,400 | TypeScript |
-| Tests | ~19,500 | 38 test files |
-| **Total** | **~41,000** | **~107 files** |
+| Tests | ~23,500 | 51 test files |
+| **Total** | **~48,000** | **~118 files** |
 
 ## Build and Test
 

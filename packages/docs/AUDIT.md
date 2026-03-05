@@ -134,7 +134,7 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 | Renderer | Browser DOM | GTK4/WebView | Different approach |
 | Offline mode | ✅ (IndexedDB) | ✅ (SQLite) | Both robust |
 | Package system | npm monorepo | Single binary | Different trade-offs |
-| Test coverage | 1263 tests | ~200 tests | SDK more tested |
+| Test coverage | 1345 tests | ~200 tests | SDK more tested |
 
 ## Prioritized Gap List — Resolution Status
 
