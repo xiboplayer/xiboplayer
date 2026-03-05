@@ -102,7 +102,7 @@ Renderer process: XLR library (shared npm module)
 | **HLS** | ✅ (native browser) | ✅ (Edge WebView2) | ❌ | ✅ |
 | **Sub-playlists** | ✅ (cycle + playCount) | ✅ (cycle playback) | ❌ | ✅ |
 | **Data connectors** | ✅ (polling + IC) | ✅ (DataAgent) | ❌ | ✅ |
-| **Multi-display sync** | ✅ (BroadcastChannel) | ❌ | ❌ | ❌ |
+| **Multi-display sync** | ✅ (BC + WebSocket LAN) | ❌ | ❌ | ❌ |
 | **Offline mode** | ✅ (SW + IndexedDB) | ✅ (filesystem) | ✅ (filesystem) | ✅ (filesystem) |
 | **Layout pre-loading** | ✅ (LayoutPool hot/warm) | ❌ | ❌ | ✅ (XLR) |
 | **Blacklist/fault** | ✅ (3-strike) | ✅ (unsafe items) | ❌ | ❌ |
@@ -131,9 +131,9 @@ Upstream players all use SOAP/XML. Our REST API provides:
 
 Only our player and XLR have this. The .NET and C++ players tear down and rebuild the DOM/widget tree on every layout switch. Our LayoutPool keeps 2 layouts ready (hot + warm) for instant transitions.
 
-### 3c. Multi-Display Sync (BroadcastChannel)
+### 3c. Cross-Device Video Walls (BroadcastChannel + WebSocket)
 
-No upstream player has this. Our SyncManager coordinates layout transitions across multiple displays via BroadcastChannel with a lead/follower protocol.
+No upstream player has this. Our SyncManager coordinates layout transitions across multiple displays with a lead/follower protocol. Two transport layers: BroadcastChannel for same-machine sync (multi-tab), and a WebSocket relay on the lead's proxy server for cross-device LAN sync. Auto-reconnect, stats delegation, and synchronized video start across all screens.
 
 ### 3d. Advanced Schedule Features
 
@@ -179,9 +179,9 @@ pre-flattens sub-playlists so the player receives a simple ordered widget list.
 
 ### 4d. Shell Commands / Native Commands
 
-The .NET and C++ players can execute shell commands from widgets (type `shellcommand`). Our Electron wrapper could support this but currently doesn't expose it.
+~~The .NET and C++ players can execute shell commands from widgets (type `shellcommand`).~~
 
-**Priority**: LOW — security risk, only for controlled environments
+**DONE** (#202): Electron uses IPC (`execute-shell-command`), Chromium uses HTTP endpoint (`POST /shell-command`). Gated by `allowShellCommands: true` in config.json. 30-second timeout per command.
 
 ### 4e. Engagement Tracking
 
@@ -301,7 +301,7 @@ CmsClient interface:
 
 ### Nice to Have
 
-11. **Shell command execution** in Electron (#202)
+11. ~~**Shell command execution**~~ — ✅ Electron IPC + Chromium HTTP (#202)
 12. **Engagement tracking** in StatsCollector (#203)
 13. **Config system documentation** — platform-specific key reference (#204)
 14. **Ad exchange support** (SSP widget type) (#84)

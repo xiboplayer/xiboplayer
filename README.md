@@ -13,53 +13,51 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 
 ## Features
 
-- **Full Xibo protocol support** — XMDS SOAP v3–v7, REST API, and XMR WebSocket
-- **Rich media rendering** — video (MP4/HLS), images (scaleType, align/valign), audio (with overlay visualization), PDF, text/ticker, web pages, clock, calendar, weather, and all CMS widget types
-- **Offline-first** — ContentStore (filesystem via proxy) + IndexedDB storage with automatic fallback to cached schedule when network is unavailable
-- **Parallel chunk downloads** — large files (100MB+) split into 50MB chunks, header+trailer first for instant MP4 playback start
-- **Layout preloading** — 2-layout pool pre-builds upcoming layouts at 75% of current duration for instant zero-gap transitions
-- **Campaign scheduling** — priority-based campaigns, daily/weekly/monthly dayparting with midnight-crossing, geo-fencing, and criteria evaluation
-- **Download window enforcement** — respects CMS-configured download time windows to avoid bandwidth during peak hours
-- **Schedule conflict detection** — identifies and flags overlapping schedule entries
-- **Interrupts / share of voice** — percentage-based interrupt scheduling with even interleaving across the hour
-- **Interleaved default layouts** — cycles through multiple default layouts instead of repeating one
-- **Overlay support** — multiple simultaneous overlay layouts with independent scheduling and priority
-- **Transitions** — fade and fly (8-direction compass) transitions via Web Animations API, including region exit transitions
-- **Interactive actions** — touch/click and keyboard triggers for widget navigation, layout jumps, and command execution
-- **Scheduled commands** — timed command execution from CMS schedule entries
-- **Real-time CMS commands** — collectNow, screenshot, changeLayout, overlayLayout, revertToSchedule, purgeAll, dataUpdate via XMR WebSocket
-- **Proof of play** — per-layout and per-widget duration tracking with individual or aggregated submission
-- **Event-based stats** — widget duration events (widgetAction) and recordEvent for proof of play
-- **Log batching** — aggregated log submission aligned with upstream CMS spec
-- **Multi-display sync** — BroadcastChannel-based lead/follower synchronization for video walls
-- **Timeline prediction** — deterministic future schedule simulation for proactive content preloading
-- **Accurate timeline durations** — probes video metadata and sums sequential widgets per region for correct layout timing, with remaining-duration display for the currently playing layout
-- **Weather criteria** — weather-based schedule evaluation for conditional content display
-- **Geolocation fallback chain** — browser Geolocation API → Google API → IP-based lookup
-- **CMS tag config parsing** — display tag configuration (e.g. geoApiKey|value) from RegisterDisplay
-- **Network resilience** — exponential backoff with jitter, CRC32-based skip optimization, ETag HTTP caching
-- **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving
-- **RSA key pair generation** for XMR display registration via Web Crypto API
-- **Renderer state query** — isPaused() for pause/resume control from shells
-- **Drawer regions** — hidden regions revealed via navigateToWidget, auto-hidden after widget cycle
-- **Sub-playlist cycle playback** — round-robin or random widget selection per group per layout cycle
-- **Widget time-gating** — per-widget fromDt/toDt expiry filtering at region creation
-- **Dynamic duration** — parses NUMITEMS/DURATION HTML comments from GetResource for DataSet tickers and RSS feeds
-- **Region loop control** — `loop=0` keeps single media visible after expiry instead of cycling
-- **Purge file handling** — processes CMS purge directives from RequiredFiles
-- **HTTP 429 retry** — respects Retry-After header (delta-seconds and HTTP-date) for rate-limited CMS responses
-- **Spec-compliant logging** — SubmitLog XML with child elements per upstream format
-- **Configurable client identity** — clientType/clientVersion/clientCode in RegisterDisplay
-- **Fault reporting agent** — independent 60s fault submission cycle for faster CMS alerts
-- **Layout blacklisting** — tracks consecutive render failures, auto-blacklists after 3 failures, reports to CMS via BlackList XMDS
-- **Canvas regions** — full canvas region support alongside standard regions
-- **Protocol auto-detection** — probes REST API at startup, auto-selects REST or SOAP transport
-- **Persistent layout durations** — durations cached in IndexedDB for correct timeline on restart
-- **XIC event handlers** — renderer fires XIC interactive control events for widget interactions
-- **Download resume** — incomplete chunked downloads resume from last successful chunk
-- **Missing media overlay** — timeline highlights layouts with uncached media in red
+### CMS Communication
+- **Dual transport** — XMDS SOAP v3–v7 and REST API v2 with automatic protocol detection
+- **XMR real-time commands** — collectNow, screenshot, changeLayout, overlayLayout, revertToSchedule, purgeAll, dataUpdate via WebSocket with auto-reconnect
+- **Network resilience** — exponential backoff with jitter, CRC32-based skip optimization, ETag HTTP caching, HTTP 429 Retry-After support
 - **CMS REST API client** — 77 methods covering layouts, campaigns, schedules, commands, displays, playlists, datasets, notifications, folders, tags, and display group actions
-- **1345 tests** across 35 test suites
+- **RSA key pair generation** for XMR display registration via Web Crypto API
+
+### Rendering
+- **Rich media** — video (MP4/HLS), images (scaleType, align/valign), audio (with overlay visualization), PDF, text/ticker, web pages, clock, calendar, weather, and all CMS widget types
+- **Layout preloading** — 2-layout pool pre-builds upcoming layouts at 75% of current duration for instant zero-gap transitions
+- **Transitions** — fade and fly (8-direction compass) via Web Animations API, including region exit transitions
+- **Interactive actions** — touch/click and keyboard triggers for widget navigation, layout jumps, and command execution
+- **Canvas regions, drawer regions, sub-playlists** — full support for advanced CMS layout features
+- **Shell commands** — native command execution via Electron IPC and Chromium HTTP endpoint
+
+### Scheduling
+- **Campaign scheduling** — priority-based campaigns, daily/weekly/monthly dayparting with midnight-crossing, geo-fencing, and criteria evaluation
+- **Interrupts / share of voice** — percentage-based interrupt scheduling with even interleaving across the hour
+- **Overlays** — multiple simultaneous overlay layouts with independent scheduling and priority
+- **Timeline prediction** — deterministic future schedule simulation for proactive content preloading
+- **Weather criteria** — weather-based schedule evaluation with geolocation fallback chain (browser API → Google API → IP lookup)
+
+### Downloads & Offline
+- **Offline-first** — ContentStore (filesystem via proxy) + IndexedDB storage with automatic fallback to cached schedule
+- **Parallel chunk downloads** — large files split into 50MB chunks, header+trailer first for instant MP4 playback start
+- **Download resume** — incomplete chunked downloads resume from last successful chunk
+- **Download window enforcement** — respects CMS-configured time windows to avoid bandwidth during peak hours
+
+### Cross-Device Video Walls
+- **Multi-display sync** — lead/follower synchronization with coordinated layout transitions and video start
+- **Same-machine** — BroadcastChannel for multi-tab/multi-window setups
+- **Cross-device** — WebSocket relay on the lead's proxy server for LAN video walls (each screen a separate PC)
+- **Stats delegation** — followers delegate proof-of-play through the lead, avoiding duplicate CMS traffic
+
+### Analytics & Monitoring
+- **Proof of play** — per-layout and per-widget duration tracking with individual or aggregated submission
+- **Event-based stats** — widget interactions and recordEvent for engagement analytics
+- **Fault reporting** — independent 60s cycle for faster CMS alerts, layout blacklisting after 3 consecutive failures
+- **Screenshot capture** — periodic and on-demand via getDisplayMedia + html2canvas fallback
+
+### Infrastructure
+- **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving
+- **Protocol auto-detection** — probes REST API at startup, auto-selects REST or SOAP transport
+- **Persistent layout durations** — cached in IndexedDB for correct timeline on restart
+- **1412 tests** across 36 test suites
 
 ## Packages
 
@@ -76,7 +74,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 | [`@xiboplayer/crypto`](packages/crypto) | [![npm](https://img.shields.io/npm/v/@xiboplayer/crypto?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/crypto) | RSA key generation for XMR registration (Web Crypto API) |
 | [`@xiboplayer/utils`](packages/utils) | [![npm](https://img.shields.io/npm/v/@xiboplayer/utils?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/utils) | EventEmitter, logger, fetchWithRetry, CMS REST API client, config |
 | [`@xiboplayer/sw`](packages/sw) | [![npm](https://img.shields.io/npm/v/@xiboplayer/sw?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/sw) | Service Worker — media caching, range requests, widget HTML serving |
-| [`@xiboplayer/sync`](packages/sync) | [![npm](https://img.shields.io/npm/v/@xiboplayer/sync?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/sync) | Multi-display synchronization — lead/follower, synchronized video start |
+| [`@xiboplayer/sync`](packages/sync) | [![npm](https://img.shields.io/npm/v/@xiboplayer/sync?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/sync) | Cross-device video walls — BroadcastChannel + WebSocket relay, lead/follower sync |
 | [`@xiboplayer/proxy`](packages/proxy) | [![npm](https://img.shields.io/npm/v/@xiboplayer/proxy?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/proxy) | CORS proxy + PWA server — shared by Electron and Chromium shells |
 
 ## Quick start
@@ -114,7 +112,7 @@ npm install @xiboplayer/proxy   # CORS proxy + PWA server for shells
 ├─────────────────────────────────────────────────────────┤
 │ @xiboplayer/proxy  @xiboplayer/utils  @xiboplayer/sync crypto│
 │  CORS proxy · PWA    logger · events   video wall    RSA  │
-│  static server       fetch · config    lead/follow   keys │
+│  sync relay          fetch · config    BC + WebSocket keys │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -176,7 +174,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1345 tests across 35 suites)
+pnpm test              # run all tests (1412 tests across 36 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```

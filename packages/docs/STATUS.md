@@ -162,9 +162,9 @@ All 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already
 ## Test Suite
 
 ```
-Tests:  1345 passed | 5 skipped (1350 total)
-Files:  35 test files (all passed)
-Time:   ~12s
+Tests:  1412 passed | 5 skipped (1417 total)
+Files:  36 test files (all passed)
+Time:   ~10s
 ```
 
 ## Performance
