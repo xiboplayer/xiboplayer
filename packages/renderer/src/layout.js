@@ -303,10 +303,16 @@ window.Transitions = {
     const direction = transitionConfig.direction || 'N';
 
     switch (type) {
+      case 'fade':
+        return isIn ? this.fadeIn(element, duration) : this.fadeOut(element, duration);
       case 'fadein':
         return isIn ? this.fadeIn(element, duration) : null;
       case 'fadeout':
         return isIn ? null : this.fadeOut(element, duration);
+      case 'fly':
+        return isIn
+          ? this.flyIn(element, duration, direction, regionWidth, regionHeight)
+          : this.flyOut(element, duration, direction, regionWidth, regionHeight);
       case 'flyin':
         return isIn ? this.flyIn(element, duration, direction, regionWidth, regionHeight) : null;
       case 'flyout':
