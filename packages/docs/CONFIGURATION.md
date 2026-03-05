@@ -24,6 +24,24 @@ On first run (RPM/DEB install), the system default from `/usr/share/xiboplayer-*
 
 These are set automatically by the PWA setup page on first run.
 
+### Per-CMS Storage
+
+The player supports connecting to multiple CMS servers. Configuration and media caches are stored per-CMS so switching between servers doesn't lose data or require re-registration.
+
+**Storage layout** (in `localStorage`):
+
+| Key                    | Contents                                            |
+|------------------------|-----------------------------------------------------|
+| `xibo_global`          | Device identity: `hardwareKey`, `xmrPubKey`, `xmrPrivKey` |
+| `xibo_cms:{cmsId}`     | CMS-scoped: `cmsUrl`, `cmsKey`, `displayName`, `xmrChannel` |
+| `xibo_active_cms`      | String `cmsId` of the currently active CMS          |
+
+The `cmsId` is a deterministic hash of the CMS URL origin (format: `{hostname}-{fnvHash12}`), e.g. `displays.superpantalles.com-a1b2c3d4e5f6`.
+
+Global keys (`hardwareKey`, RSA keys) identify the physical display and never change — the same device presents the same identity to every CMS. CMS-scoped keys are preserved per server, so switching back restores previous registration.
+
+See [PER_CMS_CACHE.md](PER_CMS_CACHE.md) for the full design rationale and cache directory layout.
+
 ### Server
 
 | Key          | Type   | Default          | Description                          |
@@ -40,6 +58,12 @@ These are set automatically by the PWA setup page on first run.
 | `preventSleep`    | boolean | `true`  | Disable screen blanking and DPMS             |
 | `width`           | number  | `1920`  | Window width (when not fullscreen/kiosk)      |
 | `height`          | number  | `1080`  | Window height (when not fullscreen/kiosk)     |
+
+### Security
+
+| Key              | Type    | Default | Description                                  |
+|------------------|---------|---------|----------------------------------------------|
+| `relaxSslCerts`  | boolean | `true`  | Disable SSL certificate verification for CMS connections. Useful for self-signed certificates. Shell-only — does not reach the PWA. |
 
 ### Logging
 
@@ -64,6 +88,15 @@ You can also set the log level at runtime in the browser DevTools console:
 localStorage.setItem('xibo_log_level', 'DEBUG');
 location.reload();
 ```
+
+#### Debug Object
+
+| Key                       | Type    | Default | Description                                  |
+|---------------------------|---------|---------|----------------------------------------------|
+| `debug.consoleLogs`       | boolean | `false` | Forward browser console output to the proxy server's stdout. Useful for headless debugging. |
+| `debug.consoleLogsInterval` | number | `10`  | Batch flush interval in seconds for forwarded console logs. |
+
+When `debug.consoleLogs` is enabled, the PWA batches `console.*` calls and POSTs them to the proxy at the configured interval. The proxy prints them to stdout, making browser logs visible in shell/journal output.
 
 ### Player Controls & Overlays
 
@@ -97,9 +130,10 @@ The `controls` object has two sub-sections:
 
 ### Transport
 
-| Key           | Type   | Default  | Description                          |
-|---------------|--------|----------|--------------------------------------|
-| `transport`   | string | `"auto"` | CMS transport: `auto`, `rest`, `soap` |
+| Key              | Type   | Default             | Description                          |
+|------------------|--------|---------------------|--------------------------------------|
+| `transport`      | string | `"auto"`            | CMS transport: `auto`, `rest`, `soap` |
+| `playerApiBase`  | string | `"/api/v2/player"`  | Base path for the REST Player API. Override if the CMS uses a custom route prefix. |
 
 ### Geolocation
 
@@ -120,6 +154,49 @@ The `controls` object has two sub-sections:
 |--------------|---------|---------|--------------------------------------|
 | `autoLaunch` | boolean | `false` | Auto-start on login (registers with OS autostart) |
 
+## Platform Support Matrix
+
+Not all keys apply to every platform. Shell-only keys are filtered out by `extractPwaConfig()` and never reach the PWA.
+
+| Key                 | PWA | Electron | Chromium | Notes                    |
+|---------------------|-----|----------|----------|--------------------------|
+| `cmsUrl`            | yes | yes      | yes      |                          |
+| `cmsKey`            | yes | yes      | yes      |                          |
+| `displayName`       | yes | yes      | yes      |                          |
+| `serverPort`        | —   | yes      | yes      | Shell-only               |
+| `kioskMode`         | —   | yes      | yes      | Shell-only               |
+| `fullscreen`        | —   | yes      | yes      | Shell-only               |
+| `hideMouseCursor`   | —   | yes      | yes      | Shell-only               |
+| `preventSleep`      | —   | yes      | yes      | Shell-only               |
+| `width` / `height`  | —   | yes      | yes      | Shell-only               |
+| `relaxSslCerts`     | —   | yes      | yes      | Shell-only               |
+| `logLevel`          | yes | yes      | yes      |                          |
+| `debug`             | yes | yes      | yes      | Passes through to PWA    |
+| `controls`          | yes | yes      | yes      |                          |
+| `transport`         | yes | yes      | yes      |                          |
+| `playerApiBase`     | yes | yes      | yes      |                          |
+| `googleGeoApiKey`   | yes | yes      | yes      |                          |
+| `autoLaunch`        | —   | yes      | —        | Electron-only            |
+| `browser`           | —   | —        | yes      | Chromium-only            |
+| `extraBrowserFlags` | —   | —        | yes      | Chromium-only            |
+
+A runtime warning is logged when a platform-specific key is set in the wrong shell's `config.json` (e.g. `browser` in Electron config). These warnings are informational only and do not prevent startup.
+
+## Environment Variables
+
+Environment variables are the highest-priority config source. They are used in Node.js contexts (tests, CI) and override all other sources.
+
+| Env Variable       | Maps to           | Description                          |
+|--------------------|-------------------|--------------------------------------|
+| `CMS_URL`          | `cmsUrl`          | CMS base URL                         |
+| `CMS_KEY`          | `cmsKey`          | CMS server key                       |
+| `DISPLAY_NAME`     | `displayName`     | Display name                         |
+| `HARDWARE_KEY`     | `hardwareKey`     | Hardware key (for test fixtures)     |
+| `XMR_CHANNEL`      | `xmrChannel`      | XMR channel UUID                     |
+| `GOOGLE_GEO_API_KEY` | `googleGeoApiKey` | Google Geolocation API key         |
+
+In the browser (PWA), `localStorage` is the primary source; env vars are not available.
+
 ## Example: Debugging Config
 
 ```json
@@ -132,6 +209,10 @@ The `controls` object has two sub-sections:
   "fullscreen": false,
   "hideMouseCursor": false,
   "logLevel": "DEBUG",
+
+  "debug": {
+    "consoleLogs": true
+  },
 
   "controls": {
     "keyboard": {

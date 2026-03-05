@@ -582,6 +582,37 @@ export const config = new Config();
  * Electron extras:  autoLaunch
  * Chromium extras:  browser, extraBrowserFlags
  */
+/**
+ * Keys that are specific to a particular shell platform.
+ * Used by warnPlatformMismatch() to detect config.json mistakes.
+ */
+const PLATFORM_KEYS = {
+  kioskMode:        ['electron', 'chromium'],
+  autoLaunch:       ['electron'],
+  browser:          ['chromium'],
+  extraBrowserFlags: ['chromium'],
+};
+
+/**
+ * Log warnings for config keys that don't belong to the current platform.
+ * Informational only — does not prevent startup.
+ *
+ * @param {Object} configObj - The full config.json object
+ * @param {string} platform - Current platform: 'electron' or 'chromium'
+ */
+export function warnPlatformMismatch(configObj, platform) {
+  if (!configObj || !platform) return;
+  const p = platform.toLowerCase();
+  for (const [key, platforms] of Object.entries(PLATFORM_KEYS)) {
+    if (key in configObj && !platforms.includes(p)) {
+      console.warn(
+        `[Config] Key "${key}" is only supported on ${platforms.join('/')}, ` +
+        `but current platform is ${p} — this key will be ignored`
+      );
+    }
+  }
+}
+
 export const SHELL_ONLY_KEYS = new Set([
   'serverPort',
   'kioskMode',

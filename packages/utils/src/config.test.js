@@ -25,7 +25,7 @@ vi.mock('@xiboplayer/crypto', () => {
   };
 });
 
-import { Config, computeCmsId, fnvHash } from './config.js';
+import { Config, computeCmsId, fnvHash, warnPlatformMismatch } from './config.js';
 
 /**
  * Seed split localStorage with a full config (global + CMS-scoped).
@@ -609,6 +609,53 @@ describe('Config', () => {
       await config.ensureXmrKeyPair();
 
       expect(config.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+    });
+  });
+
+  describe('warnPlatformMismatch()', () => {
+    let warnSpy;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('should warn when Chromium-only key is used in Electron', () => {
+      warnPlatformMismatch({ browser: 'chrome', cmsUrl: 'https://test.com' }, 'electron');
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('browser');
+      expect(warnSpy.mock.calls[0][0]).toContain('chromium');
+    });
+
+    it('should warn when Electron-only key is used in Chromium', () => {
+      warnPlatformMismatch({ autoLaunch: true }, 'chromium');
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('autoLaunch');
+      expect(warnSpy.mock.calls[0][0]).toContain('electron');
+    });
+
+    it('should not warn for shared keys', () => {
+      warnPlatformMismatch({ kioskMode: true, cmsUrl: 'https://test.com' }, 'electron');
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not warn when config or platform is missing', () => {
+      warnPlatformMismatch(null, 'electron');
+      warnPlatformMismatch({ browser: 'chrome' }, '');
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('should warn for multiple mismatched keys', () => {
+      warnPlatformMismatch({ browser: 'chrome', extraBrowserFlags: '--flag' }, 'electron');
+
+      expect(warnSpy).toHaveBeenCalledTimes(2);
     });
   });
 

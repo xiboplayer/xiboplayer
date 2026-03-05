@@ -31,11 +31,11 @@ RSA keys (`xmrPubKey`, `xmrPrivKey`) are tied to the `hardwareKey` and used for 
 | `googleGeoApiKey` | localStorage | **No** | API key is display-level, not CMS-specific |
 | Media cache | Filesystem | **Yes** | Media IDs are CMS-scoped, collide across servers |
 
-## Proposed Solution
+## Implementation
 
 ### 1. Per-CMS Media Cache
 
-Namespace the cache directory by a CMS origin identifier derived from the CMS URL.
+The cache directory is namespaced by a CMS origin identifier derived from the CMS URL.
 
 #### Directory Structure
 
@@ -51,45 +51,24 @@ Where `{cms-id}` is `{hostname}-{sha256-first-12}`, e.g.:
 
 The human-readable hostname prefix makes it easy to identify directories when debugging. The hash suffix ensures uniqueness even if two CMS instances share a hostname on different ports.
 
-#### Key Change Point
-
-In `proxy.js` (line ~257), the store is currently created as:
-
-```js
-new ContentStore(path.join(dataDir, 'media'))
-```
-
-This becomes:
-
-```js
-const cmsId = computeCmsId(cmsConfig.cmsUrl);
-new ContentStore(path.join(dataDir, 'cache', cmsId, 'media'))
-```
-
 ### 2. Per-CMS Config
 
-Change `localStorage` from a single `xibo_config` key to a namespaced structure:
+`localStorage` uses a namespaced structure:
 
 ```
-Current:   localStorage['xibo_config'] = { cmsUrl, cmsKey, displayName, hardwareKey, ... }
-
-Proposed:  localStorage['xibo_global']  = { hardwareKey, xmrPubKey, xmrPrivKey, googleGeoApiKey }
-           localStorage['xibo_cms:{cms-id}'] = { cmsUrl, cmsKey, displayName, xmrChannel }
-           localStorage['xibo_active_cms'] = '{cms-id}'
+localStorage['xibo_global']          = { hardwareKey, xmrPubKey, xmrPrivKey }
+localStorage['xibo_cms:{cms-id}']    = { cmsUrl, cmsKey, displayName, xmrChannel }
+localStorage['xibo_active_cms']      = '{cms-id}'
 ```
 
-#### Config class changes
+The `Config` class (`packages/utils/src/config.js`):
 
-The `Config` class (`packages/utils/src/config.js`) needs to:
+1. `load()` reads global keys from `xibo_global` and CMS-specific keys from `xibo_cms:{active-cms-id}`
+2. `save()` writes to the appropriate key based on the `GLOBAL_KEYS` set
+3. `switchCms(cmsUrl)` saves the current CMS profile, loads (or creates) the target CMS profile, and updates `xibo_active_cms`
+4. `listCmsProfiles()` returns all known CMS configs
 
-1. Split `load()` to read global keys from `xibo_global` and CMS-specific keys from `xibo_cms:{active-cms-id}`
-2. Split `save()` to write to the appropriate key based on which property changed
-3. Add `switchCms(cmsUrl)` method that:
-   - Saves current CMS-specific config
-   - Computes `cms-id` for the new CMS URL
-   - Loads existing config for that CMS (if previously registered) or starts fresh
-   - Updates `xibo_active_cms`
-4. Add `listCmsProfiles()` method that returns all known CMS configs
+See [CONFIGURATION.md](CONFIGURATION.md) for the full key reference and platform support matrix.
 
 ## Files Affected
 
