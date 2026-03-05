@@ -1853,10 +1853,17 @@ export class RendererLite {
         const idx = Math.floor(Math.random() * groupWidgets.length);
         selectedWidget = groupWidgets[idx];
       } else {
-        // Round-robin based on cycle index
-        const cycleIdx = this._subPlaylistCycleIndex.get(groupId) || 0;
-        selectedWidget = groupWidgets[cycleIdx % groupWidgets.length];
-        this._subPlaylistCycleIndex.set(groupId, cycleIdx + 1);
+        // Round-robin based on cycle index, respecting playCount
+        const state = this._subPlaylistCycleIndex.get(groupId) || { widgetIdx: 0, playsDone: 0 };
+        selectedWidget = groupWidgets[state.widgetIdx % groupWidgets.length];
+        const effectivePlayCount = selectedWidget.playCount || 1;
+
+        state.playsDone++;
+        if (state.playsDone >= effectivePlayCount) {
+          state.widgetIdx++;
+          state.playsDone = 0;
+        }
+        this._subPlaylistCycleIndex.set(groupId, state);
       }
 
       this.log.info(`Sub-playlist cycle: group ${groupId} selected widget ${selectedWidget.id} (${groupWidgets.length} in group)`);

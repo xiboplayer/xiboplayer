@@ -2118,6 +2118,65 @@ describe('RendererLite', () => {
       expect(ids.some(id => id.startsWith('a'))).toBe(true);
       expect(ids.some(id => id.startsWith('b'))).toBe(true);
     });
+
+    it('should repeat widget playCount times before advancing (#188)', () => {
+      const widgets = [
+        { id: 'm1', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 1, cyclePlayback: true, playCount: 2, isRandom: false },
+        { id: 'm2', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 2, cyclePlayback: true, playCount: 2, isRandom: false },
+      ];
+
+      renderer._subPlaylistCycleIndex = new Map();
+
+      const r1 = renderer._applyCyclePlayback(widgets);
+      const r2 = renderer._applyCyclePlayback(widgets);
+      const r3 = renderer._applyCyclePlayback(widgets);
+      const r4 = renderer._applyCyclePlayback(widgets);
+
+      // m1 plays twice, then m2 plays twice
+      expect(r1[0].id).toBe('m1');
+      expect(r2[0].id).toBe('m1');
+      expect(r3[0].id).toBe('m2');
+      expect(r4[0].id).toBe('m2');
+    });
+
+    it('should treat playCount=0 or missing as 1 (#188)', () => {
+      const widgets = [
+        { id: 'm1', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 1, cyclePlayback: true, playCount: 0, isRandom: false },
+        { id: 'm2', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 2, cyclePlayback: true, isRandom: false },
+      ];
+
+      renderer._subPlaylistCycleIndex = new Map();
+
+      const r1 = renderer._applyCyclePlayback(widgets);
+      const r2 = renderer._applyCyclePlayback(widgets);
+
+      // Should advance every cycle (playCount defaults to 1)
+      expect(r1[0].id).toBe('m1');
+      expect(r2[0].id).toBe('m2');
+    });
+
+    it('should repeat playCount=3 times before advancing (#188)', () => {
+      const widgets = [
+        { id: 'm1', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 1, cyclePlayback: true, playCount: 3, isRandom: false },
+        { id: 'm2', type: 'image', duration: 10, parentWidgetId: 'sp1',
+          displayOrder: 2, cyclePlayback: true, playCount: 3, isRandom: false },
+      ];
+
+      renderer._subPlaylistCycleIndex = new Map();
+
+      const results = [];
+      for (let i = 0; i < 6; i++) {
+        results.push(renderer._applyCyclePlayback(widgets)[0].id);
+      }
+
+      // m1 x3, m2 x3
+      expect(results).toEqual(['m1', 'm1', 'm1', 'm2', 'm2', 'm2']);
+    });
   });
 
   // ── Medium-Priority Spec Compliance ────────────────────────────────
