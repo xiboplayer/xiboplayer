@@ -5,7 +5,7 @@
  * with the Player API module deployed.
  *
  * Prerequisites:
- *   - CMS at CMS_URL must have /api/v2/player/* endpoints deployed
+ *   - CMS at CMS_URL must have ${PLAYER_API}/* endpoints deployed
  *   - A display with the given HARDWARE_KEY must exist and be authorized
  *   - The SERVER_KEY must match the CMS setting
  *

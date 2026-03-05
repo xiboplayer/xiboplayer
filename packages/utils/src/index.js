@@ -12,14 +12,14 @@ export { CmsApiClient, CmsApiError } from './cms-api.js';
  * CMS Player API base path — all media, dependencies, and widgets are served
  * under this prefix.
  *
- * Default: '/api/v2/player' (standalone index.php endpoint).
+ * Default: '/player/api/v2' (standalone index.php endpoint).
  * Override: set `playerApiBase` in config.json / localStorage, or call
  *           setPlayerApi('/new/path') before route registration (proxy).
  *
  * Browser: reads from config.data.playerApiBase at import time.
  * Node:    call setPlayerApi() before createProxyApp().
  */
-const DEFAULT_PLAYER_API = '/api/v2/player';
+const DEFAULT_PLAYER_API = '/player/api/v2';
 let _playerApi = _config.data?.playerApiBase || DEFAULT_PLAYER_API;
 
 /** Current Player API base path (no trailing slash). */

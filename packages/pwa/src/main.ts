@@ -19,6 +19,9 @@ declare const __BUILD_DATE__: string;
 
 const log = createLogger('PWA');
 
+// ContentStore key prefix — mirrors PLAYER_API without leading slash
+const STORE_PREFIX = PLAYER_API.slice(1);
+
 // Dynamic base path — same build serves /player/pwa/, /player/pwa-xmds/, /player/pwa-xlr/
 const PLAYER_BASE = new URL('./', window.location.href).pathname.replace(/\/$/, '');
 
@@ -137,7 +140,7 @@ class PwaPlayer {
           log.debug(`Looking for widget HTML at: ${widgetPath}`, widget);
 
           try {
-            const exists = await store.has('api/v2/player/widgets', `${widget.layoutId}/${widget.regionId}/${widget.id}`);
+            const exists = await store.has(`${STORE_PREFIX}/widgets`, `${widget.layoutId}/${widget.regionId}/${widget.id}`);
             if (exists) {
               log.debug(`Widget HTML found in store, using mirror URL for iframe`);
               return { url: widgetPath, fallback: widget.raw || '' };
@@ -977,9 +980,13 @@ class PwaPlayer {
         case 'v':
         case 'V': {
           if (!videoControls) break;
-          const videos = document.querySelectorAll('video');
-          const show = videos.length > 0 && !videos[0].controls;
-          videos.forEach(v => v.controls = show);
+          // Collect videos from parent + all same-origin iframes (widget regions)
+          const allVideos: HTMLVideoElement[] = [...document.querySelectorAll<HTMLVideoElement>('video')];
+          document.querySelectorAll<HTMLIFrameElement>('iframe').forEach(iframe => {
+            try { allVideos.push(...iframe.contentDocument!.querySelectorAll<HTMLVideoElement>('video')); } catch {}
+          });
+          const show = allVideos.length > 0 && !allVideos[0].controls;
+          allVideos.forEach(v => v.controls = show);
           break;
         }
         // Playback control: next/prev/pause
@@ -1639,7 +1646,7 @@ class PwaPlayer {
         log.info(`Preloading next layout ${nextLayoutId}...`);
 
         // Get XLF from cache
-        const xlfBlob = await store.get('api/v2/player/layouts', nextLayoutId);
+        const xlfBlob = await store.get(`${STORE_PREFIX}/layouts`, nextLayoutId);
         if (!xlfBlob) {
           log.debug(`Layout ${nextLayoutId} XLF not cached, skipping preload`);
           return;
@@ -1725,7 +1732,7 @@ class PwaPlayer {
     this.preparingLayoutId = layoutId;
     try {
       // Get XLF from cache
-      const xlfBlob = await store.get('api/v2/player/layouts', layoutId);
+      const xlfBlob = await store.get(`${STORE_PREFIX}/layouts`, layoutId);
       if (!xlfBlob) {
         log.info('Layout not in cache yet, marking as pending:', layoutId);
         // Mark layout as pending so when it downloads, we'll retry
@@ -1837,7 +1844,7 @@ class PwaPlayer {
   private async checkAllMediaCached(mediaSaveAs: string[]): Promise<boolean> {
     for (const saveAs of mediaSaveAs) {
       try {
-        const cached = await store.has('api/v2/player', `media/file/${saveAs}`);
+        const cached = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
         if (!cached) {
           log.debug(`Media ${saveAs} not yet cached`);
           return false;
@@ -1877,7 +1884,7 @@ class PwaPlayer {
                 const storeId = `${layoutId}/${regionId}/${widgetId}`;
                 let html: string | null = null;
 
-                const existing = await store.get('api/v2/player/widgets', storeId);
+                const existing = await store.get(`${STORE_PREFIX}/widgets`, storeId);
                 if (existing) {
                   html = await existing.text();
                   log.debug(`Found cached widget HTML for ${type} ${widgetId}`);
@@ -1891,7 +1898,7 @@ class PwaPlayer {
                 // cacheWidgetHtml is idempotent — already-rewritten URLs won't re-match.
                 await cacheWidgetHtml(layoutId, regionId, widgetId, html);
                 // Read back the processed version from ContentStore
-                const processed = await store.get('api/v2/player/widgets', storeId);
+                const processed = await store.get(`${STORE_PREFIX}/widgets`, storeId);
                 if (processed) html = await processed.text();
 
                 // Update raw content in XLF
@@ -1930,7 +1937,7 @@ class PwaPlayer {
     for (const layoutId of this.scheduledLayoutIds) {
       const layoutFile = `${layoutId}.xlf`;
       try {
-        const xlfBlob = await store.get('api/v2/player/layouts', layoutId);
+        const xlfBlob = await store.get(`${STORE_PREFIX}/layouts`, layoutId);
         if (!xlfBlob) continue;
 
         const xlfXml = await xlfBlob.text();
@@ -1944,7 +1951,7 @@ class PwaPlayer {
         const missing: string[] = [];
         for (const saveAs of allMedia) {
           try {
-            const cached = await store.has('api/v2/player', `media/file/${saveAs}`);
+            const cached = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
             if (!cached) missing.push(saveAs);
           } catch {
             // Assume cached on error (offline mode)
@@ -1972,7 +1979,7 @@ class PwaPlayer {
     for (const layoutId of this.scheduledLayoutIds) {
 
       try {
-        const xlfBlob = await store.get('api/v2/player/layouts', layoutId);
+        const xlfBlob = await store.get(`${STORE_PREFIX}/layouts`, layoutId);
         if (!xlfBlob) continue;
 
         const xlfXml = await xlfBlob.text();
@@ -1993,7 +2000,7 @@ class PwaPlayer {
           if (!fileId) continue;
 
           const saveAs = this._fileIdToSaveAs.get(fileId) || fileId;
-          const exists = await store.has('api/v2/player', `media/file/${saveAs}`);
+          const exists = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
           if (!exists) continue;
 
           // Probe metadata only — does NOT download the full video
