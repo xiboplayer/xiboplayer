@@ -25,6 +25,7 @@
  */
 
 import { createLogger } from '@xiboplayer/utils';
+import { assertCmsClient } from './cms-client.js';
 
 const log = createLogger('Protocol');
 
@@ -78,13 +79,17 @@ export class ProtocolDetector {
     if (forceProtocol === 'rest') {
       this.protocol = 'rest';
       log.info('Using REST transport (forced)');
-      return { client: new this.RestClient(config), protocol: 'rest' };
+      const client = new this.RestClient(config);
+      assertCmsClient(client, 'RestClient');
+      return { client, protocol: 'rest' };
     }
 
     if (forceProtocol === 'xmds') {
       this.protocol = 'xmds';
       log.info('Using XMDS/SOAP transport (forced)');
-      return { client: new this.XmdsClient(config), protocol: 'xmds' };
+      const client = new this.XmdsClient(config);
+      assertCmsClient(client, 'XmdsClient');
+      return { client, protocol: 'xmds' };
     }
 
     // Auto-detect
@@ -99,12 +104,16 @@ export class ProtocolDetector {
     if (isRest) {
       this.protocol = 'rest';
       log.info('REST transport detected — using PlayerApiV2');
-      return { client: new this.RestClient(config), protocol: 'rest' };
+      const client = new this.RestClient(config);
+      assertCmsClient(client, 'RestClient');
+      return { client, protocol: 'rest' };
     }
 
     this.protocol = 'xmds';
     log.info('REST unavailable — using XMDS/SOAP transport');
-    return { client: new this.XmdsClient(config), protocol: 'xmds' };
+    const client = new this.XmdsClient(config);
+    assertCmsClient(client, 'XmdsClient');
+    return { client, protocol: 'xmds' };
   }
 
   /**
@@ -132,6 +141,7 @@ export class ProtocolDetector {
       log.info(`Protocol changed: ${previousProtocol} → ${newProtocol}`);
       this.protocol = newProtocol;
       const client = isRest ? new this.RestClient(config) : new this.XmdsClient(config);
+      assertCmsClient(client, isRest ? 'RestClient' : 'XmdsClient');
       return { client, protocol: newProtocol, changed: true };
     }
 

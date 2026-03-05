@@ -10,6 +10,14 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ProtocolDetector } from './protocol-detector.js';
+import { CMS_CLIENT_METHODS } from './cms-client.js';
+
+// Stub all CmsClient methods on a mock constructor's prototype
+function addCmsClientStubs(MockClass) {
+  for (const method of CMS_CLIENT_METHODS) {
+    MockClass.prototype[method] = vi.fn();
+  }
+}
 
 describe('ProtocolDetector', () => {
   let MockRestClient;
@@ -28,11 +36,13 @@ describe('ProtocolDetector', () => {
       this.type = 'rest';
     });
     MockRestClient.isAvailable = vi.fn();
+    addCmsClientStubs(MockRestClient);
 
     MockXmdsClient = vi.fn(function (cfg) {
       this.config = cfg;
       this.type = 'xmds';
     });
+    addCmsClientStubs(MockXmdsClient);
   });
 
   // ── detect() ─────────────────────────────────────────────────────
