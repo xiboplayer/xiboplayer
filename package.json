@@ -12,10 +12,10 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "vitest": "^2.0.0",
-    "jsdom": "^25.0.0",
-    "fake-indexeddb": "^5.0.2",
-    "@vitest/coverage-v8": "^2.0.0"
+    "@vitest/coverage-v8": "^4.0.18",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^28.1.0",
+    "vitest": "^4.0.18"
   },
   "author": "Pau Aliagas <linuxnow@gmail.com>",
   "license": "AGPL-3.0-or-later",

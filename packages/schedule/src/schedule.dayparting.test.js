@@ -35,13 +35,8 @@ function getDifferentDay() {
 
 // Helper to mock Date at specific time
 function mockTimeAt(targetDate) {
-  const RealDate = Date;
-  vi.spyOn(global, 'Date').mockImplementation((...args) => {
-    if (args.length === 0) {
-      return new RealDate(targetDate);
-    }
-    return new RealDate(...args);
-  });
+  vi.useFakeTimers({ shouldAdvanceTime: false });
+  vi.setSystemTime(new Date(targetDate));
 }
 
 describe('ScheduleManager - Dayparting', () => {
@@ -50,14 +45,10 @@ describe('ScheduleManager - Dayparting', () => {
 
   beforeEach(() => {
     manager = new ScheduleManager();
-    originalDate = global.Date;
   });
 
   afterEach(() => {
-    // Restore Date
-    if (vi.isMockFunction(global.Date)) {
-      global.Date = originalDate;
-    }
+    vi.useRealTimers();
   });
 
   describe('Weekday Schedules', () => {
