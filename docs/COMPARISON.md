@@ -12,7 +12,7 @@
 ### xiboplayer (ours) — Modular SDK
 
 ```
-16 npm packages, ~1345 tests, platform-independent core
+16 npm packages, ~1387 tests, platform-independent core
 
 Platform (PWA / Electron / Chromium)
   ↓ events
@@ -161,8 +161,9 @@ MessageChannel relay to the main thread. The renderer now handles `widgetExpire`
 `widgetExtendDuration`, `widgetSetDuration`, and `interactiveTrigger` events.
 Widget iframes calling `xiboIC.expireNow()` etc. work end-to-end.
 
-**Remaining**: Proxy IC routes for Electron/Chromium (Phase 2), `xiboICTargetId`
-injection, DataConnector `postMessage` notifications.
+**Phase 2 complete** (PR #199): Proxy IC routes for Electron/Chromium,
+`xiboICTargetId` injection in widget HTML, DataConnector `rtNotifyData`
+postMessage notifications to all widget iframes.
 
 ### 4b. Canvas Regions — DONE (v0.6.2)
 
@@ -255,13 +256,12 @@ The `@xiboplayer/proxy` package serves multiple roles:
 
 With PlayerApiV2 now handling media serving directly (with proper CORS headers), the CORS proxy role may be reducible. Evaluate whether the proxy can be slimmed down.
 
-### 5e. Dual REST + SOAP Support in PlayerCore — UNIFY BEHIND INTERFACE
+### 5e. Dual REST + SOAP Support in PlayerCore — DONE (v0.6.3)
 
-`PlayerCore` has logic to handle both REST and SOAP response formats. Rather than
-picking one, create a single `CmsClient` interface with two implementations
-(`RestCmsClient`, `SoapCmsClient`). At startup, auto-detect which to use by
-probing `GET /api/v2/player/health`. This way PlayerCore only talks to one
-interface, and the protocol is transparent.
+Both `RestClient` and `XmdsClient` already implement the same 12-method interface.
+Formalized via `cms-client.js` with JSDoc types, `CMS_CLIENT_METHODS` canonical list,
+and `assertCmsClient()` runtime validator. `ProtocolDetector` validates conformance
+on every `detect()` / `reprobe()` call — catches missing methods at startup (#200).
 
 ```
 CmsClient interface:
@@ -291,16 +291,20 @@ CmsClient interface:
 6. ~~**Drawer navWidget via triggerCode**~~ — ✅ wired navigate-to-widget event (#185)
 7. ~~**Sub-playlist playCount**~~ — ✅ enforced repeat count before advancing (#188)
 
+8. ~~**XIC Phase 2**~~ — ✅ `xiboICTargetId` injection, DataConnector `postMessage`, proxy IC routes (#199)
+
+9. ~~**Unify CmsClient interface**~~ — ✅ formalized with JSDoc types, conformance checks, runtime validation (#200, PR #207)
+
 ### Should Have (next)
 
-8. **XIC Phase 2** — `xiboICTargetId` injection, DataConnector `postMessage`, proxy IC routes for Electron/Chromium
-9. **Unify CmsClient interface** — single interface with REST and SOAP implementations behind it
+10. **Evaluate proxy slimdown** — audit which proxy roles are redundant with PlayerApiV2 CORS (#201)
 
 ### Nice to Have
 
-10. **Ad exchange support** (SSP widget type)
-11. **Shell command execution** in Electron
-12. **Engagement tracking** in StatsCollector
+11. **Shell command execution** in Electron (#202)
+12. **Engagement tracking** in StatsCollector (#203)
+13. **Config system documentation** — platform-specific key reference (#204)
+14. **Ad exchange support** (SSP widget type) (#84)
 
 ---
 
