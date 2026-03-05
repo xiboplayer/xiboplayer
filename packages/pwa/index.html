@@ -107,8 +107,21 @@
 
   <!-- Remove status bar overlay unless explicitly enabled in config -->
   <script>
+    // Read config from per-CMS storage (xibo_global + xibo_cms:{id}), fall back to legacy xibo_config
+    function readStoredConfig() {
+      try {
+        var activeCmsId = localStorage.getItem('xibo_active_cms');
+        if (activeCmsId) {
+          var global = JSON.parse(localStorage.getItem('xibo_global') || '{}');
+          var cms = JSON.parse(localStorage.getItem('xibo_cms:' + activeCmsId) || '{}');
+          return Object.assign({}, global, cms);
+        }
+        // Legacy fallback
+        return JSON.parse(localStorage.getItem('xibo_config') || '{}');
+      } catch (e) { return {}; }
+    }
     try {
-      var cfg = JSON.parse(localStorage.getItem('xibo_config') || '{}');
+      var cfg = readStoredConfig();
       var hover = cfg.controls && cfg.controls.mouse && cfg.controls.mouse.statusBarOnHover;
       if (hover !== true) {
         document.getElementById('overlay').remove();
@@ -124,11 +137,8 @@
 
     let hasStoredConfig = false;
     try {
-      const raw = localStorage.getItem('xibo_config');
-      if (raw) {
-        const cfg = JSON.parse(raw);
-        hasStoredConfig = !!(cfg.cmsUrl && cfg.cmsKey);
-      }
+      const storedCfg = readStoredConfig();
+      hasStoredConfig = !!(storedCfg.cmsUrl && storedCfg.cmsKey);
     } catch (e) { /* corrupt config — treat as missing */ }
 
     console.log('[Player] Has URL config:', hasUrlConfig);

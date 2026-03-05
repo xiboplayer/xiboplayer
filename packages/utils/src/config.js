@@ -230,6 +230,9 @@ export class Config {
       localStorage.setItem(ACTIVE_CMS_KEY, cmsId);
       this._activeCmsId = cmsId;
     }
+
+    // Legacy flat key for rollback compatibility (index.html gate, tests, etc.)
+    localStorage.setItem('xibo_config', JSON.stringify(data));
   }
 
   /**
