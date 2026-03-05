@@ -2,7 +2,7 @@
 
 ## Current Status: PRODUCTION READY
 
-**Feature Parity:** ~98% vs upstream Xibo players
+**Feature Parity:** 100% vs upstream Xibo players
 **Last Updated:** 2026-03-05
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
 
