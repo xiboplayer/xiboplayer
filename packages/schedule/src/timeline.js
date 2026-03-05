@@ -38,7 +38,9 @@ export function parseLayoutDuration(xlfXml, videoDurations = null) {
   let maxDuration = 0;
   let isDynamic = false;
   for (const regionEl of layoutEl.querySelectorAll('region')) {
-    if (regionEl.getAttribute('type') === 'drawer') continue; // Drawers are action-triggered, not timed
+    const regionType = regionEl.getAttribute('type');
+    if (regionType === 'drawer') continue; // Drawers are action-triggered, not timed
+    const isCanvas = regionType === 'canvas';
     let regionDuration = 0;
     for (const mediaEl of regionEl.querySelectorAll('media')) {
       const dur = parseInt(mediaEl.getAttribute('duration') || '0', 10);
@@ -46,15 +48,23 @@ export function parseLayoutDuration(xlfXml, videoDurations = null) {
       const fileId = mediaEl.getAttribute('fileId') || '';
       const probed = videoDurations?.get(fileId);
 
+      let widgetDuration;
       if (probed !== undefined) {
-        regionDuration += probed;         // Phase 2: probed video duration
+        widgetDuration = probed;           // Phase 2: probed video duration
       } else if (dur > 0 && useDuration !== 0) {
-        regionDuration += dur;            // Explicit CMS duration
+        widgetDuration = dur;              // Explicit CMS duration
       } else {
         // Video with useDuration=0 means "play to end" — estimate 60s,
         // corrected later via recordLayoutDuration() when video metadata loads
-        regionDuration += 60;
+        widgetDuration = 60;
         isDynamic = true;
+      }
+
+      if (isCanvas) {
+        // Canvas regions play all widgets simultaneously — duration is max, not sum
+        regionDuration = Math.max(regionDuration, widgetDuration);
+      } else {
+        regionDuration += widgetDuration;
       }
     }
     maxDuration = Math.max(maxDuration, regionDuration);
