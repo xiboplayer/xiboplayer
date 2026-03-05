@@ -28,6 +28,7 @@ export class TimelineOverlay {
   private currentLayoutId: number | null = null;
   private layoutStartedAt: number | null = null;    // wall-clock ms when layout began
   private currentDuration: number | null = null;
+  private currentIsDefault: boolean = false;
   private previousLayout: { id: number; duration: number; startedAt: number } | null = null;
   private offline: boolean = false;
   private onLayoutClick: ((layoutId: number) => void) | null = null;
@@ -106,6 +107,7 @@ export class TimelineOverlay {
       this.currentLayoutId = currentLayoutId;
       this.layoutStartedAt = Date.now();
       this.currentDuration = null;
+      this.currentIsDefault = false;
     }
 
     if (timeline !== null) {
@@ -117,6 +119,7 @@ export class TimelineOverlay {
         );
         if (match) {
           this.currentDuration = match.duration;
+          this.currentIsDefault = match.isDefault;
         }
       }
     }
@@ -190,6 +193,7 @@ export class TimelineOverlay {
       const idCol = `#${this.currentLayoutId}`.padEnd(6).replace(/ /g, '&nbsp;');
       html += `<div data-layout-id="${this.currentLayoutId}" style="border-left: 0.25vw solid #4a9eff; padding-left: 0.6vw; color: #fff; font-weight: 600; margin-bottom: 0.3vh; font-family: monospace; font-size: 1.3vw; line-height: 1.5; white-space: nowrap;">`;
       html += `${timeRange}${idCol}${durPad}`;
+      if (this.currentIsDefault) html += ' <span style="color: #888;">[def]</span>';
       html += '</div>';
       rendered++;
     }
