@@ -63,7 +63,7 @@ export class PlayerCore {
   isOffline(): boolean;
   isInOfflineMode(): boolean;
 
-  executeCommand(commandCode: string, commands?: Record<string, string>): Promise<void>;
+  executeCommand(commandCode: string, commands?: Record<string, { commandString: string }>): Promise<void>;
   handleTrigger(triggerCode: string): void;
   purgeAll(): Promise<void>;
   captureScreenshot(): Promise<void>;
