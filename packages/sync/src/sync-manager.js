@@ -1,8 +1,9 @@
 /**
- * SyncManager - Multi-display synchronization via BroadcastChannel
+ * SyncManager - Multi-display synchronization
  *
  * Coordinates layout transitions across multiple browser tabs/windows
- * on the same machine (video wall, multi-monitor setups).
+ * (same machine via BroadcastChannel) or across devices on a LAN
+ * (via WebSocket relay on the lead's proxy server).
  *
  * Protocol:
  *   Lead                              Follower(s)
@@ -17,21 +18,28 @@
  *   Lead tracks active followers. If a follower goes silent for 15s,
  *   it's considered offline and excluded from ready-wait.
  *
+ * Transport:
+ *   Pluggable — BroadcastChannelTransport (same-machine) or
+ *   WebSocketTransport (cross-device via relay). Selected automatically
+ *   based on syncConfig.relayUrl.
+ *
  * @module @xiboplayer/sync
  */
 
 /**
  * @typedef {Object} SyncConfig
  * @property {string} syncGroup - "lead" or leader's LAN IP
- * @property {number} syncPublisherPort - TCP port (unused in browser, kept for compat)
+ * @property {number} syncPublisherPort - TCP port (used for WebSocket relay URL)
  * @property {number} syncSwitchDelay - Delay in ms before showing new content
  * @property {number} syncVideoPauseDelay - Delay in ms before unpausing video
  * @property {boolean} isLead - Whether this display is the leader
+ * @property {string} [relayUrl] - WebSocket relay URL for cross-device sync
  */
 
 import { createLogger } from '@xiboplayer/utils';
+import { BroadcastChannelTransport } from './bc-transport.js';
+import { WebSocketTransport } from './ws-transport.js';
 
-const CHANNEL_NAME = 'xibo-sync';
 const HEARTBEAT_INTERVAL = 5000;   // Send heartbeat every 5s
 const FOLLOWER_TIMEOUT = 15000;    // Consider follower offline after 15s silence
 const READY_TIMEOUT = 10000;       // Max wait for followers to be ready
@@ -41,6 +49,7 @@ export class SyncManager {
    * @param {Object} options
    * @param {string} options.displayId - This display's unique hardware key
    * @param {SyncConfig} options.syncConfig - Sync configuration from RegisterDisplay
+   * @param {Object} [options.transport] - Optional pre-built transport (for testing)
    * @param {Function} [options.onLayoutChange] - Called when lead requests layout change
    * @param {Function} [options.onLayoutShow] - Called when lead gives show signal
    * @param {Function} [options.onVideoStart] - Called when lead gives video start signal
@@ -66,7 +75,7 @@ export class SyncManager {
     this.onLogsAck = options.onLogsAck || null;
 
     // State
-    this.channel = null;
+    this.transport = options.transport || null;
     this.followers = new Map();      // displayId → { lastSeen, ready }
     this._heartbeatTimer = null;
     this._cleanupTimer = null;
@@ -79,20 +88,30 @@ export class SyncManager {
     this._log = createLogger(this.isLead ? 'Sync:LEAD' : 'Sync:FOLLOW');
   }
 
+  /** Backward-compatible alias for transport */
+  get channel() { return this.transport; }
+  set channel(v) { this.transport = v; }
+
   /**
-   * Start the sync manager (opens BroadcastChannel, begins heartbeats)
+   * Start the sync manager — selects transport, begins heartbeats.
    */
   start() {
     if (this._started) return;
     this._started = true;
 
-    if (typeof BroadcastChannel === 'undefined') {
-      this._log.warn( 'BroadcastChannel not available — sync disabled');
-      return;
+    // Select transport if none injected
+    if (!this.transport) {
+      if (this.syncConfig.relayUrl) {
+        this.transport = new WebSocketTransport(this.syncConfig.relayUrl);
+      } else if (typeof BroadcastChannel !== 'undefined') {
+        this.transport = new BroadcastChannelTransport();
+      } else {
+        this._log.warn('No transport available — sync disabled');
+        return;
+      }
     }
 
-    this.channel = new BroadcastChannel(CHANNEL_NAME);
-    this.channel.onmessage = (event) => this._handleMessage(event.data);
+    this.transport.onMessage((msg) => this._handleMessage(msg));
 
     // Start heartbeat
     this._heartbeatTimer = setInterval(() => this._sendHeartbeat(), HEARTBEAT_INTERVAL);
@@ -103,7 +122,8 @@ export class SyncManager {
       this._cleanupTimer = setInterval(() => this._cleanupStaleFollowers(), HEARTBEAT_INTERVAL);
     }
 
-    this._log.info( 'Started. DisplayId:', this.displayId);
+    this._log.info('Started. DisplayId:', this.displayId,
+      this.syncConfig.relayUrl ? `(relay: ${this.syncConfig.relayUrl})` : '(BroadcastChannel)');
   }
 
   /**
@@ -121,13 +141,13 @@ export class SyncManager {
       clearInterval(this._cleanupTimer);
       this._cleanupTimer = null;
     }
-    if (this.channel) {
-      this.channel.close();
-      this.channel = null;
+    if (this.transport) {
+      this.transport.close();
+      this.transport = null;
     }
 
     this.followers.clear();
-    this._log.info( 'Stopped');
+    this._log.info('Stopped');
   }
 
   // ── Lead API ──────────────────────────────────────────────────────
@@ -141,7 +161,7 @@ export class SyncManager {
    */
   async requestLayoutChange(layoutId) {
     if (!this.isLead) {
-      this._log.warn( 'requestLayoutChange called on follower — ignoring');
+      this._log.warn('requestLayoutChange called on follower — ignoring');
       return;
     }
 
@@ -156,7 +176,7 @@ export class SyncManager {
 
     const showAt = Date.now() + this.switchDelay;
 
-    this._log.info( `Requesting layout change: ${layoutId} (show at ${new Date(showAt).toISOString()}, ${this.followers.size} followers)`);
+    this._log.info(`Requesting layout change: ${layoutId} (show at ${new Date(showAt).toISOString()}, ${this.followers.size} followers)`);
 
     // Broadcast layout-change to all followers
     this._send({
@@ -178,7 +198,7 @@ export class SyncManager {
     }
 
     // Send show signal
-    this._log.info( `Sending layout-show: ${layoutId}`);
+    this._log.info(`Sending layout-show: ${layoutId}`);
     this._send({
       type: 'layout-show',
       layoutId,
@@ -225,7 +245,7 @@ export class SyncManager {
   reportReady(layoutId) {
     layoutId = String(layoutId);
 
-    this._log.info( `Reporting ready for layout ${layoutId}`);
+    this._log.info(`Reporting ready for layout ${layoutId}`);
 
     this._send({
       type: 'layout-ready',
@@ -283,7 +303,7 @@ export class SyncManager {
       case 'layout-change':
         // Follower: lead is requesting a layout change
         if (!this.isLead) {
-          this._log.info( `Layout change requested: ${msg.layoutId}`);
+          this._log.info(`Layout change requested: ${msg.layoutId}`);
           this.onLayoutChange(msg.layoutId, msg.showAt);
         }
         break;
@@ -298,7 +318,7 @@ export class SyncManager {
       case 'layout-show':
         // Follower: lead says show now
         if (!this.isLead) {
-          this._log.info( `Layout show signal: ${msg.layoutId}`);
+          this._log.info(`Layout show signal: ${msg.layoutId}`);
           this.onLayoutShow(msg.layoutId);
         }
         break;
@@ -306,7 +326,7 @@ export class SyncManager {
       case 'video-start':
         // Follower: lead says start video
         if (!this.isLead) {
-          this._log.info( `Video start signal: ${msg.layoutId} region ${msg.regionId}`);
+          this._log.info(`Video start signal: ${msg.layoutId} region ${msg.regionId}`);
           this.onVideoStart(msg.layoutId, msg.regionId);
         }
         break;
@@ -344,7 +364,7 @@ export class SyncManager {
         break;
 
       default:
-        this._log.warn( 'Unknown message type:', msg.type);
+        this._log.warn('Unknown message type:', msg.type);
     }
   }
 
@@ -361,7 +381,7 @@ export class SyncManager {
         readyLayoutId: null,
         role: msg.role || 'unknown',
       });
-      this._log.info( `Follower joined: ${msg.displayId} (${this.followers.size} total)`);
+      this._log.info(`Follower joined: ${msg.displayId} (${this.followers.size} total)`);
     }
   }
 
@@ -381,12 +401,12 @@ export class SyncManager {
       follower.lastSeen = Date.now();
     }
 
-    this._log.info( `Follower ${msg.displayId} ready for layout ${msg.layoutId}`);
+    this._log.info(`Follower ${msg.displayId} ready for layout ${msg.layoutId}`);
 
     // Check if all followers are now ready
     if (this._pendingLayoutId === msg.layoutId && this._readyResolve) {
       if (this._allFollowersReady(msg.layoutId)) {
-        this._log.info( 'All followers ready');
+        this._log.info('All followers ready');
         this._readyResolve();
         this._readyResolve = null;
       }
@@ -425,7 +445,7 @@ export class SyncManager {
               notReady.push(id);
             }
           }
-          this._log.warn( `Ready timeout — proceeding without: ${notReady.join(', ')}`);
+          this._log.warn(`Ready timeout — proceeding without: ${notReady.join(', ')}`);
           this._readyResolve = null;
           resolve();
         }
@@ -450,7 +470,7 @@ export class SyncManager {
     const now = Date.now();
     for (const [id, follower] of this.followers) {
       if (now - follower.lastSeen > FOLLOWER_TIMEOUT) {
-        this._log.info( `Removing stale follower: ${id} (last seen ${Math.round((now - follower.lastSeen) / 1000)}s ago)`);
+        this._log.info(`Removing stale follower: ${id} (last seen ${Math.round((now - follower.lastSeen) / 1000)}s ago)`);
         this.followers.delete(id);
       }
     }
@@ -458,11 +478,11 @@ export class SyncManager {
 
   /** @private */
   _send(msg) {
-    if (!this.channel) return;
+    if (!this.transport) return;
     try {
-      this.channel.postMessage(msg);
+      this.transport.send(msg);
     } catch (e) {
-      this._log.error( 'Failed to send:', e);
+      this._log.error('Failed to send:', e);
     }
   }
 
@@ -479,6 +499,7 @@ export class SyncManager {
       displayId: this.displayId,
       followers: this.followers.size,
       pendingLayoutId: this._pendingLayoutId,
+      transport: this.syncConfig.relayUrl ? 'websocket' : 'broadcast-channel',
       followerDetails: Array.from(this.followers.entries()).map(([id, f]) => ({
         displayId: id,
         lastSeen: f.lastSeen,
@@ -489,3 +510,6 @@ export class SyncManager {
     };
   }
 }
+
+export { BroadcastChannelTransport } from './bc-transport.js';
+export { WebSocketTransport } from './ws-transport.js';

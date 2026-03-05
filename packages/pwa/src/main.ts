@@ -495,6 +495,15 @@ class PwaPlayer {
       if (this.syncManager) {
         this.syncManager.stop();
       }
+
+      // Cross-device sync: build WebSocket relay URL when syncGroup is an IP.
+      // Lead connects to its own relay (localhost), followers connect to lead's IP.
+      // When syncGroup is 'lead', this is same-machine only (BroadcastChannel).
+      if (syncConfig.syncPublisherPort && syncConfig.syncGroup !== 'lead') {
+        const host = syncConfig.isLead ? 'localhost' : syncConfig.syncGroup;
+        syncConfig.relayUrl = `ws://${host}:${syncConfig.syncPublisherPort}/sync`;
+      }
+
       this.syncManager = new SyncManager({
         displayId: config.hardwareKey,
         syncConfig,
