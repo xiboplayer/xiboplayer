@@ -1042,23 +1042,45 @@ export class PlayerCore extends EventEmitter {
    * @returns {Promise<{latitude: number, longitude: number}|null>}
    */
   async requestGeoLocation() {
-    // Try browser geolocation first (works with GPS or Google API key baked into Chromium)
-    const browser = await this._tryBrowserGeolocation();
-    if (browser) return this._applyLocation(browser.latitude, browser.longitude, 'browser');
+    // Return cached location if still fresh (re-resolve every 30 minutes)
+    const GEO_CACHE_MS = 30 * 60 * 1000;
+    if (this._geoCache && (Date.now() - this._geoCache.ts) < GEO_CACHE_MS) {
+      return this._geoCache.location;
+    }
+
+    // Try browser geolocation (works with GPS or Google API key baked into Chromium).
+    // Skip if it already failed — Electron without a Google API key will never succeed.
+    if (!this._browserGeoFailed) {
+      const browser = await this._tryBrowserGeolocation();
+      if (browser) {
+        return this._cacheGeo(this._applyLocation(browser.latitude, browser.longitude, 'browser'));
+      }
+      this._browserGeoFailed = true;
+    }
 
     // Try Google Geolocation API if key is configured
     const apiKey = this.config?.googleGeoApiKey;
     if (apiKey) {
       const google = await this._tryGoogleGeolocation(apiKey);
-      if (google) return this._applyLocation(google.latitude, google.longitude, 'google-api');
+      if (google) {
+        return this._cacheGeo(this._applyLocation(google.latitude, google.longitude, 'google-api'));
+      }
     }
 
     // Fall back to IP-based geolocation (free, no key)
     const ip = await this._tryIpGeolocation();
-    if (ip) return this._applyLocation(ip.latitude, ip.longitude, 'ip-geolocation');
+    if (ip) {
+      return this._cacheGeo(this._applyLocation(ip.latitude, ip.longitude, 'ip-geolocation'));
+    }
 
     log.warn('All geolocation methods failed');
     return null;
+  }
+
+  /** Cache a resolved geolocation result. @private */
+  _cacheGeo(location) {
+    this._geoCache = { location, ts: Date.now() };
+    return location;
   }
 
   /**
