@@ -9,7 +9,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { Readable } from 'node:stream';
+import { Readable, pipeline } from 'node:stream';
 import express from 'express';
 import cors from 'cors';
 import { createLogger, registerLogSink, PLAYER_API, setPlayerApi } from '@xiboplayer/utils';
@@ -79,10 +79,12 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
   let bytesWritten = 0;
   let currentChunk = startChunk;
   let destroyed = false;
+  let activeStream = null;
 
-  // Clean up on client disconnect
+  // Clean up on client disconnect — destroy any in-flight chunk stream
   req.on('close', () => {
     destroyed = true;
+    if (activeStream) { activeStream.destroy(); activeStream = null; }
   });
 
   const writeNextChunk = () => {
@@ -109,6 +111,7 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
       return;
     }
 
+    activeStream = stream;
     currentChunk++;
     stream.on('data', (data) => {
       if (destroyed) { stream.destroy(); return; }
@@ -120,8 +123,9 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
         res.once('drain', () => stream.resume());
       }
     });
-    stream.on('end', writeNextChunk);
+    stream.on('end', () => { activeStream = null; writeNextChunk(); });
     stream.on('error', (err) => {
+      activeStream = null;
       logStore.error(`Chunk stream error: ${err.message}`);
       if (!res.headersSent) res.status(500).end();
       else res.end();
@@ -561,7 +565,11 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.setHeader('Access-Control-Allow-Origin', '*');
 
       const stream = store.getReadStream(storeKey, { start, end });
-      stream.pipe(res);
+      pipeline(stream, res, (err) => {
+        if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+          logStore.error(`Stream error serving ${storeKey}: ${err.message}`);
+        }
+      });
     } else {
       res.status(200);
       res.setHeader('Content-Type', contentType);
@@ -570,7 +578,11 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.setHeader('Access-Control-Allow-Origin', '*');
 
       const stream = store.getReadStream(storeKey);
-      stream.pipe(res);
+      pipeline(stream, res, (err) => {
+        if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+          logStore.error(`Stream error serving ${storeKey}: ${err.message}`);
+        }
+      });
     }
   }
 
