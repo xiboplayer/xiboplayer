@@ -87,3 +87,96 @@ describe('createProxyApp', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// Helper for JSON requests
+async function jsonRequest(app, method, url, body) {
+  return new Promise((resolve) => {
+    const server = app.listen(0, 'localhost', () => {
+      const port = server.address().port;
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      realFetch(`http://localhost:${port}${url}`, opts)
+        .then(async (res) => {
+          const text = await res.text();
+          server.close();
+          resolve({ status: res.status, body: text, json: () => JSON.parse(text) });
+        })
+        .catch((err) => { server.close(); resolve({ status: 0, body: err.message }); });
+    });
+  });
+}
+
+describe('IC HTTP API routes', () => {
+  const mockHandler = {
+    getInfo: async () => ({ hardwareKey: 'test-hw', playerType: 'electron' }),
+    handleTrigger: async () => {},
+    handleExpire: async () => {},
+    handleExtend: async () => {},
+    handleSetDuration: async () => {},
+    handleFault: async () => {},
+    getRealtimeData: async (key) => key === 'weather' ? { temp: 22 } : null,
+  };
+
+  function makeIcApp() {
+    return createProxyApp({ pwaPath, appVersion: '0.0.0-test', icHandler: mockHandler });
+  }
+
+  it('GET /info returns player info', async () => {
+    const res = await jsonRequest(makeIcApp(), 'GET', '/info');
+    expect(res.status).toBe(200);
+    const data = res.json();
+    expect(data.hardwareKey).toBe('test-hw');
+    expect(data.playerType).toBe('electron');
+  });
+
+  it('POST /trigger returns ok', async () => {
+    const res = await jsonRequest(makeIcApp(), 'POST', '/trigger', { id: '42', trigger: 'btn1' });
+    expect(res.status).toBe(200);
+    expect(res.json().ok).toBe(true);
+  });
+
+  it('POST /duration/expire returns ok', async () => {
+    const res = await jsonRequest(makeIcApp(), 'POST', '/duration/expire', { id: '42' });
+    expect(res.status).toBe(200);
+    expect(res.json().ok).toBe(true);
+  });
+
+  it('POST /duration/extend returns ok', async () => {
+    const res = await jsonRequest(makeIcApp(), 'POST', '/duration/extend', { id: '42', duration: 10 });
+    expect(res.status).toBe(200);
+  });
+
+  it('POST /duration/set returns ok', async () => {
+    const res = await jsonRequest(makeIcApp(), 'POST', '/duration/set', { id: '42', duration: 30 });
+    expect(res.status).toBe(200);
+  });
+
+  it('POST /fault returns ok', async () => {
+    const res = await jsonRequest(makeIcApp(), 'POST', '/fault', { code: 'ERR', reason: 'test' });
+    expect(res.status).toBe(200);
+  });
+
+  it('GET /realtime returns data for known key', async () => {
+    const res = await jsonRequest(makeIcApp(), 'GET', '/realtime?dataKey=weather');
+    expect(res.status).toBe(200);
+    expect(res.json().temp).toBe(22);
+  });
+
+  it('GET /realtime returns 404 for unknown key', async () => {
+    const res = await jsonRequest(makeIcApp(), 'GET', '/realtime?dataKey=missing');
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /realtime returns 400 without dataKey', async () => {
+    const res = await jsonRequest(makeIcApp(), 'GET', '/realtime');
+    expect(res.status).toBe(400);
+  });
+
+  it('IC routes not registered without icHandler', async () => {
+    const app = makeApp(); // no icHandler
+    const res = await jsonRequest(app, 'GET', '/info');
+    // Should fall through to SPA which returns the index.html (200)
+    // but the body won't be JSON with hardwareKey
+    expect(res.body).not.toContain('hardwareKey');
+  });
+});

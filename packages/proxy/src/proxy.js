@@ -143,7 +143,7 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
  * @param {function} [options.onLog] — log sink for cross-process forwarding; receives ({ level, name, args })
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog } = {}) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler } = {}) {
   const app = express();
 
   // Override Player API base path if configured (before registering routes)
@@ -273,6 +273,95 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
     res.status(204).end();
   });
+
+  // ─── Interactive Control (XIC) HTTP API ─────────────────────────────
+  // Handles XHR from xibo-interactive-control.js in widget iframes.
+  // Used by Electron/Chromium where there is no Service Worker to intercept.
+  // The icHandler callbacks are provided by the platform layer (e.g. Electron main.js).
+  if (icHandler) {
+    const logIc = createLogger('XIC', 'INFO');
+
+    app.get('/info', async (_req, res) => {
+      try {
+        const info = icHandler.getInfo ? await icHandler.getInfo() : { playerType: 'proxy' };
+        res.json(info);
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.post('/trigger', async (req, res) => {
+      const { id, trigger } = req.body || {};
+      logIc.info(`/trigger: widget=${id} trigger=${trigger}`);
+      try {
+        if (icHandler.handleTrigger) await icHandler.handleTrigger(id, trigger);
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.post('/duration/expire', async (req, res) => {
+      const { id } = req.body || {};
+      logIc.info(`/duration/expire: widget=${id}`);
+      try {
+        if (icHandler.handleExpire) await icHandler.handleExpire(id);
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.post('/duration/extend', async (req, res) => {
+      const { id, duration } = req.body || {};
+      logIc.info(`/duration/extend: widget=${id} +${duration}s`);
+      try {
+        if (icHandler.handleExtend) await icHandler.handleExtend(id, parseInt(duration));
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.post('/duration/set', async (req, res) => {
+      const { id, duration } = req.body || {};
+      logIc.info(`/duration/set: widget=${id} duration=${duration}s`);
+      try {
+        if (icHandler.handleSetDuration) await icHandler.handleSetDuration(id, parseInt(duration));
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.post('/fault', async (req, res) => {
+      const { code, reason, key, ttl } = req.body || {};
+      logIc.warn(`/fault: code=${code} reason=${reason}`);
+      try {
+        if (icHandler.handleFault) await icHandler.handleFault(code, reason, key, ttl);
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.get('/realtime', async (req, res) => {
+      const dataKey = req.query.dataKey;
+      if (!dataKey) return res.status(400).json({ error: 'Missing dataKey' });
+      try {
+        if (!icHandler.getRealtimeData) return res.status(503).json({ error: 'No realtime handler' });
+        const data = await icHandler.getRealtimeData(dataKey);
+        if (data === null || data === undefined) {
+          return res.status(404).json({ error: `No data for key: ${dataKey}` });
+        }
+        res.json(typeof data === 'string' ? JSON.parse(data) : data);
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    logIc.info('IC HTTP API routes registered');
+  }
 
   // ─── Cache-through helper ─────────────────────────────────────────
   // Serve from store on hit. On miss, fetch from CMS and tee-stream to
@@ -823,8 +912,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog } = {}) {
-  const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog, icHandler });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {

@@ -171,6 +171,7 @@ class PwaPlayer {
     this.setupCoreEventHandlers();
     this.setupRendererEventHandlers();
     this.setupInteractiveControl();
+    this.setupDataConnectorNotify();
     this.setupRemoteControls();
 
     // Set display location from CMS settings when registration completes
@@ -833,6 +834,24 @@ class PwaPlayer {
       port.postMessage(response);
     };
     navigator.serviceWorker?.addEventListener('message', this._swIcHandler);
+  }
+
+  /**
+   * Notify widget iframes when DataConnector data changes.
+   * XIC library listens for postMessage { ctrl: 'rtNotifyData', data: { dataKey } }
+   * and calls the widget's registered notifyData callback.
+   */
+  private setupDataConnectorNotify() {
+    const dcManager = this.core.getDataConnectorManager();
+    dcManager.on('data-changed', (dataKey: string) => {
+      const iframes = document.querySelectorAll<HTMLIFrameElement>('iframe');
+      const message = { ctrl: 'rtNotifyData', data: { dataKey } };
+      for (const iframe of iframes) {
+        try {
+          iframe.contentWindow?.postMessage(message, '*');
+        } catch { /* cross-origin iframe, ignore */ }
+      }
+    });
   }
 
   /**

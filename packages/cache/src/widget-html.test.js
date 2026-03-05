@@ -173,6 +173,40 @@ describe('cacheWidgetHtml', () => {
     });
   });
 
+  // --- xiboICTargetId injection ---
+
+  describe('xiboICTargetId injection', () => {
+    it('injects xiboICTargetId script with the media ID', async () => {
+      await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
+
+      const stored = getStoredWidget();
+      expect(stored).toContain("var xiboICTargetId = '193'");
+    });
+
+    it('injects before XIC library script', async () => {
+      await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
+
+      const stored = getStoredWidget();
+      const targetIdPos = stored.indexOf('xiboICTargetId');
+      const xicInitPos = stored.indexOf('xiboIC.init');
+      expect(targetIdPos).toBeLessThan(xicInitPos);
+    });
+
+    it('is idempotent (no double injection)', async () => {
+      await cacheWidgetHtml('472', '223', '193', makeRssTickerHtml());
+      const firstPass = getStoredWidget();
+
+      storeContents.clear();
+      await cacheWidgetHtml('472', '223', '193', firstPass);
+      const secondPass = getStoredWidget();
+
+      const count = (secondPass.match(/xiboICTargetId/g) || []).length;
+      // 1 in the injected script + 1 in the original xiboIC.init options (if any)
+      // But the original HTML doesn't have xiboICTargetId, so count should be exactly 1
+      expect(count).toBe(1);
+    });
+  });
+
   // --- CSS object-position fix ---
 
   describe('CSS object-position fix', () => {

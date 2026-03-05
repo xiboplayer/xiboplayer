@@ -70,6 +70,19 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
     (_, path) => path
   );
 
+  // Inject xiboICTargetId — XIC library reads this global before its IIFE runs
+  // to set _lib.targetId, which is included in every IC HTTP request as {id: ...}
+  if (!modifiedHtml.includes('xiboICTargetId')) {
+    const targetIdScript = `<script>var xiboICTargetId = '${mediaId}';</script>`;
+    if (modifiedHtml.includes(baseTag)) {
+      modifiedHtml = modifiedHtml.replace(baseTag, baseTag + targetIdScript);
+    } else if (modifiedHtml.includes('<head>')) {
+      modifiedHtml = modifiedHtml.replace('<head>', '<head>' + targetIdScript);
+    } else {
+      modifiedHtml = targetIdScript + modifiedHtml;
+    }
+  }
+
   // Rewrite Interactive Control hostAddress to SW-interceptable path
   modifiedHtml = modifiedHtml.replace(
     /hostAddress\s*:\s*["']https?:\/\/[^"']+["']/g,
