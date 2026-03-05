@@ -1,11 +1,12 @@
 /**
  * SyncManager unit tests
  *
- * Tests multi-display sync coordination via BroadcastChannel.
- * Uses a simple BroadcastChannel mock for Node.js environment.
+ * Tests multi-display sync coordination via pluggable transports.
+ * Uses a simple BroadcastChannel mock for the default transport path
+ * and a mock transport for the transport-injection path.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SyncManager } from './sync-manager.js';
+import { SyncManager, BroadcastChannelTransport, WebSocketTransport } from './sync-manager.js';
 
 // ── BroadcastChannel mock ──────────────────────────────────────────
 // Simulates same-origin message passing between instances
@@ -50,6 +51,24 @@ class MockBroadcastChannel {
 
 // Install mock globally
 globalThis.BroadcastChannel = MockBroadcastChannel;
+
+// ── Mock Transport (for transport-injection tests) ──────────────────
+class MockTransport {
+  constructor() {
+    this._callback = null;
+    this._sent = [];
+    this._connected = true;
+  }
+  send(msg) { this._sent.push(msg); }
+  onMessage(callback) { this._callback = callback; }
+  close() { this._connected = false; }
+  get connected() { return this._connected; }
+
+  /** Simulate receiving a message from remote */
+  _receive(msg) {
+    if (this._callback) this._callback(msg);
+  }
+}
 
 // ── Helper to flush microtasks ──────────────────────────────────────
 const tick = (ms = 10) => new Promise(r => setTimeout(r, ms));
@@ -100,7 +119,7 @@ describe('SyncManager', () => {
       expect(follower1.isLead).toBe(false);
     });
 
-    it('should start and open BroadcastChannel', () => {
+    it('should start and open BroadcastChannel transport', () => {
       lead = new SyncManager({
         displayId: 'pwa-lead',
         syncConfig: makeSyncConfig(true),
@@ -108,10 +127,11 @@ describe('SyncManager', () => {
       lead.start();
 
       expect(lead.channel).not.toBeNull();
+      expect(lead.transport).not.toBeNull();
       expect(lead.getStatus().started).toBe(true);
     });
 
-    it('should stop and close BroadcastChannel', () => {
+    it('should stop and close transport', () => {
       lead = new SyncManager({
         displayId: 'pwa-lead',
         syncConfig: makeSyncConfig(true),
@@ -120,7 +140,70 @@ describe('SyncManager', () => {
       lead.stop();
 
       expect(lead.channel).toBeNull();
+      expect(lead.transport).toBeNull();
       expect(lead.getStatus().started).toBe(false);
+    });
+  });
+
+  describe('Transport injection', () => {
+    it('should use injected transport instead of BroadcastChannel', () => {
+      const transport = new MockTransport();
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: makeSyncConfig(true),
+        transport,
+      });
+      lead.start();
+
+      expect(lead.transport).toBe(transport);
+      // Should have sent initial heartbeat
+      expect(transport._sent.length).toBe(1);
+      expect(transport._sent[0].type).toBe('heartbeat');
+    });
+
+    it('should handle messages from injected transport', () => {
+      const onLayoutChange = vi.fn();
+      const transport = new MockTransport();
+
+      follower1 = new SyncManager({
+        displayId: 'pwa-f1',
+        syncConfig: makeSyncConfig(false),
+        transport,
+        onLayoutChange,
+      });
+      follower1.start();
+
+      // Simulate a layout-change message from lead
+      transport._receive({
+        type: 'layout-change',
+        layoutId: '42',
+        showAt: Date.now() + 1000,
+        displayId: 'pwa-lead',
+      });
+
+      expect(onLayoutChange).toHaveBeenCalledWith('42', expect.any(Number));
+    });
+
+    it('should report websocket transport type in status when relayUrl set', () => {
+      const transport = new MockTransport();
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: { ...makeSyncConfig(true), relayUrl: 'ws://localhost:8765/sync' },
+        transport,
+      });
+      lead.start();
+
+      expect(lead.getStatus().transport).toBe('websocket');
+    });
+
+    it('should report broadcast-channel transport type by default', () => {
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: makeSyncConfig(true),
+      });
+      lead.start();
+
+      expect(lead.getStatus().transport).toBe('broadcast-channel');
     });
   });
 

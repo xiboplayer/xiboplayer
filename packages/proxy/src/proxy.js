@@ -18,6 +18,7 @@ import cors from 'cors';
 const execPromise = promisify(exec);
 import { createLogger, registerLogSink, PLAYER_API, setPlayerApi, computeCmsId } from '@xiboplayer/utils';
 import { ContentStore } from './content-store.js';
+import { attachSyncRelay } from './sync-relay.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
 
@@ -986,13 +987,17 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false } = {}) {
+export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false } = {}) {
   const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands });
 
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, 'localhost', () => {
-      logServer.info(`Running on http://localhost:${port}`);
+    const server = app.listen(port, listenAddress, () => {
+      logServer.info(`Running on http://${listenAddress}:${port}`);
       logServer.info('READY');
+
+      // Attach WebSocket sync relay (lightweight — no cost when unused)
+      attachSyncRelay(server);
+
       resolve({ server, port });
     });
 

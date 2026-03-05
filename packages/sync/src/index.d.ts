@@ -1,22 +1,79 @@
 export const VERSION: string;
 
+export interface SyncTransport {
+  send(msg: any): void;
+  onMessage(callback: (msg: any) => void): void;
+  close(): void;
+  readonly connected: boolean;
+}
+
 export interface SyncConfig {
   syncGroup: string;
   syncPublisherPort: number;
   syncSwitchDelay: number;
   syncVideoPauseDelay: number;
   isLead: boolean;
+  relayUrl?: string;
+}
+
+export class BroadcastChannelTransport implements SyncTransport {
+  constructor(channelName?: string);
+  send(msg: any): void;
+  onMessage(callback: (msg: any) => void): void;
+  close(): void;
+  readonly connected: boolean;
+}
+
+export class WebSocketTransport implements SyncTransport {
+  constructor(url: string);
+  send(msg: any): void;
+  onMessage(callback: (msg: any) => void): void;
+  close(): void;
+  readonly connected: boolean;
 }
 
 export class SyncManager {
-  constructor(config: SyncConfig, displayId: string);
-  config: SyncConfig;
+  constructor(options: {
+    displayId: string;
+    syncConfig: SyncConfig;
+    transport?: SyncTransport;
+    onLayoutChange?: (layoutId: string, showAt: number) => void;
+    onLayoutShow?: (layoutId: string) => void;
+    onVideoStart?: (layoutId: string, regionId: string) => void;
+    onStatsReport?: (followerId: string, statsXml: string, ack: () => void) => void;
+    onLogsReport?: (followerId: string, logsXml: string, ack: () => void) => void;
+    onStatsAck?: (targetDisplayId: string) => void;
+    onLogsAck?: (targetDisplayId: string) => void;
+  });
+
+  displayId: string;
+  syncConfig: SyncConfig;
   isLead: boolean;
+  transport: SyncTransport | null;
+  /** Backward-compatible alias for transport */
+  channel: SyncTransport | null;
+  followers: Map<string, any>;
 
   start(): void;
   stop(): void;
-  requestLayoutChange(layoutId: number, showDelay?: number): void;
-  notifyLayoutReady(layoutId: number): void;
-  onLayoutShow(callback: (layoutId: number) => void): void;
-  onLayoutChange(callback: (layoutId: number) => void): void;
+  requestLayoutChange(layoutId: string | number): Promise<void>;
+  requestVideoStart(layoutId: string | number, regionId: string): Promise<void>;
+  reportReady(layoutId: string | number): void;
+  reportStats(statsXml: string): void;
+  reportLogs(logsXml: string): void;
+  getStatus(): {
+    started: boolean;
+    isLead: boolean;
+    displayId: string;
+    followers: number;
+    pendingLayoutId: string | null;
+    transport: 'websocket' | 'broadcast-channel';
+    followerDetails: Array<{
+      displayId: string;
+      lastSeen: number;
+      ready: boolean;
+      readyLayoutId: string | null;
+      stale: boolean;
+    }>;
+  };
 }
