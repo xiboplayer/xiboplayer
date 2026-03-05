@@ -26,6 +26,9 @@ export class TimelineOverlay {
   private visible: boolean;
   private timeline: TimelineEntry[] = [];
   private currentLayoutId: number | null = null;
+  private layoutStartedAt: number | null = null;    // wall-clock ms when layout began
+  private currentDuration: number | null = null;
+  private previousLayout: { id: number; duration: number; startedAt: number } | null = null;
   private offline: boolean = false;
   private onLayoutClick: ((layoutId: number) => void) | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -37,7 +40,7 @@ export class TimelineOverlay {
     if (!this.visible) {
       this.overlay!.style.display = 'none';
     }
-    // Re-render every 5s so played entries disappear as time passes
+    // Re-render every 5s to update the remaining-time countdown on the current layout
     this.refreshTimer = setInterval(() => this.render(), 5000);
   }
 
@@ -95,92 +98,129 @@ export class TimelineOverlay {
   }
 
   update(timeline: TimelineEntry[] | null, currentLayoutId: number | null) {
+    // Detect layout change — save previous, record wall-clock start
+    if (currentLayoutId !== null && currentLayoutId !== this.currentLayoutId) {
+      if (this.currentLayoutId !== null && this.currentDuration !== null && this.layoutStartedAt !== null) {
+        this.previousLayout = { id: this.currentLayoutId, duration: this.currentDuration, startedAt: this.layoutStartedAt };
+      }
+      this.currentLayoutId = currentLayoutId;
+      this.layoutStartedAt = Date.now();
+      this.currentDuration = null;
+    }
+
     if (timeline !== null) {
       this.timeline = timeline;
+      // Lock currentDuration from matching entry's .duration (only once per layout)
+      if (this.currentDuration === null && this.currentLayoutId !== null) {
+        const match = timeline.find(e =>
+          parseInt(e.layoutFile.replace('.xlf', ''), 10) === this.currentLayoutId
+        );
+        if (match) {
+          this.currentDuration = match.duration;
+        }
+      }
     }
-    if (currentLayoutId !== null) {
-      this.currentLayoutId = currentLayoutId;
-    }
+
     this.render();
   }
 
   private render() {
     if (!this.overlay || !this.visible) return;
 
-    const now = new Date();
-
-    // Find the currently playing layout entry
-    const currentEntry = this.currentLayoutId !== null
-      ? this.timeline.find(e => {
-          const id = parseInt(e.layoutFile.replace('.xlf', ''), 10);
-          return id === this.currentLayoutId && e.startTime <= now && e.endTime > now;
-        })
-      : null;
-
-    // Future entries: start in the future, exclude already-played and current
-    const futureEntries = this.timeline.filter(e => {
-      if (e === currentEntry) return false;
-      return e.startTime > now;
-    });
-
-    // Build final list: current layout always first, then future entries
-    const entries: TimelineEntry[] = [];
-    let effectiveCurrent: TimelineEntry | null = currentEntry ?? null;
-    if (currentEntry) {
-      entries.push(currentEntry);
-    } else if (this.currentLayoutId !== null && futureEntries.length > 0) {
-      // Playing a layout not in the timeline (e.g. default layout filling a gap)
-      // — synthesize a "now playing" entry until the next scheduled layout starts
-      effectiveCurrent = {
-        layoutFile: `${this.currentLayoutId}.xlf`,
-        startTime: now,
-        endTime: futureEntries[0].startTime,
-        duration: (futureEntries[0].startTime.getTime() - now.getTime()) / 1000,
-        isDefault: true,
-      } as TimelineEntry;
-      entries.push(effectiveCurrent);
-    }
-    entries.push(...futureEntries);
-
-    if (entries.length === 0) {
+    if (this.timeline.length === 0 && !this.previousLayout && !this.currentLayoutId) {
       this.overlay.innerHTML = '<div style="color: #999;">Timeline — no upcoming layouts</div>';
       return;
     }
 
-    const maxVisible = 8;
-    const count = entries.length;
-    const visible = entries.slice(0, maxVisible);
-    const offlineBadge = this.offline ? ' <span style="color: #ff4444; font-size: 1.1vw;">OFFLINE</span>' : '';
-    let html = `<div style="font-weight: 600; margin-bottom: 0.8vh; font-size: 1.4vw; color: #ccc;">Timeline (${count} upcoming)${offlineBadge}</div>`;
-
+    const now = Date.now();
     const clickable = this.onLayoutClick !== null;
 
-    for (const entry of visible) {
+    // Build upcoming list: timeline entries minus the first occurrence of the current layout
+    let skippedCurrent = false;
+    const upcoming: TimelineEntry[] = [];
+    for (const entry of this.timeline) {
       const layoutId = parseInt(entry.layoutFile.replace('.xlf', ''), 10);
-      const isCurrent = entry === effectiveCurrent;
-      const hasMissing = entry.missingMedia && entry.missingMedia.length > 0;
+      if (!skippedCurrent && layoutId === this.currentLayoutId) {
+        skippedCurrent = true;
+        continue;
+      }
+      upcoming.push(entry);
+    }
 
-      const startStr = this.formatTime(entry.startTime);
-      const endStr = this.formatTime(entry.endTime);
+    // Count: previous (if any) + current (if any) + upcoming
+    const totalCount = (this.previousLayout ? 1 : 0) + (this.currentLayoutId ? 1 : 0) + upcoming.length;
+    const offlineBadge = this.offline ? ' <span style="color: #ff4444; font-size: 1.1vw;">OFFLINE</span>' : '';
+    let html = `<div style="font-weight: 600; margin-bottom: 0.8vh; font-size: 1.4vw; color: #ccc;">Timeline (${totalCount} scheduled)${offlineBadge}</div>`;
+
+    const maxVisible = 8;
+    let rendered = 0;
+
+    // 1. Previous layout (dimmed, strikethrough)
+    if (this.previousLayout && rendered < maxVisible) {
+      const prev = this.previousLayout;
+      const durStr = this.formatDuration(prev.duration);
+      const durPad = durStr.padStart(7).replace(/ /g, '&nbsp;');
+      const idCol = `#${prev.id}`.padEnd(6).replace(/ /g, '&nbsp;');
+      const startDate = new Date(prev.startedAt);
+      const endDate = new Date(prev.startedAt + prev.duration * 1000);
+      const timeRange = `${this.formatTime(startDate)}–${this.formatTime(endDate)} `;
+      const cursor = clickable ? 'cursor: pointer;' : '';
+      const hover = clickable ? 'onmouseover="this.style.background=\'rgba(255,255,255,0.1)\'" onmouseout="this.style.background=\'none\'"' : '';
+      html += `<div data-layout-id="${prev.id}" style="border-left: 0.25vw solid #555; padding-left: 0.6vw; color: #666; text-decoration: line-through; ${cursor} margin-bottom: 0.3vh; font-family: monospace; font-size: 1.3vw; line-height: 1.5; white-space: nowrap;" ${hover}>`;
+      html += `${timeRange}${idCol}${durPad}`;
+      html += '</div>';
+      rendered++;
+    }
+
+    // 2. Current layout (blue highlight, countdown from wall-clock start, with time range)
+    if (this.currentLayoutId !== null && rendered < maxVisible) {
+      let durStr: string;
+      let timeRange = '';
+      if (this.currentDuration !== null && this.layoutStartedAt !== null) {
+        const elapsed = (now - this.layoutStartedAt) / 1000;
+        const remainingSec = Math.max(0, Math.round(this.currentDuration - elapsed));
+        durStr = this.formatDuration(remainingSec);
+        const startDate = new Date(this.layoutStartedAt);
+        const endDate = new Date(this.layoutStartedAt + this.currentDuration * 1000);
+        timeRange = `${this.formatTime(startDate)}–${this.formatTime(endDate)} `;
+      } else {
+        durStr = '---';
+      }
+      const durPad = durStr.padStart(7).replace(/ /g, '&nbsp;');
+      const idCol = `#${this.currentLayoutId}`.padEnd(6).replace(/ /g, '&nbsp;');
+      html += `<div data-layout-id="${this.currentLayoutId}" style="border-left: 0.25vw solid #4a9eff; padding-left: 0.6vw; color: #fff; font-weight: 600; margin-bottom: 0.3vh; font-family: monospace; font-size: 1.3vw; line-height: 1.5; white-space: nowrap;">`;
+      html += `${timeRange}${idCol}${durPad}`;
+      html += '</div>';
+      rendered++;
+    }
+
+    // 3. Upcoming layouts — compute times by chaining from current layout end
+    let nextStartMs = (this.layoutStartedAt !== null && this.currentDuration !== null)
+      ? this.layoutStartedAt + this.currentDuration * 1000
+      : now;
+    for (const entry of upcoming) {
+      if (rendered >= maxVisible) break;
+      const layoutId = parseInt(entry.layoutFile.replace('.xlf', ''), 10);
+      const hasMissing = entry.missingMedia && entry.missingMedia.length > 0;
       const durStr = this.formatDuration(entry.duration);
+      const entryEndMs = nextStartMs + entry.duration * 1000;
+      const startStr = this.formatTime(new Date(nextStartMs));
+      const endStr = this.formatTime(new Date(entryEndMs));
 
       let borderLeft: string;
       let color: string;
-      if (isCurrent) {
-        borderLeft = 'border-left: 0.25vw solid #4a9eff; padding-left: 0.6vw;';
-        color = 'color: #fff; font-weight: 600;';
-      } else if (hasMissing) {
+      if (hasMissing) {
         borderLeft = 'border-left: 0.25vw solid #ff4444; padding-left: 0.6vw;';
         color = 'color: #ff6666;';
       } else {
         borderLeft = 'padding-left: 0.85vw;';
         color = 'color: #aaa;';
       }
-      const cursor = clickable && !isCurrent ? 'cursor: pointer;' : '';
-      const hover = clickable && !isCurrent ? 'onmouseover="this.style.background=\'rgba(255,255,255,0.1)\'" onmouseout="this.style.background=\'none\'"' : '';
+      const cursor = clickable ? 'cursor: pointer;' : '';
+      const hover = clickable ? 'onmouseover="this.style.background=\'rgba(255,255,255,0.1)\'" onmouseout="this.style.background=\'none\'"' : '';
 
       html += `<div data-layout-id="${layoutId}" style="${borderLeft} ${color} ${cursor} margin-bottom: 0.3vh; font-family: monospace; font-size: 1.3vw; line-height: 1.5; white-space: nowrap;" ${hover}>`;
-      const idCol = `#${layoutId}`.padEnd(4).replace(/ /g, '&nbsp;');
+      const idCol = `#${layoutId}`.padEnd(6).replace(/ /g, '&nbsp;');
       const durPad = durStr.padStart(7).replace(/ /g, '&nbsp;');
       html += `${startStr}–${endStr} ${idCol}${durPad}`;
       if (entry.isDefault) html += ' <span style="color: #888;">[def]</span>';
@@ -193,10 +233,12 @@ export class TimelineOverlay {
         html += ` <span style="color: #8899aa; font-size: 1.1vw;" title="Also scheduled: ${hiddenIds}">+${entry.hidden.length}</span>`;
       }
       html += '</div>';
+      nextStartMs = entryEndMs;
+      rendered++;
     }
 
-    if (count > maxVisible) {
-      html += `<div style="padding-left: 0.85vw; color: #888; font-size: 1.1vw; margin-top: 0.3vh;">+${count - maxVisible} more</div>`;
+    if (totalCount > maxVisible) {
+      html += `<div style="padding-left: 0.85vw; color: #888; font-size: 1.1vw; margin-top: 0.3vh;">+${totalCount - maxVisible} more</div>`;
     }
 
     this.overlay.innerHTML = html;
