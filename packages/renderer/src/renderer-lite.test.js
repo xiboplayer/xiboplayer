@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { RendererLite } from './renderer-lite.js';
+import { RendererLite, Transitions } from './renderer-lite.js';
 
 describe('RendererLite', () => {
   let container;
@@ -964,48 +964,218 @@ describe('RendererLite', () => {
   });
 
   describe('Transitions', () => {
-    // Skip: jsdom doesn't support Web Animations API
-    it.skip('should apply fade in transition', async () => {
-      const element = document.createElement('div');
-      element.style.opacity = '0';
+    let element;
+    let mockAnimate;
+    let capturedKeyframes;
+    let capturedTiming;
 
-      const transition = {
-        type: 'fadeIn',
-        duration: 1000,
-        direction: 'N'
-      };
-
-      // Import Transitions utility
-      const { Transitions } = await import('./renderer-lite.js');
-      const animation = Transitions.apply(element, transition, true, 1920, 1080);
-
-      expect(animation).toBeTruthy();
-      expect(animation.effect.getKeyframes()).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ opacity: '0' }),
-          expect.objectContaining({ opacity: '1' })
-        ])
-      );
+    beforeEach(() => {
+      element = document.createElement('div');
+      capturedKeyframes = null;
+      capturedTiming = null;
+      mockAnimate = vi.fn((keyframes, timing) => {
+        capturedKeyframes = keyframes;
+        capturedTiming = timing;
+        return { onfinish: null, cancel: vi.fn() };
+      });
+      element.animate = mockAnimate;
     });
 
-    // Skip: jsdom doesn't support Web Animations API
-    it.skip('should apply fly out transition with direction', async () => {
-      const element = document.createElement('div');
+    it('should apply fade in transition', () => {
+      const result = Transitions.apply(element, { type: 'fadeIn', duration: 1000 }, true, 1920, 1080);
 
-      const transition = {
-        type: 'flyOut',
-        duration: 1500,
-        direction: 'S' // South
-      };
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+      expect(capturedTiming.duration).toBe(1000);
+      expect(capturedTiming.easing).toBe('linear');
+    });
 
-      const { Transitions } = await import('./renderer-lite.js');
-      const animation = Transitions.apply(element, transition, false, 1920, 1080);
+    it('should apply fade out transition', () => {
+      const result = Transitions.apply(element, { type: 'fadeOut', duration: 800 }, false, 1920, 1080);
 
-      expect(animation).toBeTruthy();
-      const keyframes = animation.effect.getKeyframes();
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes).toEqual([{ opacity: 1 }, { opacity: 0 }]);
+      expect(capturedTiming.duration).toBe(800);
+    });
 
-      // Should translate to south (positive Y)
-      expect(keyframes[1].transform).toContain('1080px'); // Height offset
+    it('should apply generic "fade" as fadeIn when isIn=true', () => {
+      const result = Transitions.apply(element, { type: 'fade', duration: 500 }, true, 1920, 1080);
+
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+    });
+
+    it('should apply generic "fade" as fadeOut when isIn=false', () => {
+      const result = Transitions.apply(element, { type: 'fade', duration: 500 }, false, 1920, 1080);
+
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes).toEqual([{ opacity: 1 }, { opacity: 0 }]);
+    });
+
+    it('should apply fly in from North', () => {
+      const result = Transitions.apply(
+        element, { type: 'flyIn', duration: 500, direction: 'N' }, true, 1920, 1080
+      );
+
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes[0].transform).toBe('translate(0px, -1080px)');
+      expect(capturedKeyframes[1].transform).toBe('translate(0, 0)');
+      expect(capturedTiming.easing).toBe('ease-out');
+    });
+
+    it('should apply fly in from East', () => {
+      Transitions.apply(
+        element, { type: 'flyIn', duration: 500, direction: 'E' }, true, 1920, 1080
+      );
+
+      expect(capturedKeyframes[0].transform).toBe('translate(1920px, 0px)');
+      expect(capturedKeyframes[1].transform).toBe('translate(0, 0)');
+    });
+
+    it('should apply fly in from South', () => {
+      Transitions.apply(
+        element, { type: 'flyIn', duration: 500, direction: 'S' }, true, 1920, 1080
+      );
+
+      expect(capturedKeyframes[0].transform).toBe('translate(0px, 1080px)');
+    });
+
+    it('should apply fly in from West', () => {
+      Transitions.apply(
+        element, { type: 'flyIn', duration: 500, direction: 'W' }, true, 1920, 1080
+      );
+
+      expect(capturedKeyframes[0].transform).toBe('translate(-1920px, 0px)');
+    });
+
+    it('should apply fly in from diagonal directions (NE, SE, SW, NW)', () => {
+      // NE
+      Transitions.apply(element, { type: 'flyIn', duration: 500, direction: 'NE' }, true, 1920, 1080);
+      expect(capturedKeyframes[0].transform).toBe('translate(1920px, -1080px)');
+
+      // SE
+      Transitions.apply(element, { type: 'flyIn', duration: 500, direction: 'SE' }, true, 1920, 1080);
+      expect(capturedKeyframes[0].transform).toBe('translate(1920px, 1080px)');
+
+      // SW
+      Transitions.apply(element, { type: 'flyIn', duration: 500, direction: 'SW' }, true, 1920, 1080);
+      expect(capturedKeyframes[0].transform).toBe('translate(-1920px, 1080px)');
+
+      // NW
+      Transitions.apply(element, { type: 'flyIn', duration: 500, direction: 'NW' }, true, 1920, 1080);
+      expect(capturedKeyframes[0].transform).toBe('translate(-1920px, -1080px)');
+    });
+
+    it('should apply fly out with direction S', () => {
+      const result = Transitions.apply(
+        element, { type: 'flyOut', duration: 1500, direction: 'S' }, false, 1920, 1080
+      );
+
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes[0].transform).toBe('translate(0, 0)');
+      expect(capturedKeyframes[1].transform).toBe('translate(0px, -1080px)');
+      expect(capturedTiming.easing).toBe('ease-in');
+    });
+
+    it('should apply generic "fly" as flyIn when isIn=true', () => {
+      const result = Transitions.apply(
+        element, { type: 'fly', duration: 500, direction: 'E' }, true, 1920, 1080
+      );
+
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes[0].transform).toBe('translate(1920px, 0px)');
+      expect(capturedKeyframes[1].transform).toBe('translate(0, 0)');
+      expect(capturedTiming.easing).toBe('ease-out');
+    });
+
+    it('should apply generic "fly" as flyOut when isIn=false', () => {
+      const result = Transitions.apply(
+        element, { type: 'fly', duration: 500, direction: 'W' }, false, 1920, 1080
+      );
+
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes[0].transform).toBe('translate(0, 0)');
+      expect(capturedKeyframes[1].transform).toContain('px');
+      expect(capturedTiming.easing).toBe('ease-in');
+    });
+
+    it('should not apply flyIn when isIn=false', () => {
+      const result = Transitions.apply(
+        element, { type: 'flyIn', duration: 500, direction: 'N' }, false, 1920, 1080
+      );
+      expect(result).toBeNull();
+    });
+
+    it('should not apply flyOut when isIn=true', () => {
+      const result = Transitions.apply(
+        element, { type: 'flyOut', duration: 500, direction: 'N' }, true, 1920, 1080
+      );
+      expect(result).toBeNull();
+    });
+
+    it('should default direction to N when missing', () => {
+      Transitions.apply(element, { type: 'flyIn', duration: 500 }, true, 1920, 1080);
+
+      // N direction: translateY(-height)
+      expect(capturedKeyframes[0].transform).toBe('translate(0px, -1080px)');
+    });
+
+    it('should default duration to 1000 when missing', () => {
+      Transitions.apply(element, { type: 'fadeIn' }, true, 1920, 1080);
+
+      expect(capturedTiming.duration).toBe(1000);
+    });
+
+    it('should return null for unknown transition type', () => {
+      const result = Transitions.apply(element, { type: 'slide' }, true, 1920, 1080);
+      expect(result).toBeNull();
+    });
+
+    it('should return null when config is null', () => {
+      expect(Transitions.apply(element, null, true, 1920, 1080)).toBeNull();
+    });
+
+    it('should return null when config has no type', () => {
+      expect(Transitions.apply(element, { duration: 500 }, true, 1920, 1080)).toBeNull();
+    });
+
+    it('should be case-insensitive for type matching', () => {
+      const result = Transitions.apply(element, { type: 'FadeIn', duration: 500 }, true, 1920, 1080);
+      expect(result).toBeTruthy();
+      expect(capturedKeyframes).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+    });
+
+    it('should parse fly transitions from XLF with generic "fly" type', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10">
+              <options>
+                <transIn>fly</transIn>
+                <transInDuration>500</transInDuration>
+                <transInDirection>E</transInDirection>
+                <transOut>fly</transOut>
+                <transOutDuration>500</transOutDuration>
+                <transOutDirection>NW</transOutDirection>
+              </options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.transitions.in).toEqual({
+        type: 'fly',
+        duration: 500,
+        direction: 'E'
+      });
+      expect(widget.transitions.out).toEqual({
+        type: 'fly',
+        duration: 500,
+        direction: 'NW'
+      });
     });
   });
 
