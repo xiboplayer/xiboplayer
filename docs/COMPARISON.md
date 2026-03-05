@@ -1,6 +1,6 @@
 # Xibo Player Comparison: xiboplayer SDK vs Upstream
 
-> Generated 2026-03-04. Based on analysis of: xiboplayer SDK (16 packages), PlayerApiV2
+> Generated 2026-03-05. Based on analysis of: xiboplayer SDK (16 packages), PlayerApiV2
 > (CMS custom module), upstream xibo-linux (C++), xibo-dotnetclient (C#/.NET),
 > xibo-layout-renderer (XLR), xibo-interactive-control (XIC), xibo-communication-framework
 > (XMR client), and CMS source (XMDS Soap3→Soap7, Widget/Render, Entity layer).
@@ -12,7 +12,7 @@
 ### xiboplayer (ours) — Modular SDK
 
 ```
-16 npm packages, ~1285 tests, platform-independent core
+16 npm packages, ~1345 tests, platform-independent core
 
 Platform (PWA / Electron / Chromium)
   ↓ events
@@ -75,12 +75,12 @@ Renderer process: XLR library (shared npm module)
 
 | Feature | xiboplayer | .NET (Win) | Linux (C++) | Upstream Electron |
 |---------|:----------:|:----------:|:-----------:|:-----------------:|
-| **CMS Protocol** | REST (PlayerApiV2) + SOAP fallback | SOAP only | SOAP only | SOAP only |
+| **CMS Protocol** | REST (PlayerApiV2) + SOAP (auto-detected) | SOAP only | SOAP only | SOAP only |
 | **Auth** | JWT Bearer | hardwareKey per call | hardwareKey per call | hardwareKey per call |
 | **Schedule parse** | Server-side JSON | Client-side XML | Client-side XML | Client-side XML |
 | **Layout format** | XLF (XML) | XLF | XLF | XLF |
 | **Regions** | ✅ | ✅ | ✅ | ✅ |
-| **Drawers** | ✅ (parsed, rendered) | ✅ (navWidget) | ❌ | ✅ (XLR) |
+| **Drawers** | ✅ (navWidget + triggerCode) | ✅ (navWidget) | ❌ | ✅ (XLR) |
 | **Overlay layouts** | ✅ | ✅ | ✅ | ✅ |
 | **Interrupt layouts** | ✅ (ShareOfVoice) | ✅ | ❌ | ❌ |
 | **Campaigns** | ✅ | ✅ | ❌ (single layouts) | ✅ |
@@ -93,14 +93,14 @@ Renderer process: XLR library (shared npm module)
 | **navLayout** | ✅ | ✅ | ❌ | ✅ |
 | **navWidget** | ✅ | ✅ | ❌ | ✅ |
 | **next/previous** | ✅ | ✅ | ❌ | ✅ |
-| **XIC support** | Partial (proxy routes) | ✅ (EmbeddedServer) | ❌ | ✅ |
+| **XIC support** | ✅ (SW intercept + renderer) | ✅ (EmbeddedServer) | ❌ | ✅ |
 | **XMR (real-time)** | ✅ WebSocket | ✅ WebSocket+ZMQ | ✅ ZMQ only | ✅ WebSocket |
 | **Transitions** | ✅ CSS (fade/fly) | ✅ WPF (fade/fly) | ✅ GTK (fade/fly) | ✅ (XLR) |
 | **Video** | HTML5 `<video>` | WPF MediaElement | GStreamer | HTML5 |
 | **Audio overlays** | ✅ | ✅ | ✅ | ✅ |
 | **PDF** | ✅ (pdfjs-dist) | ❌ (no native) | ❌ | ❌ |
 | **HLS** | ✅ (native browser) | ✅ (Edge WebView2) | ❌ | ✅ |
-| **Sub-playlists** | ✅ | ✅ (cycle playback) | ❌ | ✅ |
+| **Sub-playlists** | ✅ (cycle + playCount) | ✅ (cycle playback) | ❌ | ✅ |
 | **Data connectors** | ✅ (polling + IC) | ✅ (DataAgent) | ❌ | ✅ |
 | **Multi-display sync** | ✅ (BroadcastChannel) | ❌ | ❌ | ❌ |
 | **Offline mode** | ✅ (SW + IndexedDB) | ✅ (filesystem) | ✅ (filesystem) | ✅ (filesystem) |
@@ -154,46 +154,27 @@ Native PDF rendering via pdfjs-dist. No upstream player supports PDF widgets.
 
 ## 4. What Upstream Has That We're Missing or Could Improve
 
-### 4a. XIC (Interactive Control) — PARTIAL
+### 4a. XIC (Interactive Control) — DONE (v0.6.2)
 
-**What XIC provides** (upstream library, 626 lines):
-- `xiboIC.trigger(code)` — trigger action/webhook
-- `xiboIC.expireNow()` — expire current widget immediately
-- `xiboIC.extendWidgetDuration(seconds)` — extend widget playback
-- `xiboIC.setWidgetDuration(seconds)` — set exact duration
-- `xiboIC.getData(dataKey)` — get real-time data from data connector
-- `xiboIC.reportFault({code, reason})` — report widget fault
-- `xiboIC.info()` — get player information
-- `xiboIC.lockAllInteractions()` — disable text selection/context menu/pinch zoom
+All 7 XIC HTTP endpoints are implemented via Service Worker intercept (PWA) with
+MessageChannel relay to the main thread. The renderer now handles `widgetExpire`,
+`widgetExtendDuration`, `widgetSetDuration`, and `interactiveTrigger` events.
+Widget iframes calling `xiboIC.expireNow()` etc. work end-to-end.
 
-**Communication**: HTTP endpoints on localhost that the player must serve:
-```
-GET  /info
-POST /trigger         {id, trigger}
-POST /duration/expire {id}
-POST /duration/extend {id, duration}
-POST /duration/set    {id, duration}
-POST /fault           {code, reason, key, ttl}
-GET  /realtime?dataKey=<key>
-```
+**Remaining**: Proxy IC routes for Electron/Chromium (Phase 2), `xiboICTargetId`
+injection, DataConnector `postMessage` notifications.
 
-Plus: `postMessage` IPC for data notifications from player → widget iframe.
+### 4b. Canvas Regions — DONE (v0.6.2)
 
-**Our status**: We have proxy routes `/ic/realtime/{dataKey}` and `/ic/action/{triggerCode}`, but we likely don't implement the full 7-endpoint XIC HTTP API, and we probably don't inject the XIC library into widget iframes or set `xiboICTargetId`.
+Canvas regions (`type="canvas"`) now render all widgets simultaneously. Duration
+uses `Math.max()` of widget durations. Auto-detects canvas from region attribute
+or CMS "global" widget type.
 
-**Priority**: HIGH — widgets from the CMS expect these endpoints to exist.
+### 4c. Cycle Playback / Sub-Playlists — DONE (v0.6.2)
 
-### 4b. Canvas Regions
-
-CMS supports a `canvas` region type where ALL widgets render simultaneously (no time-based sequencing). Used for drawing apps, maps, interactive dashboards. Our renderer may not handle this — it cycles widgets sequentially.
-
-**Priority**: MEDIUM — less common but used for interactive content.
-
-### 4c. Cycle Playback / Sub-Playlists (parentWidgetId)
-
-The .NET player has sophisticated cycle playback: a parent widget groups child widgets that rotate sequentially or randomly. We parse `sub-playlist` type but need to verify our implementation matches upstream behavior (especially random mode and date-range filtering within cycles).
-
-**Priority**: MEDIUM
+Round-robin and random selection work correctly. `playCount` attribute is now
+enforced — the same widget repeats N times before the cycle advances. CMS
+pre-flattens sub-playlists so the player receives a simple ordered widget list.
 
 ### 4d. Shell Commands / Native Commands
 
@@ -231,9 +212,9 @@ image with PlayerApiV2. SOAP/XMDS is the universal protocol every CMS speaks.
 - `rest-client.js` — Clean REST/JSON client for PlayerApiV2
 
 **Recommendation**: Keep both. SOAP is the baseline; REST/PlayerApiV2 is the
-optimization layer. At startup, auto-detect: probe `GET /api/v2/player/health`
-→ if 200, use RestClient; otherwise fall back to XmdsClient. This makes
-PlayerApiV2 a transparent upgrade — no client config needed.
+optimization layer. ✅ **Done (v0.6.2)**: `ProtocolDetector` auto-probes
+`GET /api/v2/player/health` at startup — uses REST if available, falls back to
+SOAP. Re-probes on connection errors for runtime hot-swap.
 
 ### 5b. Schedule Parser (schedule-parser.js) — MUST KEEP
 
@@ -300,31 +281,26 @@ CmsClient interface:
 
 ## 6. Implementation Priorities
 
-### Must Have (for feature parity with upstream)
+### Done (v0.6.2)
 
-1. **Full XIC HTTP API** — 7 endpoints on localhost
-   - Inject XIC library into widget iframes
-   - Set `xiboICTargetId` global
-   - Implement `postMessage` data notifications
-   - This unblocks ALL interactive CMS widgets
+1. ~~**Full XIC HTTP API**~~ — ✅ 7 endpoints wired via SW + renderer event handlers (#183)
+2. ~~**Canvas region support**~~ — ✅ simultaneous widget rendering (#186)
+3. ~~**Widget duration control from XIC**~~ — ✅ expire/extend/set modify renderer timers (#183)
+4. ~~**Auto-detect CMS protocol**~~ — ✅ ProtocolDetector probes health endpoint at startup (#187)
+5. ~~**Fly transitions (exit)**~~ — ✅ fixed switch fallthrough bug (#184)
+6. ~~**Drawer navWidget via triggerCode**~~ — ✅ wired navigate-to-widget event (#185)
+7. ~~**Sub-playlist playCount**~~ — ✅ enforced repeat count before advancing (#188)
 
-2. **Canvas region support** — render all widgets simultaneously when region type is `canvas`
+### Should Have (next)
 
-3. **Widget duration control from XIC** — `expireNow`, `extendDuration`, `setDuration` must modify renderer timers
-
-4. **Auto-detect CMS protocol** — probe PlayerApiV2 health endpoint at startup,
-   use REST if available, fall back to SOAP. Transparent upgrade, no user config.
-
-### Should Have (improvements)
-
-5. **Verify sub-playlist behavior** — match .NET cycle playback (random mode, date filtering)
-6. **Unify CmsClient interface** — single interface with REST and SOAP implementations behind it
+8. **XIC Phase 2** — `xiboICTargetId` injection, DataConnector `postMessage`, proxy IC routes for Electron/Chromium
+9. **Unify CmsClient interface** — single interface with REST and SOAP implementations behind it
 
 ### Nice to Have
 
-7. **Ad exchange support** (SSP widget type)
-8. **Shell command execution** in Electron
-9. **Engagement tracking** in StatsCollector
+10. **Ad exchange support** (SSP widget type)
+11. **Shell command execution** in Electron
+12. **Engagement tracking** in StatsCollector
 
 ---
 
