@@ -2151,7 +2151,7 @@ export class RendererLite {
     // NOT update the current layout's duration with a different layout's video.
     const createdForLayoutId = this.currentLayoutId;
     const onLoadedMetadata = () => {
-      const videoDuration = Math.floor(video.duration);
+      const videoDuration = video.duration;
       this.log.info(`Video ${storedAs} duration detected: ${videoDuration}s`);
 
       if (widget.duration === 0 || widget.useDuration === 0) {

@@ -1984,7 +1984,7 @@ class PwaPlayer {
       };
 
       video.addEventListener('loadedmetadata', () => {
-        const dur = Math.floor(video.duration);
+        const dur = video.duration;
         cleanup();
         resolve(dur);
       }, { once: true });
