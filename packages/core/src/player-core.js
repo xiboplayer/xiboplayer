@@ -658,7 +658,6 @@ export class PlayerCore extends EventEmitter {
       this.emit('xmr-connected', xmrUrl);
     } else if (!this.xmr.isConnected()) {
       log.info('XMR disconnected, attempting to reconnect...');
-      this.xmr.reconnectAttempts = 0;
       await this.xmr.start(xmrUrl, xmrCmsKey);
       this.emit('xmr-reconnected', xmrUrl);
     } else {

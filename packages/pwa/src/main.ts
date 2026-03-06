@@ -232,6 +232,9 @@ class PwaPlayer {
     // Listen for certificate warnings from Electron main process
     this.setupCertWarnings();
 
+    // Listen for XMR connection status changes
+    this.setupXmrWarning();
+
     // Request Screen Wake Lock to prevent display sleep
     await this.requestWakeLock();
 
@@ -322,6 +325,33 @@ class PwaPlayer {
       // If we recreated the overlay, repopulate config info
       if (created) this.updateConfigDisplay();
     }) as EventListener);
+  }
+
+  /**
+   * Show/hide an XMR disconnected warning in the top bar.
+   * Placed before #cert-warnings (or before #status if no cert warnings).
+   */
+  private setupXmrWarning() {
+    this.core.on('xmr-status', ({ connected }: { connected: boolean }) => {
+      const overlay = document.getElementById('overlay');
+      if (!overlay) return;
+
+      let span = document.getElementById('xmr-warning');
+
+      if (!connected) {
+        if (!span) {
+          span = document.createElement('span');
+          span.id = 'xmr-warning';
+          span.style.cssText = 'color: #ff6666; flex: 0 0 auto;';
+          // Insert before cert-warnings or status (whichever comes first)
+          const anchor = document.getElementById('cert-warnings') || document.getElementById('status');
+          overlay.insertBefore(span, anchor);
+        }
+        span.textContent = '\u26A0 XMR disconnected';
+      } else {
+        span?.remove();
+      }
+    });
   }
 
   /**

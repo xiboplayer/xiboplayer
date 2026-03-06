@@ -1,8 +1,8 @@
 /**
  * XmrWrapper Tests
  *
- * Comprehensive testing for XMR WebSocket integration
- * Tests connection lifecycle, all CMS commands, reconnection logic, and error handling
+ * Tests connection lifecycle, all CMS commands, and error handling.
+ * Reconnection is delegated to the framework's built-in 60s health-check.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -84,13 +84,6 @@ describe('XmrWrapper', () => {
       expect(wrapper.connected).toBe(false);
       expect(wrapper.xmr).toBeNull();
     });
-
-    it('should initialize reconnection properties', () => {
-      expect(wrapper.reconnectAttempts).toBe(0);
-      expect(wrapper.maxReconnectAttempts).toBe(10);
-      expect(wrapper.reconnectDelay).toBe(5000);
-      expect(wrapper.reconnectTimer).toBeNull();
-    });
   });
 
   describe('start(xmrUrl, cmsKey)', () => {
@@ -102,27 +95,27 @@ describe('XmrWrapper', () => {
       expect(wrapper.xmr).toBeDefined();
       expect(wrapper.xmr.init).toHaveBeenCalled();
       expect(wrapper.xmr.start).toHaveBeenCalledWith('wss://test.xmr.com', 'cms-key-123');
-      expect(wrapper.reconnectAttempts).toBe(0);
     });
 
-    it('should save connection details for reconnection', async () => {
-      await wrapper.start('wss://test.xmr.com', 'cms-key-123');
-
-      expect(wrapper.lastXmrUrl).toBe('wss://test.xmr.com');
-      expect(wrapper.lastCmsKey).toBe('cms-key-123');
-    });
-
-    it('should reuse existing xmr instance on reconnect', async () => {
+    it('should reuse existing xmr instance on subsequent start() calls', async () => {
       await wrapper.start('wss://test.xmr.com', 'cms-key-123');
       const firstInstance = wrapper.xmr;
 
-      // Simulate disconnect
-      wrapper.connected = false;
-
       await wrapper.start('wss://test.xmr.com', 'cms-key-123');
-      const secondInstance = wrapper.xmr;
 
-      expect(firstInstance).toBe(secondInstance);
+      expect(wrapper.xmr).toBe(firstInstance);
+      expect(firstInstance.init).toHaveBeenCalledTimes(1);
+      expect(firstInstance.start).toHaveBeenCalledTimes(2);
+    });
+
+    it('should create new instance after stop()', async () => {
+      await wrapper.start('wss://test.xmr.com', 'cms-key-123');
+      const firstInstance = wrapper.xmr;
+
+      await wrapper.stop();
+      await wrapper.start('wss://test.xmr.com', 'cms-key-123');
+
+      expect(wrapper.xmr).not.toBe(firstInstance);
     });
 
     it('should use custom xmrChannel if provided', async () => {
@@ -144,40 +137,18 @@ describe('XmrWrapper', () => {
     });
 
     it('should handle connection failure gracefully', async () => {
-      const newWrapper = new XmrWrapper(mockConfig, mockPlayer);
-      await newWrapper.start('wss://test.xmr.com', 'cms-key-123');
+      // Hook setupEventHandlers to patch the freshly-created Xmr instance
+      // (init is an instance property, so prototype patching doesn't work)
+      const origSetup = wrapper.setupEventHandlers.bind(wrapper);
+      wrapper.setupEventHandlers = function() {
+        origSetup.call(this);
+        this.xmr.init = vi.fn(() => Promise.reject(new Error('Connection failed')));
+      };
 
-      // Make start fail by replacing the start method
-      if (newWrapper.xmr) {
-        newWrapper.xmr.start = vi.fn(() => Promise.reject(new Error('Connection failed')));
-        newWrapper.connected = false;
+      const result = await wrapper.start('wss://test.xmr.com', 'cms-key-123');
+      expect(result).toBe(false);
 
-        const result = await newWrapper.start('wss://test.xmr.com', 'cms-key-123');
-        expect(result).toBe(false);
-      }
-    });
-
-    it('should schedule reconnect on failure', async () => {
-      const newWrapper = new XmrWrapper(mockConfig, mockPlayer);
-      await newWrapper.start('wss://test.xmr.com', 'cms-key-123');
-
-      // Simulate failure and check reconnect
-      if (newWrapper.xmr) {
-        newWrapper.xmr.start = vi.fn(() => Promise.reject(new Error('Connection failed')));
-        newWrapper.connected = false;
-
-        await newWrapper.start('wss://test.xmr.com', 'cms-key-123');
-        expect(newWrapper.reconnectTimer).toBeDefined();
-      }
-    });
-
-    it('should cancel pending reconnect timer on new start', async () => {
-      wrapper.reconnectTimer = setTimeout(() => {}, 5000);
-      const timerId = wrapper.reconnectTimer;
-
-      await wrapper.start('wss://test.xmr.com', 'cms-key-123');
-
-      expect(wrapper.reconnectTimer).toBeNull();
+      wrapper.setupEventHandlers = origSetup;
     });
   });
 
@@ -194,8 +165,7 @@ describe('XmrWrapper', () => {
         xmrInstance.simulateCommand('connected');
 
         expect(wrapper.connected).toBe(true);
-        expect(wrapper.reconnectAttempts).toBe(0);
-        expect(mockPlayer.updateStatus).toHaveBeenCalledWith('XMR connected');
+        expect(mockPlayer.emit).toHaveBeenCalledWith('xmr-status', { connected: true });
       });
 
       it('should handle disconnected event', () => {
@@ -204,15 +174,7 @@ describe('XmrWrapper', () => {
         xmrInstance.simulateCommand('disconnected');
 
         expect(wrapper.connected).toBe(false);
-        expect(mockPlayer.updateStatus).toHaveBeenCalledWith('XMR disconnected (polling mode)');
-      });
-
-      it('should schedule reconnect on disconnect', () => {
-        wrapper.connected = true;
-
-        xmrInstance.simulateCommand('disconnected');
-
-        expect(wrapper.reconnectTimer).toBeDefined();
+        expect(mockPlayer.emit).toHaveBeenCalledWith('xmr-status', { connected: false });
       });
 
       it('should handle error event', () => {
@@ -591,69 +553,17 @@ describe('XmrWrapper', () => {
     });
   });
 
-  describe('Reconnection Logic', () => {
-    it('should schedule reconnect with exponential backoff', async () => {
-      const newWrapper = new XmrWrapper(mockConfig, mockPlayer);
-      await newWrapper.start('wss://test.xmr.com', 'cms-key-123');
-
-      // Make subsequent starts fail
-      if (newWrapper.xmr) {
-        newWrapper.xmr.start = vi.fn(() => Promise.reject(new Error('Connection failed')));
-        newWrapper.connected = false;
-
-        // First reconnect attempt
-        await newWrapper.start('wss://test.xmr.com', 'cms-key-123');
-        expect(newWrapper.reconnectAttempts).toBe(1);
-
-        // Second reconnect attempt (should have longer delay)
-        await newWrapper.start('wss://test.xmr.com', 'cms-key-123');
-        expect(newWrapper.reconnectAttempts).toBe(2);
-      }
-    });
-
-    it('should stop reconnecting after max attempts', async () => {
-      wrapper.reconnectAttempts = wrapper.maxReconnectAttempts;
-
-      wrapper.scheduleReconnect('wss://test.xmr.com', 'cms-key-123');
-
-      expect(wrapper.reconnectTimer).toBeNull();
-    });
-
-    it('should cancel existing timer before scheduling new reconnect', () => {
-      wrapper.reconnectTimer = setTimeout(() => {}, 5000);
-      const firstTimer = wrapper.reconnectTimer;
-
-      wrapper.scheduleReconnect('wss://test.xmr.com', 'cms-key-123');
-
-      expect(wrapper.reconnectTimer).not.toBe(firstTimer);
-    });
-
-    it('should reset reconnect attempts on successful connection', async () => {
-      wrapper.reconnectAttempts = 5;
-
-      await wrapper.start('wss://test.xmr.com', 'cms-key-123');
-
-      expect(wrapper.reconnectAttempts).toBe(0);
-    });
-  });
-
   describe('stop()', () => {
-    it('should stop XMR connection', async () => {
+    it('should stop XMR connection and null out instance', async () => {
       await wrapper.start('wss://test.xmr.com', 'cms-key-123');
+      const xmrRef = wrapper.xmr;
       wrapper.connected = true;
 
       await wrapper.stop();
 
-      expect(wrapper.xmr.stop).toHaveBeenCalled();
+      expect(xmrRef.stop).toHaveBeenCalled();
       expect(wrapper.connected).toBe(false);
-    });
-
-    it('should cancel pending reconnect timer', async () => {
-      wrapper.reconnectTimer = setTimeout(() => {}, 5000);
-
-      await wrapper.stop();
-
-      expect(wrapper.reconnectTimer).toBeNull();
+      expect(wrapper.xmr).toBeNull();
     });
 
     it('should handle stop when not started', async () => {
@@ -662,7 +572,7 @@ describe('XmrWrapper', () => {
 
     it('should handle stop errors gracefully', async () => {
       await wrapper.start('wss://test.xmr.com', 'cms-key-123');
-      wrapper.xmr.stop.mockRejectedValue(new Error('Stop failed'));
+      wrapper.xmr.stop = vi.fn(() => Promise.reject(new Error('Stop failed')));
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       await wrapper.stop();
@@ -773,25 +683,11 @@ describe('XmrWrapper', () => {
   });
 
   describe('Memory Management', () => {
-    it('should clean up timers on stop', async () => {
-      wrapper.reconnectTimer = setTimeout(() => {}, 5000);
-
-      await wrapper.stop();
-
-      expect(wrapper.reconnectTimer).toBeNull();
-    });
-
-    it('should allow garbage collection after stop', async () => {
+    it('should null out xmr instance on stop', async () => {
       await wrapper.start('wss://test.xmr.com', 'cms-key-123');
       await wrapper.stop();
 
-      // The disconnected event handler may schedule a reconnect,
-      // but stop() should cancel it
-      // Allow up to a small window for async cleanup
-      await vi.runAllTimersAsync();
-
-      // After all timers run and stop completes, timer should be null
-      expect(wrapper.reconnectTimer).toBeNull();
+      expect(wrapper.xmr).toBeNull();
     });
   });
 });

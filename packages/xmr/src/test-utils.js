@@ -89,7 +89,7 @@ export function createMockPlayer() {
     refreshDataConnectors: vi.fn(),
     reportGeoLocation: vi.fn(() => Promise.resolve()),
     requestGeoLocation: vi.fn(() => Promise.resolve({ latitude: 41.3851, longitude: 2.1734 })),
-    updateStatus: vi.fn()
+    emit: vi.fn()
   };
 }
 
