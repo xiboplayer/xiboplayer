@@ -62,6 +62,9 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
     }
   }
 
+  // Replace CMS placeholders left for "client-side SDK handling"
+  modifiedHtml = modifiedHtml.replace(/\[\[ViewPortWidth]]/g, 'device-width');
+
   // Rewrite dependency URLs to local mirror paths. CMS sends absolute URLs
   // like https://cms.example.com${PLAYER_API}/dependencies/bundle.min.js
   // which fail due to CORS/auth. Replace with local PLAYER_API/dependencies/...
