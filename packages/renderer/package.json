@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/renderer",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "RendererLite - Fast, efficient XLF layout rendering engine",
   "type": "module",
   "main": "./src/index.js",
