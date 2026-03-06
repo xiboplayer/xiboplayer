@@ -2414,7 +2414,17 @@ class PwaPlayer {
           }
 
           // Clone body content
-          captureDiv.appendChild(iDoc.body.cloneNode(true));
+          const clonedBody = iDoc.body.cloneNode(true) as HTMLElement;
+          // Rewrite img src to absolute URLs — the <base> tag stays in the
+          // iframe <head> so relative srcs like "36.png" would resolve against
+          // the main document origin (e.g. /player/36.png → 404)
+          for (const img of clonedBody.querySelectorAll('img[src]')) {
+            const src = img.getAttribute('src') || '';
+            if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:')) {
+              img.setAttribute('src', new URL(src, iDoc.baseURI).href);
+            }
+          }
+          captureDiv.appendChild(clonedBody);
           document.body.appendChild(captureDiv);
 
           // Collect natural dimensions from ORIGINAL iframe images (before html2canvas clones).
