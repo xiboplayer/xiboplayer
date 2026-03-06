@@ -4,6 +4,10 @@
  * Integrates the official @xibosignage/xibo-communication-framework
  * to enable real-time push commands from CMS via WebSocket.
  *
+ * Connection lifecycle is delegated to the framework, which has a
+ * built-in 60s health-check interval that reconnects automatically.
+ * This wrapper only routes events to player callbacks.
+ *
  * Supported commands:
  * - collectNow: Trigger immediate XMDS collection cycle
  * - screenShot/screenshot: Capture and upload screenshot
@@ -35,61 +39,40 @@ export class XmrWrapper {
     this.player = player;
     this.xmr = null;
     this.connected = false;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 10;
-    this.reconnectDelay = 5000; // 5 seconds
-    this.lastXmrUrl = null;
-    this.lastCmsKey = null;
-    this.reconnectTimer = null;
-    this.intentionalShutdown = false;
   }
 
   /**
-   * Initialize and start XMR connection
+   * Initialize and start XMR connection.
+   *
+   * Creates a single Xmr instance and lets the framework manage
+   * reconnection via its internal 60s health-check timer.
+   * Calling start() again on an already-running instance is safe —
+   * the framework skips if already connected to the same URL.
+   *
    * @param {string} xmrUrl - WebSocket URL (ws:// or wss://)
    * @param {string} cmsKey - CMS authentication key
    * @returns {Promise<boolean>} Success status
    */
   async start(xmrUrl, cmsKey) {
     try {
-      log.info('Initializing connection to:', xmrUrl);
-
-      // Clear intentional shutdown flag (we're starting again)
-      this.intentionalShutdown = false;
-
-      // Save connection details for reconnection
-      this.lastXmrUrl = xmrUrl;
-      this.lastCmsKey = cmsKey;
-
-      // Cancel any pending reconnect attempts
-      if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer);
-        this.reconnectTimer = null;
-      }
-
-      // Create XMR instance with channel ID (or reuse if already exists)
+      // Reuse existing instance — the framework handles reconnection.
+      // Only create a new instance on first call or after stop().
       if (!this.xmr) {
+        log.info('Initializing connection to:', xmrUrl);
         const channel = this.config.xmrChannel || `player-${this.config.hardwareKey}`;
         this.xmr = new Xmr(channel);
-        // Setup event handlers before connecting (only once)
         this.setupEventHandlers();
+        await this.xmr.init();
       }
 
-      // Initialize and connect
-      await this.xmr.init();
       await this.xmr.start(xmrUrl, cmsKey);
-
       this.connected = true;
-      this.reconnectAttempts = 0;
       log.info('Connected successfully');
 
       return true;
     } catch (error) {
       log.warn('Failed to start:', error.message);
-      log.info('Continuing in polling mode (XMDS only)');
-
-      // Schedule reconnection attempt
-      this.scheduleReconnect(xmrUrl, cmsKey);
+      log.info('Framework will retry automatically every 60s');
 
       return false;
     }
@@ -105,21 +88,13 @@ export class XmrWrapper {
     this.xmr.on('connected', () => {
       log.info('WebSocket connected');
       this.connected = true;
-      this.reconnectAttempts = 0;
-      this.player.updateStatus?.('XMR connected');
+      this.player.emit?.('xmr-status', { connected: true });
     });
 
     this.xmr.on('disconnected', () => {
-      log.warn('WebSocket disconnected');
+      log.warn('WebSocket disconnected (framework will reconnect)');
       this.connected = false;
-      this.player.updateStatus?.('XMR disconnected (polling mode)');
-
-      // Attempt to reconnect if we have the connection details
-      // BUT not if this was an intentional shutdown
-      if (this.lastXmrUrl && this.lastCmsKey && !this.intentionalShutdown) {
-        log.info('Connection lost, scheduling reconnection...');
-        this.scheduleReconnect(this.lastXmrUrl, this.lastCmsKey);
-      }
+      this.player.emit?.('xmr-status', { connected: false });
     });
 
     this.xmr.on('error', (error) => {
@@ -151,8 +126,6 @@ export class XmrWrapper {
     // CMS command: License Check (no-op for Linux clients)
     this.xmr.on('licenceCheck', () => {
       log.debug('Received licenceCheck (no-op for Linux client)');
-      // Linux clients always report valid license
-      // No action needed - clientType: "linux" bypasses commercial license
     });
 
     // CMS command: Change Layout
@@ -220,7 +193,6 @@ export class XmrWrapper {
       const commandCode = data?.commandCode || data;
       log.info('Received commandAction command:', commandCode);
       try {
-        // Use local commands from RegisterDisplay (stored on player), not XMR payload commands
         const localCommands = this.player.displayCommands || data?.commands;
         await this.player.executeCommand(commandCode, localCommands);
         log.debug('commandAction completed successfully');
@@ -279,7 +251,6 @@ export class XmrWrapper {
     this.xmr.on('criteriaUpdate', async (data) => {
       log.info('Received criteriaUpdate command:', data);
       try {
-        // Trigger immediate collection to get updated display criteria
         await this.player.collect();
         log.debug('criteriaUpdate completed successfully');
       } catch (error) {
@@ -296,7 +267,6 @@ export class XmrWrapper {
         const hasCoordinates = data && data.latitude != null && data.longitude != null;
 
         if (hasCoordinates) {
-          // CMS is pushing coordinates to us
           if (this.player.reportGeoLocation) {
             this.player.reportGeoLocation(data);
             log.debug('currentGeoLocation: coordinates applied');
@@ -304,7 +274,6 @@ export class XmrWrapper {
             log.warn('Geo location reporting not implemented in player');
           }
         } else {
-          // CMS is asking us to report our location via browser API
           if (this.player.requestGeoLocation) {
             await this.player.requestGeoLocation();
             log.debug('currentGeoLocation: browser location requested');
@@ -319,50 +288,17 @@ export class XmrWrapper {
   }
 
   /**
-   * Schedule reconnection attempt
-   */
-  scheduleReconnect(xmrUrl, cmsKey) {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      log.warn('Max reconnection attempts reached, giving up');
-      log.info('Will retry on next collection cycle');
-      return;
-    }
-
-    // Cancel any existing reconnect timer
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-    }
-
-    this.reconnectAttempts++;
-    const delay = this.reconnectDelay * this.reconnectAttempts;
-
-    log.debug(`Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-
-    this.reconnectTimer = setTimeout(() => {
-      log.debug('Attempting to reconnect...');
-      this.reconnectTimer = null;
-      this.start(xmrUrl, cmsKey);
-    }, delay);
-  }
-
-  /**
-   * Stop XMR connection
+   * Stop XMR connection and clean up the framework instance.
+   * The framework's internal 60s timer is cleared when the instance
+   * is discarded, so no reconnection will occur after stop().
    */
   async stop() {
-    // Mark as intentional shutdown to prevent reconnection
-    this.intentionalShutdown = true;
-
-    // Cancel any pending reconnect attempts
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
     if (!this.xmr) return;
 
     try {
       await this.xmr.stop();
       this.connected = false;
+      this.xmr = null;
       log.info('Stopped');
     } catch (error) {
       log.error('Error stopping:', error);
