@@ -1509,11 +1509,15 @@ class PwaPlayer {
         });
       }
 
-      // If a new layout is already rendering (e.g. preload swap, keyboard skip, XMR),
-      // skip advance and clearCurrentLayout — the transition was already handled.
+      // If a new layout is already rendering or being prepared (async fetch),
+      // skip advance — the transition was already handled by the caller.
       // Stats/play recording above still run for proper tracking.
       if (this.renderer.currentLayoutId && this.renderer.currentLayoutId !== layoutId) {
         log.debug(`Layout ${layoutId} ended but ${this.renderer.currentLayoutId} already playing, skipping advance`);
+        return;
+      }
+      if (this.preparingLayoutId && this.preparingLayoutId !== layoutId) {
+        log.debug(`Layout ${layoutId} ended but ${this.preparingLayoutId} being prepared, skipping advance`);
         return;
       }
 
