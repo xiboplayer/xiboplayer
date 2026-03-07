@@ -103,13 +103,23 @@ export function mockChunkedFetch(sourceBlob) {
  * Create test blob of specified size
  */
 export function createTestBlob(size = 1024, type = 'application/octet-stream') {
-  const buffer = new ArrayBuffer(size);
-  // Fill with non-zero data so chunks are distinguishable
-  const view = new Uint8Array(buffer);
-  for (let i = 0; i < size; i++) {
-    view[i] = i % 256;
+  // For large blobs, repeat a small pattern to avoid allocating huge ArrayBuffers
+  const CHUNK = 64 * 1024; // 64KB pattern block
+  const pattern = new Uint8Array(Math.min(size, CHUNK));
+  for (let i = 0; i < pattern.length; i++) {
+    pattern[i] = i % 256;
   }
-  return new Blob([buffer], { type });
+  if (size <= CHUNK) {
+    return new Blob([pattern.slice(0, size)], { type });
+  }
+  const parts = [];
+  let remaining = size;
+  while (remaining > 0) {
+    const len = Math.min(remaining, CHUNK);
+    parts.push(len === CHUNK ? pattern : pattern.slice(0, len));
+    remaining -= len;
+  }
+  return new Blob(parts, { type });
 }
 
 /**
