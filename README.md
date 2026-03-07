@@ -57,7 +57,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving
 - **Protocol auto-detection** — probes REST API at startup, auto-selects REST or SOAP transport
 - **Persistent layout durations** — cached in IndexedDB for correct timeline on restart
-- **1412 tests** across 36 test suites
+- **1402 tests** across 36 test suites
 
 ## Packages
 
@@ -154,7 +154,7 @@ Layout features: proportional scaling with ResizeObserver, overlay support (z-in
 | [xiboplayer-pwa](packages/pwa) | Any browser | Hosted on your CMS |
 | [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) | Fedora / Ubuntu | `dnf install xiboplayer-electron` |
 | [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Fedora / Ubuntu | `dnf install xiboplayer-chromium` |
-| [xibo-kiosk](https://github.com/xibo-players/xibo-kiosk) | Fedora / Ubuntu | `dnf install xibo-kiosk` |
+| [xiboplayer-kiosk](https://github.com/xibo-players/xiboplayer-kiosk) | Fedora / Ubuntu | `dnf install xiboplayer-kiosk` |
 
 RPM and DEB packages are available from [dl.xiboplayer.org](https://dl.xiboplayer.org).
 
@@ -174,7 +174,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1412 tests across 36 suites)
+pnpm test              # run all tests (1402 tests across 36 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
