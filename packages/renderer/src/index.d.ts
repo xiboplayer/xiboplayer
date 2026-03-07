@@ -38,6 +38,7 @@ export class RendererLite {
   scaleFactor: number;
   offsetX: number;
   offsetY: number;
+  _resizeSuppressed: boolean;
 
   on(event: string, callback: (...args: any[]) => void): () => void;
   emit(event: string, ...args: any[]): void;

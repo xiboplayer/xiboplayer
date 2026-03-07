@@ -62,7 +62,6 @@ class PwaPlayer {
   private _screenshotInterval: any = null;
   private _screenshotMethod: 'electron' | 'native' | 'html2canvas' | null = null;
   private _screenshotInFlight = false; // Concurrency guard — one capture at a time
-  private _html2canvasMod: any = null; // Pre-loaded module
   private _wakeLock: any = null; // Screen Wake Lock sentinel
   private syncManager: any = null; // Multi-display sync coordinator
   private _currentLayoutEnableStat: boolean = true; // enableStat from current layout XLF
@@ -2302,11 +2301,10 @@ class PwaPlayer {
   }
 
   /**
-   * Capture screenshot by manually composing a canvas from visible elements.
-   * - Images/video/canvas: drawn directly via ctx.drawImage() with object-fit emulation
-   * - Iframes: content cloned into main document, rendered via html2canvas
-   *   (html2canvas fails on cross-document elements, so we clone first)
-   * - Background: read from #player-container computed style
+   * Capture screenshot by composing a canvas from visible elements.
+   * Draws images, video, canvas elements directly. For iframes, draws
+   * their internal canvas/img elements (PDF pages, charts, images).
+   * Text-only widgets (clocks, tickers) won't appear in screenshots.
    */
   private async captureHtml2Canvas(): Promise<string> {
     const canvas = document.createElement('canvas');
@@ -2352,11 +2350,6 @@ class PwaPlayer {
       }
     }
 
-    // Ensure html2canvas is loaded (pre-loaded at init, fallback to lazy load)
-    if (!this._html2canvasMod) {
-      this._html2canvasMod = (await import('html2canvas')).default;
-    }
-
     // Draw each visible widget element onto the canvas
     const elements = container.querySelectorAll('img, video, iframe, canvas');
     let drawn = 0;
@@ -2395,113 +2388,43 @@ class PwaPlayer {
           ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
           drawn++;
         } else if (el instanceof HTMLIFrameElement) {
+          // Capture iframe content without html2canvas DOM cloning.
+          // html2canvas cloning causes side effects (blob URL re-fetches,
+          // resize glitches, visual rectangles). Instead, draw any
+          // drawable elements (canvas, img, video) directly from the iframe.
           const iDoc = el.contentDocument;
           if (!iDoc?.body) continue;
 
-          // html2canvas fails on cross-document elements (produces transparent canvas).
-          // Clone the iframe's styles + content into the main document first,
-          // then run html2canvas on the clone in the main document context.
-          const captureDiv = document.createElement('div');
-          captureDiv.style.cssText = `position:fixed;left:-9999px;top:0;width:${rect.width}px;height:${rect.height}px;overflow:hidden;`;
-
-          // Clone stylesheets with absolute URLs (iframe base may differ)
-          const linkPromises: Promise<void>[] = [];
-          for (const styleEl of iDoc.querySelectorAll('style')) {
-            captureDiv.appendChild(styleEl.cloneNode(true));
-          }
-          for (const linkEl of iDoc.querySelectorAll('link[rel="stylesheet"]')) {
-            const newLink = document.createElement('link');
-            newLink.rel = 'stylesheet';
-            newLink.href = new URL(linkEl.getAttribute('href') || '', iDoc.baseURI).href;
-            captureDiv.appendChild(newLink);
-            // Wait for each stylesheet to load (or fail) instead of arbitrary delay
-            linkPromises.push(new Promise<void>(resolve => {
-              newLink.onload = () => resolve();
-              newLink.onerror = () => resolve();
-            }));
+          // Draw canvas elements (PDF pages, charts, etc.)
+          for (const c of iDoc.querySelectorAll('canvas')) {
+            const cr = c.getBoundingClientRect();
+            if (cr.width === 0 || cr.height === 0) continue;
+            try {
+              // Map iframe-relative coords to screen coords
+              const iframeRect = el.getBoundingClientRect();
+              ctx.drawImage(c, iframeRect.left + cr.left, iframeRect.top + cr.top, cr.width, cr.height);
+              drawn++;
+            } catch (_) { /* tainted canvas */ }
           }
 
-          // Clone body content
-          const clonedBody = iDoc.body.cloneNode(true) as HTMLElement;
-          // Rewrite img src to absolute URLs — the <base> tag stays in the
-          // iframe <head> so relative srcs like "36.png" would resolve against
-          // the main document origin (e.g. /player/36.png → 404)
-          for (const img of clonedBody.querySelectorAll('img[src]')) {
-            const src = img.getAttribute('src') || '';
-            if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:')) {
-              img.setAttribute('src', new URL(src, iDoc.baseURI).href);
-            }
+          // Draw images inside the iframe
+          for (const img of iDoc.querySelectorAll('img') as NodeListOf<HTMLImageElement>) {
+            if (!img.complete || !img.naturalWidth) continue;
+            const ir = img.getBoundingClientRect();
+            if (ir.width === 0 || ir.height === 0) continue;
+            try {
+              const iframeRect = el.getBoundingClientRect();
+              const fit = iDoc.defaultView?.getComputedStyle(img)?.objectFit;
+              if (fit === 'contain') {
+                const d = this.containedRect(img.naturalWidth, img.naturalHeight,
+                  new DOMRect(iframeRect.left + ir.left, iframeRect.top + ir.top, ir.width, ir.height));
+                ctx.drawImage(img, d.x, d.y, d.w, d.h);
+              } else {
+                ctx.drawImage(img, iframeRect.left + ir.left, iframeRect.top + ir.top, ir.width, ir.height);
+              }
+              drawn++;
+            } catch (_) { /* tainted */ }
           }
-          captureDiv.appendChild(clonedBody);
-          document.body.appendChild(captureDiv);
-
-          // Collect natural dimensions from ORIGINAL iframe images (before html2canvas clones).
-          // html2canvas doesn't support object-fit, so we fix sizing in onclone.
-          const origImgs = iDoc.querySelectorAll('img');
-          const imgNaturals = new Map<string, { nw: number; nh: number }>();
-          origImgs.forEach((img, i) => {
-            if (img.naturalWidth && img.naturalHeight) {
-              imgNaturals.set(String(i), { nw: img.naturalWidth, nh: img.naturalHeight });
-            }
-          });
-
-          // Wait for stylesheets to load (with 500ms safety timeout)
-          if (linkPromises.length > 0) {
-            await Promise.race([
-              Promise.all(linkPromises),
-              new Promise(r => setTimeout(r, 500)),
-            ]);
-          }
-
-          const iframeCanvas = await this._html2canvasMod(captureDiv, {
-            useCORS: true, allowTaint: true, logging: false,
-            backgroundColor: null,
-            width: rect.width, height: rect.height,
-            onclone: (clonedDoc: Document) => {
-              // Force visible — widget CSS animations reset to opacity:0 in cloned DOM
-              const s = clonedDoc.createElement('style');
-              s.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; opacity: 1 !important; }';
-              clonedDoc.head.appendChild(s);
-
-              // Fix object-fit: contain — html2canvas stretches images, ignoring object-fit.
-              // Replace with explicit sizing + centering so html2canvas draws correct proportions.
-              const clonedImgs = clonedDoc.querySelectorAll('img');
-              clonedImgs.forEach((cImg, i) => {
-                const style = clonedDoc.defaultView?.getComputedStyle(cImg);
-                if (!style || style.objectFit !== 'contain') return;
-                const dims = imgNaturals.get(String(i));
-                if (!dims) return;
-
-                const cW = cImg.clientWidth || parseFloat(style.width) || 0;
-                const cH = cImg.clientHeight || parseFloat(style.height) || 0;
-                if (!cW || !cH) return;
-
-                const srcAspect = dims.nw / dims.nh;
-                const dstAspect = cW / cH;
-                let drawW: number, drawH: number;
-                if (srcAspect > dstAspect) {
-                  drawW = cW;
-                  drawH = cW / srcAspect;
-                } else {
-                  drawH = cH;
-                  drawW = cH * srcAspect;
-                }
-
-                // Wrap in a flex container to center, remove object-fit
-                const wrapper = clonedDoc.createElement('div');
-                wrapper.style.cssText = `width:${cW}px;height:${cH}px;display:flex;align-items:center;justify-content:center;overflow:hidden;`;
-                cImg.style.objectFit = 'fill';
-                cImg.style.width = `${drawW}px`;
-                cImg.style.height = `${drawH}px`;
-                cImg.parentNode?.insertBefore(wrapper, cImg);
-                wrapper.appendChild(cImg);
-              });
-            },
-          });
-
-          document.body.removeChild(captureDiv);
-          ctx.drawImage(iframeCanvas, rect.left, rect.top, rect.width, rect.height);
-          drawn++;
         }
       } catch (e: any) {
         log.warn('Screenshot: failed to draw element', el.tagName, e);
@@ -2545,11 +2468,6 @@ class PwaPlayer {
   private startScreenshotInterval() {
     const intervalSecs = this.displaySettings?.getSetting('screenshotInterval') || 0;
     if (!intervalSecs || intervalSecs <= 0) return;
-
-    // Pre-load html2canvas module so first capture is instant
-    if (!this._html2canvasMod) {
-      import('html2canvas').then(m => { this._html2canvasMod = m.default; });
-    }
 
     const intervalMs = intervalSecs * 1000;
     log.info(`Starting periodic screenshots every ${intervalSecs}s`);
