@@ -466,7 +466,17 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       const response = await fetch(fullUrl, { headers });
 
       if (!response.ok && response.status !== 206) {
-        logFile.info(`CMS ${response.status} for ${storeKey}`);
+        logFile.warn(`CMS ${response.status} for ${storeKey}`);
+        // Serve stale cached data if CMS is unavailable
+        if (store) {
+          const staleInfo = await store.stat(storeKey);
+          if (staleInfo) {
+            const ageMin = Math.round((Date.now() - (staleInfo.metadata?.createdAt || 0)) / 60000);
+            logFile.warn(`Serving stale cache for ${storeKey} (${ageMin}min old, CMS returned ${response.status})`);
+            res.setHeader('X-Stale-Cache', `${ageMin}min`);
+            return serveFromStore(req, res, storeKey);
+          }
+        }
         return res.status(response.status).end();
       }
 
@@ -567,7 +577,17 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         logFile.info(`${response.status} streaming (no store)`);
       }
     } catch (error) {
-      logFile.error('Cache-through error:', error.message);
+      logFile.warn(`CMS fetch failed: ${storeKey} — ${error.message}`);
+      // Serve stale cached data if CMS is unreachable
+      if (store && !res.headersSent) {
+        const staleInfo = await store.stat(storeKey);
+        if (staleInfo) {
+          const ageMin = Math.round((Date.now() - (staleInfo.metadata?.createdAt || 0)) / 60000);
+          logFile.warn(`Serving stale cache for ${storeKey} (${ageMin}min old, CMS unreachable)`);
+          res.setHeader('X-Stale-Cache', `${ageMin}min`);
+          return serveFromStore(req, res, storeKey);
+        }
+      }
       if (!res.headersSent) res.status(502).json({ error: 'CMS fetch failed', message: error.message });
     }
   }
@@ -725,6 +745,53 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     const key = `${STORE_PREFIX}/datasets/${widgetId}/data`;
     const ttl = parseInt(req.headers['x-cache-ttl']) || 300;
     cacheThrough(req, res, key, `${PLAYER_API}/datasets/${widgetId}/data`, { ttl });
+  });
+
+  // ─── Stream Proxy (CORS bypass for HLS/external streams) ──────────
+  // Electron injects CORS headers at the session level, but Chromium
+  // has no such mechanism. Proxy external stream URLs server-side so
+  // HLS.js inside CMS widget iframes can fetch m3u8/ts without CORS.
+  const logStream = createLogger('StreamProxy', 'INFO');
+  app.get('/stream-proxy', async (req, res) => {
+    const url = req.query.url;
+    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+      return res.status(400).json({ error: 'Missing or invalid url parameter' });
+    }
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': req.headers['user-agent'] || 'XiboPlayer/1.0' },
+      });
+      if (!response.ok) {
+        logStream.warn(`${response.status} ${url}`);
+        return res.status(response.status).end();
+      }
+      const contentType = response.headers.get('content-type');
+      if (contentType) res.setHeader('Content-Type', contentType);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      // For m3u8 manifests, rewrite segment URLs to also go through the proxy
+      if (contentType?.includes('mpegurl') || url.endsWith('.m3u8')) {
+        const text = await response.text();
+        const baseUrl = url.substring(0, url.lastIndexOf('/') + 1);
+        const rewritten = text.replace(/^(?!#)(\S+)/gm, (line) => {
+          if (line.startsWith('http://') || line.startsWith('https://')) {
+            return '/stream-proxy?url=' + encodeURIComponent(line);
+          }
+          return '/stream-proxy?url=' + encodeURIComponent(baseUrl + line);
+        });
+        return res.send(rewritten);
+      }
+
+      // Binary segments — pipe directly
+      pipeline(Readable.fromWeb(response.body), res, (err) => {
+        if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+          logStream.error(`Stream error: ${err.message}`);
+        }
+      });
+    } catch (err) {
+      logStream.error(`Fetch failed: ${url} — ${err.message}`);
+      res.status(502).json({ error: err.message });
+    }
   });
 
   // ─── CMS API Forward Proxy ─────────────────────────────────────────
@@ -987,7 +1054,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false } = {}) {
+export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false, relaxSslCerts = true } = {}) {
+  if (relaxSslCerts) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands });
 
   return new Promise((resolve, reject) => {
