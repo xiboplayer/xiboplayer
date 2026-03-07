@@ -488,12 +488,18 @@ describe('FileDownload - Progressive Streaming', () => {
         chunkCalls.push({ index, size: blob.size, total });
       });
 
+      // Process tasks sequentially — onTaskComplete is async (awaits
+      // onChunkDownloaded), so concurrent fire-and-forget causes _resolve()
+      // to race ahead of pending callbacks.
       const mockQueue = {
-        enqueueChunkTasks: vi.fn((tasks) => {
+        enqueueChunkTasks: vi.fn(async (tasks) => {
           for (const task of tasks) {
-            task.start()
-              .then(() => task._parentFile.onTaskComplete(task))
-              .catch(err => task._parentFile.onTaskFailed(task, err));
+            try {
+              await task.start();
+              await task._parentFile.onTaskComplete(task);
+            } catch (err) {
+              task._parentFile.onTaskFailed(task, err);
+            }
           }
         })
       };
