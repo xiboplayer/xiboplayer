@@ -263,9 +263,11 @@ export class RendererLite {
     this.container.style.overflow = 'hidden';
 
     // Watch for container resize to rescale layout (debounced to avoid spam)
+    this._resizeSuppressed = false;
     if (typeof ResizeObserver !== 'undefined') {
       let resizeTimer = null;
       this.resizeObserver = new ResizeObserver(() => {
+        if (this._resizeSuppressed) return;
         if (resizeTimer) clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => this.rescaleRegions(), 150);
       });
@@ -2931,10 +2933,7 @@ export class RendererLite {
     }
 
     const oldLayoutId = this.currentLayoutId;
-    const shouldEmit = oldLayoutId && !this.layoutEndEmitted;
 
-    // Clear old layout state BEFORE emit to prevent re-entrancy cascade
-    // (same pattern as stopCurrentLayout)
     this.layoutEndEmitted = false;
     this.currentLayout = null;
     this.currentLayoutId = null;
@@ -2984,9 +2983,10 @@ export class RendererLite {
     this.currentLayoutId = layoutId;
     this.regions = preloaded.regions;
 
-    // Emit layoutEnd AFTER setting up new layout state — re-entrant calls
-    // to stopCurrentLayout() won't cascade because state is already clean
-    if (shouldEmit) {
+    // Emit layoutEnd for old layout AFTER setting new currentLayoutId —
+    // the listener guard in main.ts sees the new layout already playing
+    // and skips advance, while stats/tracking still run.
+    if (oldLayoutId) {
       this.emit('layoutEnd', oldLayoutId);
     }
 
@@ -3064,10 +3064,6 @@ export class RendererLite {
 
     this.log.info(`Stopping layout ${this.currentLayoutId}`);
 
-    // Capture state before clearing — needed for cleanup and emit below.
-    // We clear state FIRST so that the synchronous layoutEnd emit cannot
-    // cause re-entrancy: the listener calls renderLayout(next) which calls
-    // stopCurrentLayout(), but currentLayout is already null → early return.
     const endedLayoutId = this.currentLayoutId;
     const shouldEmit = endedLayoutId && !this.layoutEndEmitted;
 
