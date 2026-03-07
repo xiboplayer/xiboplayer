@@ -4,7 +4,7 @@
  */
 
 import { cacheWidgetHtml } from '@xiboplayer/cache';
-import { createLogger, PLAYER_API } from '@xiboplayer/utils';
+import { createLogger, isDebug, PLAYER_API } from '@xiboplayer/utils';
 
 const log = createLogger('Layout');
 
@@ -754,6 +754,7 @@ ${mediaJS}
             border-radius: 4px;
             font-size: 14px;
             z-index: 10;
+            display: ${isDebug() ? 'block' : 'none'};
           \`;
           container.appendChild(pageIndicator);
 

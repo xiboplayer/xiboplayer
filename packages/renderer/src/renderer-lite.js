@@ -212,6 +212,7 @@ export class RendererLite {
     this.regions = new Map(); // regionId => { element, widgets, currentIndex, timer }
     this.layoutTimer = null;
     this.layoutEndEmitted = false; // Prevents double layoutEnd on stop after timer
+    this._deferredTimerLayoutId = null; // Set when timer is deferred for dynamic layouts
     this._paused = false;
     this._layoutTimerStartedAt = null;  // Date.now() when layout timer started
     this._layoutTimerDurationMs = null; // Total layout duration in ms
@@ -500,9 +501,10 @@ export class RendererLite {
     // Calculate layout duration if not specified (duration=0)
     // Uses shared parseLayoutDuration() — single source of truth for XLF-based duration calc
     if (layout.duration === 0) {
-      const { duration } = parseLayoutDuration(xlfXml);
+      const { duration, isDynamic } = parseLayoutDuration(xlfXml);
       layout.duration = duration;
-      this.log.info(`Calculated layout duration: ${layout.duration}s (not specified in XLF)`);
+      layout.isDynamic = isDynamic;
+      this.log.info(`Calculated layout duration: ${layout.duration}s (not specified in XLF)${isDynamic ? ' [dynamic — has useDuration=0 video]' : ''}`);
     }
 
     return layout;
@@ -705,10 +707,26 @@ export class RendererLite {
       this.log.info(`Layout duration updated: ${oldDuration}s → ${maxRegionDuration}s (based on video metadata)`);
       this.emit('layoutDurationUpdated', this.currentLayoutId, maxRegionDuration);
 
-      // Reset layout timer with REMAINING time — not full duration.
-      // If startLayoutTimerWhenReady() hasn't fired yet (still waiting for widgets),
-      // it will pick up the updated duration when it starts the timer.
-      if (this.layoutTimer) {
+      // Deferred timer: video metadata arrived, start the timer now
+      if (this._deferredTimerLayoutId === this.currentLayoutId && !this.layoutTimer) {
+        if (this._hasUnprobedVideos()) {
+          this.log.info(`Layout duration updated to ${maxRegionDuration}s but still has unprobed videos — keeping timer deferred`);
+        } else {
+          const elapsed = Date.now() - (this._layoutTimerStartedAt || Date.now());
+          const remainingMs = Math.max(1000, maxRegionDuration * 1000 - elapsed);
+          this._deferredTimerLayoutId = null;
+          this._layoutTimerDurationMs = remainingMs;
+          this.layoutTimer = setTimeout(() => {
+            this.log.info(`Layout ${this.currentLayoutId} duration expired (${this.currentLayout.duration}s)`);
+            if (this.currentLayoutId) {
+              this.layoutEndEmitted = true;
+              this.emit('layoutEnd', this.currentLayoutId);
+            }
+          }, remainingMs);
+          this.log.info(`All video durations resolved — deferred timer started: ${(remainingMs / 1000).toFixed(1)}s remaining (waited ${(elapsed / 1000).toFixed(1)}s for metadata)`);
+        }
+      } else if (this.layoutTimer) {
+        // Reset layout timer with REMAINING time — not full duration.
         clearTimeout(this.layoutTimer);
 
         const elapsed = Date.now() - (this._layoutTimerStartedAt || Date.now());
@@ -1177,6 +1195,7 @@ export class RendererLite {
           clearTimeout(this.layoutTimer);
           this.layoutTimer = null;
         }
+        this._deferredTimerLayoutId = null;
         this.layoutEndEmitted = false;
 
         // DON'T call stopCurrentLayout() - keep elements alive!
@@ -1561,6 +1580,36 @@ export class RendererLite {
       return;
     }
 
+    // Dynamic layouts (useDuration=0 videos): defer timer until video metadata
+    // provides real durations. Without this, the 60s fallback fires prematurely
+    // causing rapid layout cycling ("layout storm") on startup.
+    if (layout.isDynamic && this._hasUnprobedVideos()) {
+      this._deferredTimerLayoutId = layoutId;
+      this._layoutTimerStartedAt = Date.now();
+      this.log.info(`Layout ${layoutId} has unprobed videos — deferring timer until metadata loads`);
+      return;
+    }
+
+    this._startLayoutTimer(layoutId, layout);
+  }
+
+  /**
+   * Check if any video widget in current layout still has duration=0 (metadata not loaded).
+   */
+  _hasUnprobedVideos() {
+    for (const [, region] of this.regions) {
+      for (const widget of region.widgets) {
+        if (widget.useDuration === 0 && widget.duration === 0) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Actually start the layout timer. Called directly or after deferred timer resolves.
+   */
+  _startLayoutTimer(layoutId, layout) {
+    this._deferredTimerLayoutId = null;
     const layoutDurationMs = layout.duration * 1000;
     this.log.info(`Layout ${layoutId} will end after ${layout.duration}s`);
 
@@ -2433,7 +2482,7 @@ export class RendererLite {
     container.className = 'renderer-lite-widget pdf-widget';
     container.style.width = '100%';
     container.style.height = '100%';
-    container.style.backgroundColor = '#525659';
+    container.style.backgroundColor = 'transparent';
     container.style.opacity = '0';
     container.style.position = 'relative';
 
@@ -2481,9 +2530,10 @@ export class RendererLite {
       const ctx = canvas.getContext('2d');
       container.appendChild(canvas);
 
-      // Page indicator (bottom-right, v1-style pill)
+      // Page indicator (bottom-right, v1-style pill) — debug only
       const indicator = document.createElement('div');
       indicator.style.cssText = 'position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,0.7);color:white;padding:8px 12px;border-radius:4px;font:14px system-ui;z-index:1;';
+      if (!isDebug()) indicator.style.display = 'none';
       container.appendChild(indicator);
 
       let currentPage = 1;
@@ -2881,6 +2931,13 @@ export class RendererLite {
     }
 
     const oldLayoutId = this.currentLayoutId;
+    const shouldEmit = oldLayoutId && !this.layoutEndEmitted;
+
+    // Clear old layout state BEFORE emit to prevent re-entrancy cascade
+    // (same pattern as stopCurrentLayout)
+    this.layoutEndEmitted = false;
+    this.currentLayout = null;
+    this.currentLayoutId = null;
 
     if (oldLayoutId && this.layoutPool.has(oldLayoutId)) {
       // Old layout was preloaded — evict from pool (safe: removes its wrapper div)
@@ -2915,11 +2972,6 @@ export class RendererLite {
       }
     }
 
-    // Emit layoutEnd for old layout if timer hasn't already
-    if (oldLayoutId && !this.layoutEndEmitted) {
-      this.emit('layoutEnd', oldLayoutId);
-    }
-
     this.regions.clear();
 
     // ── Activate preloaded layout ──
@@ -2931,7 +2983,12 @@ export class RendererLite {
     this.currentLayout = preloaded.layout;
     this.currentLayoutId = layoutId;
     this.regions = preloaded.regions;
-    this.layoutEndEmitted = false;
+
+    // Emit layoutEnd AFTER setting up new layout state — re-entrant calls
+    // to stopCurrentLayout() won't cascade because state is already clean
+    if (shouldEmit) {
+      this.emit('layoutEnd', oldLayoutId);
+    }
 
     // Update container background to match preloaded layout
     this.container.style.backgroundColor = preloaded.layout.bgcolor;
@@ -3007,16 +3064,23 @@ export class RendererLite {
 
     this.log.info(`Stopping layout ${this.currentLayoutId}`);
 
-    // Remove interactive action listeners before teardown
-    this.removeActionListeners();
+    // Capture state before clearing — needed for cleanup and emit below.
+    // We clear state FIRST so that the synchronous layoutEnd emit cannot
+    // cause re-entrancy: the listener calls renderLayout(next) which calls
+    // stopCurrentLayout(), but currentLayout is already null → early return.
+    const endedLayoutId = this.currentLayoutId;
+    const shouldEmit = endedLayoutId && !this.layoutEndEmitted;
 
-    // Clear layout timer
+    this.layoutEndEmitted = false;
+    this._deferredTimerLayoutId = null;
+    this.currentLayout = null;
+    this.currentLayoutId = null;
+
+    // Clear timers
     if (this.layoutTimer) {
       clearTimeout(this.layoutTimer);
       this.layoutTimer = null;
     }
-
-    // Clear preload timers
     if (this.preloadTimer) {
       clearTimeout(this.preloadTimer);
       this.preloadTimer = null;
@@ -3026,16 +3090,19 @@ export class RendererLite {
       this._preloadRetryTimer = null;
     }
 
+    // Remove interactive action listeners before teardown
+    this.removeActionListeners();
+
     // If layout was preloaded (has its own wrapper div in pool), evict safely.
     // Normally-rendered layouts are NOT in the pool, so we do manual cleanup.
-    if (this.currentLayoutId && this.layoutPool.has(this.currentLayoutId)) {
-      this.layoutPool.evict(this.currentLayoutId);
+    if (endedLayoutId && this.layoutPool.has(endedLayoutId)) {
+      this.layoutPool.evict(endedLayoutId);
     } else {
       // Normally-rendered layout - manual cleanup (regions are in this.container)
 
       // Revoke all blob URLs for this layout (tracked lifecycle management)
-      if (this.currentLayoutId) {
-        this.revokeBlobUrlsForLayout(this.currentLayoutId);
+      if (endedLayoutId) {
+        this.revokeBlobUrlsForLayout(endedLayoutId);
       }
 
       // Stop all regions
@@ -3068,21 +3135,13 @@ export class RendererLite {
 
     }
 
-    // Clear state
     this.regions.clear();
 
-    // Emit layout end event only if timer hasn't already emitted it.
-    // Timer-based layoutEnd (natural expiry) is authoritative — stopCurrentLayout
-    // is called afterwards during the switch to the next layout, so we skip the
-    // duplicate. But if the layout is forcibly stopped mid-playback (e.g., XMR
-    // schedule change), the timer hasn't fired yet, so we DO emit here.
-    if (this.currentLayoutId && !this.layoutEndEmitted) {
-      this.emit('layoutEnd', this.currentLayoutId);
+    // Emit LAST — re-entrant renderLayout() sees currentLayout=null,
+    // so stopCurrentLayout() returns early. No cascade.
+    if (shouldEmit) {
+      this.emit('layoutEnd', endedLayoutId);
     }
-
-    this.layoutEndEmitted = false;
-    this.currentLayout = null;
-    this.currentLayoutId = null;
   }
 
   /**
