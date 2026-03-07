@@ -1471,14 +1471,14 @@ class PwaPlayer {
     this.renderer.on('layoutStart', (layoutId: number, _layout: any) => {
       log.info('Layout started:', layoutId);
       this.updateStatus(`Playing layout ${layoutId}`);
-      this.core.setCurrentLayout(layoutId);
 
-      // Record the renderer's computed duration (from XLF region/widget analysis).
-      // This ensures image-only layouts get a correct duration in the timeline
-      // even when _buildLayoutDurations can't access the cache (PWA StoreClient).
+      // Record the renderer's computed duration BEFORE setCurrentLayout,
+      // because setCurrentLayout triggers logUpcomingTimeline which needs
+      // the corrected duration already in the map.
       if (_layout?.duration > 0) {
         this.core.recordLayoutDuration(String(layoutId), _layout.duration);
       }
+      this.core.setCurrentLayout(layoutId);
 
       // Store layout-level enableStat for use in layoutEnd
       this._currentLayoutEnableStat = _layout?.enableStat !== false;
