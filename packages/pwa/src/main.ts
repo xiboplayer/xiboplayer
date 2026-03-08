@@ -1269,7 +1269,6 @@ class PwaPlayer {
         this._fileIdToSaveAs.set(String(f.id), f.saveAs);
       }
     }
-
     // Build lookup maps from flat CMS file list
     const xlfFiles = new Map();
     const resources: any[] = [];
@@ -1472,12 +1471,6 @@ class PwaPlayer {
       log.info('Layout started:', layoutId);
       this.updateStatus(`Playing layout ${layoutId}`);
 
-      // Record the renderer's computed duration BEFORE setCurrentLayout,
-      // because setCurrentLayout triggers logUpcomingTimeline which needs
-      // the corrected duration already in the map.
-      if (_layout?.duration > 0) {
-        this.core.recordLayoutDuration(String(layoutId), _layout.duration);
-      }
       this.core.setCurrentLayout(layoutId);
 
       // Store layout-level enableStat for use in layoutEnd
@@ -1662,8 +1655,8 @@ class PwaPlayer {
     });
 
     // Correct timeline duration when video metadata reveals actual duration
-    this.renderer.on('layoutDurationUpdated', (layoutId: number, duration: number) => {
-      this.core.recordLayoutDuration(String(layoutId), duration);
+    this.renderer.on('layoutDurationUpdated', (layoutId: number, duration: number, final: boolean) => {
+      this.core.recordLayoutDuration(String(layoutId), duration, final);
     });
 
     // Handle next layout preload request from renderer
@@ -1824,6 +1817,7 @@ class PwaPlayer {
       });
     } finally {
       this.preparingLayoutId = null;
+      this.core._preparingLayoutId = null;
 
       // If another check-pending-layout arrived while we were preparing,
       // retry after a short delay to let the ContentStore settle.
@@ -2034,12 +2028,14 @@ class PwaPlayer {
 
         // Probe actual video durations, keyed by fileId
         const videoDurations = new Map<string, number>();
+        let dynamicVideoCount = 0;
         for (const mediaEl of doc.querySelectorAll('media[type="video"]')) {
           const useDuration = mediaEl.getAttribute('useDuration');
           if (useDuration === '1') continue; // Has explicit CMS duration, skip
 
           const fileId = mediaEl.getAttribute('fileId');
           if (!fileId) continue;
+          dynamicVideoCount++;
 
           const saveAs = this._fileIdToSaveAs.get(fileId) || fileId;
           const exists = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
@@ -2054,10 +2050,13 @@ class PwaPlayer {
 
         if (videoDurations.size === 0) continue;
 
+        // Only mark final if ALL dynamic videos were successfully probed
+        const allProbed = videoDurations.size >= dynamicVideoCount;
+
         // Phase 2: refine layout duration with probed video lengths
         const { duration: probedDuration } = parseLayoutDuration(xlfXml, videoDurations);
         if (probedDuration > 0) {
-          this.core.recordLayoutDuration(String(layoutId), probedDuration);
+          this.core.recordLayoutDuration(String(layoutId), probedDuration, allProbed);
         }
       } catch (err) {
         log.debug(`Duration probe failed for layout ${layoutId}:`, err);

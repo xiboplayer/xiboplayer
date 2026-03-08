@@ -710,7 +710,8 @@ export class RendererLite {
       this.currentLayout.duration = maxRegionDuration;
 
       this.log.info(`Layout duration updated: ${oldDuration}s → ${maxRegionDuration}s (based on video metadata)`);
-      this.emit('layoutDurationUpdated', this.currentLayoutId, maxRegionDuration);
+      const final_ = !this._hasUnprobedVideos();
+      this.emit('layoutDurationUpdated', this.currentLayoutId, maxRegionDuration, final_);
 
       // Deferred timer: video metadata arrived, start the timer now
       if (this._deferredTimerLayoutId === this.currentLayoutId && !this.layoutTimer) {
