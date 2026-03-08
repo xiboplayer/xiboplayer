@@ -43,7 +43,7 @@
  */
 
 import { EventEmitter, createLogger, applyCmsLogLevel } from '@xiboplayer/utils';
-import { calculateTimeline, parseLayoutDuration } from '@xiboplayer/schedule';
+import { calculateTimeline } from '@xiboplayer/schedule';
 import { CacheAnalyzer } from '@xiboplayer/cache';
 import { DataConnectorManager } from './data-connectors.js';
 
@@ -189,21 +189,27 @@ export class PlayerCore extends EventEmitter {
       const tx = db.transaction(OFFLINE_STORE, 'readonly');
       const store = tx.objectStore(OFFLINE_STORE);
 
-      const [schedule, settings, requiredFiles, durations, finalDurations] = await Promise.all([
+      const [schedule, settings, requiredFiles, durations, finalDurations, durVersion] = await Promise.all([
         new Promise(r => { const req = store.get('schedule'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
         new Promise(r => { const req = store.get('settings'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
         new Promise(r => { const req = store.get('requiredFiles'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
         new Promise(r => { const req = store.get('durations'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
         new Promise(r => { const req = store.get('finalDurations'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
+        new Promise(r => { const req = store.get('durationsVersion'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
       ]);
 
       if (Array.isArray(durations) && durations.length > 0) {
         for (const [k, v] of durations) this._layoutDurations.set(k, v);
         log.info(`[Timeline] Restored ${durations.length} cached durations from IDB`);
       }
-      if (Array.isArray(finalDurations) && finalDurations.length > 0) {
+      // v2: clear stale final durations from before the fix.
+      // Final durations are only valid when set by video metadata / probeLayoutDurations,
+      // not by XLF estimates. Old IDB data has 60s defaults marked as final.
+      if (durVersion >= 2 && Array.isArray(finalDurations) && finalDurations.length > 0) {
         for (const k of finalDurations) this._finalDurations.add(k);
         log.info(`[Timeline] Restored ${finalDurations.length} final duration keys from IDB`);
+      } else if (Array.isArray(finalDurations) && finalDurations.length > 0) {
+        log.info(`[Timeline] Discarded ${finalDurations.length} stale final duration keys (pre-v2)`);
       }
 
       this._offlineCache = { schedule, settings, requiredFiles };
@@ -311,7 +317,7 @@ export class PlayerCore extends EventEmitter {
    * @param {string[]} layoutFiles - Currently scheduled layout filenames
    * @param {string} context - Log context label (e.g. 'Offline' or '')
    */
-  async _evaluateAndSwitchLayout(layoutFiles, context) {
+  _evaluateAndSwitchLayout(layoutFiles, context) {
     const prefix = context ? `${context}: ` : '';
 
     // Use the queue (not raw layoutFiles) for play/expire decisions.
@@ -357,8 +363,6 @@ export class PlayerCore extends EventEmitter {
       this.emit('no-layouts-scheduled');
     }
 
-    // Build layout durations (async) — improves queue precision on next rebuild
-    await this._buildLayoutDurations();
     this.logUpcomingTimeline();
   }
 
@@ -1682,47 +1686,11 @@ export class PlayerCore extends EventEmitter {
 
   // ── Timeline (offline schedule prediction) ─────────────────────────
 
-  /**
-   * Parse all cached layout XLFs to extract durations for timeline calculation.
-   * Called after collection completes and layouts are known.
-   */
-  async _buildLayoutDurations() {
-    if (!this.cache?.getFile) return; // Cache doesn't support direct file access
-
-    const layoutFiles = this.schedule.getCurrentLayouts();
-    const defaultFile = this.schedule.schedule?.default;
-    const allFiles = [...new Set([...layoutFiles, ...(defaultFile ? [defaultFile] : [])])];
-
-    let parsed = 0;
-    for (const file of allFiles) {
-      const layoutId = parseLayoutFile(file);
-      try {
-        const xlfXml = await this.cache.get('layout', layoutId);
-        if (xlfXml) {
-          const { duration, isDynamic } = parseLayoutDuration(xlfXml);
-          // Only set if no definitive or runtime-corrected value exists yet.
-          // Runtime corrections (from video metadata / probeLayoutDurations) are
-          // more accurate than static XLF parsing which estimates videos at 60s.
-          if (!this._finalDurations.has(file) && !this._layoutDurations.has(file)) {
-            this._layoutDurations.set(file, duration);
-          }
-          if (!this._finalDurations.has(String(layoutId)) && !this._layoutDurations.has(String(layoutId))) {
-            this._layoutDurations.set(String(layoutId), duration);
-          }
-          if (isDynamic) {
-            this._dynamicLayouts.add(file);
-          }
-          parsed++;
-        }
-      } catch (e) {
-        log.debug(`Could not parse duration for layout ${layoutId}:`, e.message);
-      }
-    }
-    if (parsed > 0) {
-      log.info(`[Timeline] Parsed durations for ${parsed} layouts`);
-      this._offlineSave('durations', [...this._layoutDurations.entries()]);
-    }
-  }
+  // Duration flow: renderer is the single source of truth.
+  // 1. Renderer calculates duration from widgets → emits layoutDurationUpdated
+  // 2. recordLayoutDuration stores it (with final flag) → persisted to IDB
+  // 3. On restart, IDB restores correct durations → queue uses them immediately
+  // No XLF parsing needed in core — the renderer already does this.
 
   /**
    * Calculate and log the upcoming playback timeline (next 2 hours).
@@ -1843,6 +1811,10 @@ export class PlayerCore extends EventEmitter {
 
     log.debug(`[Timeline] Duration corrected: layout ${file} ${prev || '?'}s → ${duration}s${final ? ' (final)' : ''}`);
 
+    // Invalidate the cached schedule queue so the next getScheduleQueue() call
+    // rebuilds with corrected durations (affects queue log and period calculation).
+    this.schedule._scheduleQueue = null;
+
     // Debounce timeline recalculation — multiple video loadedmetadata events
     // can fire within milliseconds; collapse them into one recalculation.
     if (this._timelineRecalcTimer) clearTimeout(this._timelineRecalcTimer);
@@ -1851,6 +1823,7 @@ export class PlayerCore extends EventEmitter {
       this.logUpcomingTimeline();
       this._offlineSave('durations', [...this._layoutDurations.entries()]);
       this._offlineSave('finalDurations', [...this._finalDurations]);
+      this._offlineSave('durationsVersion', 2);
     }, 500);
   }
 

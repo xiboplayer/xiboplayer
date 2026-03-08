@@ -1291,6 +1291,14 @@ export class RendererLite {
       // Emit layout start event
       this.emit('layoutStart', layoutId, layout);
 
+      // Report calculated duration so the schedule queue/timeline uses it
+      // instead of the 60s default. For layouts with unprobed videos, this
+      // is an estimate that will be corrected by updateLayoutDuration().
+      if (layout.duration > 0) {
+        const final_ = !this._hasUnprobedVideos();
+        this.emit('layoutDurationUpdated', layoutId, layout.duration, final_);
+      }
+
       // Start all regions (except drawers — they're action-triggered)
       for (const [regionId, region] of this.regions) {
         if (region.isDrawer) continue;
@@ -1679,6 +1687,11 @@ export class RendererLite {
       Transitions.apply(element, widget.transitions.in, true, region.width, region.height);
     } else {
       element.style.opacity = '1';
+    }
+
+    // Resume PDF page cycling if this widget was previously paused
+    if (element._pdfResume) {
+      element._pdfResume();
     }
 
     // Start audio overlays attached to this widget
@@ -2087,7 +2100,9 @@ export class RendererLite {
     if (!region) return;
 
     const { widget, animPromise } = this._hideWidget(region, widgetIndex);
-    if (animPromise) await animPromise;
+    // Emit widgetEnd immediately — don't wait for exit animation.
+    // If we await animPromise first, a pool eviction can remove the DOM element,
+    // causing the animation's onfinish to never fire and widgetEnd to be lost.
     if (widget) {
       this.emit('widgetEnd', {
         widgetId: widget.id, regionId, layoutId: this.currentLayoutId,
@@ -2096,6 +2111,7 @@ export class RendererLite {
         enableStat: widget.enableStat
       });
     }
+    if (animPromise) await animPromise;
   }
 
   /**
@@ -2605,7 +2621,7 @@ export class RendererLite {
 
       await cyclePage();
 
-      // Cleanup: cancel active render, clear timer, release PDF document
+      // Pause: stop page cycling (called by _hideWidget during region cycling / replay)
       container._pdfCleanup = () => {
         stopped = true;
         if (cycleTimer) clearTimeout(cycleTimer);
@@ -2614,7 +2630,18 @@ export class RendererLite {
           activeRenderTask.cancel();
           activeRenderTask = null;
         }
-        // Zero canvas dimensions to release GPU backing store
+      };
+
+      // Resume: restart page cycling from page 1 (called by _showWidget on reuse)
+      container._pdfResume = () => {
+        stopped = false;
+        currentPage = 1;
+        cyclePage();
+      };
+
+      // Destroy: release GPU + PDF resources (called on element removal / eviction)
+      container._pdfDestroy = () => {
+        container._pdfCleanup();
         canvas.width = 0;
         canvas.height = 0;
         pdf.destroy();
@@ -2964,10 +2991,13 @@ export class RendererLite {
     const alreadyEmittedEnd = this.layoutEndEmitted;
 
     this.layoutEndEmitted = false;
-    this.currentLayout = null;
-    this.currentLayoutId = null;
+    // Keep currentLayout/currentLayoutId until widgets are stopped,
+    // so widgetEnd events carry the correct layoutId (not null).
 
     if (oldLayoutId && this.layoutPool.has(oldLayoutId)) {
+      // Stop all widgets before evicting (symmetric widgetEnd events)
+      this._clearRegionTimers(this.regions);
+      this._stopAllRegionWidgets(this.regions, (rid, idx) => this.stopWidget(rid, idx));
       // Old layout was preloaded — evict from pool (safe: removes its wrapper div)
       this.layoutPool.evict(oldLayoutId);
     } else {
@@ -3001,6 +3031,9 @@ export class RendererLite {
       }
     }
 
+    // Now safe to clear old layout state — widgets have been stopped with correct layoutId
+    this.currentLayout = null;
+    this.currentLayoutId = null;
     this.regions.clear();
 
     // ── Activate preloaded layout ──
@@ -3356,12 +3389,13 @@ export class RendererLite {
     if (!region) return;
 
     const { widget, animPromise } = this._hideWidget(region, widgetIndex);
-    if (animPromise) await animPromise;
+    // Emit immediately — don't wait for exit animation (same fix as stopWidget)
     if (widget) {
       this.emit('overlayWidgetEnd', {
         overlayId, widgetId: widget.id, regionId, type: widget.type
       });
     }
+    if (animPromise) await animPromise;
   }
 
   /**

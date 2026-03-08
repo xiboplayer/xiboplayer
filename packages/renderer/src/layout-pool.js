@@ -193,6 +193,11 @@ export class LayoutPool {
       a.load();
     });
 
+    // Destroy PDF documents and release GPU canvas backing stores
+    container.querySelectorAll('.pdf-widget').forEach(el => {
+      if (el._pdfDestroy) el._pdfDestroy();
+    });
+
     if (videoCount > 0) {
       log.info(`Released ${videoCount} video(s)${hlsCount ? ` (${hlsCount} HLS)` : ''}`);
     }

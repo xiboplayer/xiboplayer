@@ -273,6 +273,14 @@ export function buildScheduleQueue(allLayouts, durations, options = {}) {
     return { queue: [], periodSeconds: 0 };
   }
 
+  // Build CMS duration lookup — use CMS-reported duration as fallback
+  // when the durations map (from XLF parsing / video metadata) has no entry.
+  const cmsDurations = new Map();
+  for (const l of allLayouts) {
+    if (l.duration > 0) cmsDurations.set(l.file, l.duration);
+  }
+  const getDuration = (file) => durations.get(file) || cmsDurations.get(file) || defaultDuration;
+
   // Step 1: Identify rate-limited layouts to calculate LCM period
   const rateLimited = allLayouts.filter(l => l.maxPlaysPerHour > 0);
 
@@ -284,9 +292,9 @@ export function buildScheduleQueue(allLayouts, durations, options = {}) {
     if (periodSeconds > 7200) periodSeconds = 7200;
   } else {
     // No rate-limited layouts — single round-robin cycle
-    const totalDuration = allLayouts.reduce((sum, l) => sum + (durations.get(l.file) || defaultDuration), 0)
+    const totalDuration = allLayouts.reduce((sum, l) => sum + getDuration(l.file), 0)
       + (defaultLayout && !allLayouts.some(l => l.file === defaultLayout)
-        ? (durations.get(defaultLayout) || defaultDuration)
+        ? getDuration(defaultLayout)
         : 0);
     periodSeconds = totalDuration || defaultDuration;
   }
@@ -305,7 +313,7 @@ export function buildScheduleQueue(allLayouts, durations, options = {}) {
     if (playable.length === 0) {
       // All layouts exhausted — use default
       if (defaultLayout) {
-        const dur = durations.get(defaultLayout) || defaultDuration;
+        const dur = getDuration(defaultLayout);
         queue.push({ layoutId: defaultLayout, duration: dur });
         cursorMs += dur * 1000;
       } else {
@@ -318,7 +326,7 @@ export function buildScheduleQueue(allLayouts, durations, options = {}) {
     // Play all playable layouts in round-robin order (one each), then re-evaluate
     for (let i = 0; i < playable.length && cursorMs < periodMs && queue.length < maxEntries; i++) {
       const file = playable[i];
-      const dur = durations.get(file) || defaultDuration;
+      const dur = getDuration(file);
 
       queue.push({ layoutId: file, duration: dur });
 
@@ -336,7 +344,7 @@ export function buildScheduleQueue(allLayouts, durations, options = {}) {
 
   // Handle edge case: no layouts and only default
   if (queue.length === 0 && defaultLayout) {
-    const defDur = durations.get(defaultLayout) || defaultDuration;
+    const defDur = getDuration(defaultLayout);
     queue.push({ layoutId: defaultLayout, duration: defDur });
   }
 

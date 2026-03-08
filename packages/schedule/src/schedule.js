@@ -262,6 +262,7 @@ export class ScheduleManager {
           file: layout.file,
           priority: layout.priority || 0,
           maxPlaysPerHour: layout.maxPlaysPerHour || 0,
+          duration: layout.duration || 0,
         });
       }
     }
@@ -276,6 +277,7 @@ export class ScheduleManager {
             file: layout.file,
             priority: campaign.priority || 0,
             maxPlaysPerHour: layout.maxPlaysPerHour || 0,
+            duration: layout.duration || 0,
           });
         }
       }
