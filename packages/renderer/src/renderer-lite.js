@@ -236,6 +236,9 @@ export class RendererLite {
     // Sub-playlist cycle state (round-robin per parentWidgetId group)
     this._subPlaylistCycleIndex = new Map();
 
+    // Widget lifecycle tracking — ensures symmetric start/stop
+    this._startedWidgets = new Set(); // "regionId:widgetIndex" keys
+
     // Layout preload pool (2-layout pool for instant transitions)
     this.layoutPool = new LayoutPool(2);
     this.preloadTimer = null;
@@ -1186,10 +1189,12 @@ export class RendererLite {
         // OPTIMIZATION: Reuse existing elements for same layout (Arexibo pattern)
         this.log.info(`Replaying layout ${layoutId} - reusing elements (no recreation!)`);
 
-        // Stop all region timers and reset to first widget
+        // Stop all region timers and widgets, then reset to first widget
         this._clearRegionTimers(this.regions);
+        this._stopAllRegionWidgets(this.regions, (rid, idx) => this.stopWidget(rid, idx));
         for (const [, region] of this.regions) {
           region.currentIndex = 0;
+          region.complete = false;
         }
 
         // Clear layout timer
@@ -2041,6 +2046,7 @@ export class RendererLite {
       const widget = await this._showWidget(region, widgetIndex);
       if (widget) {
         this.log.info(`Showing widget ${widget.type} (${widget.id}) in region ${regionId}`);
+        this._startedWidgets.add(`${regionId}:${widgetIndex}`);
         this.emit('widgetStart', {
           widgetId: widget.id, regionId, layoutId: this.currentLayoutId,
           mediaId: parseInt(widget.fileId || widget.id) || null,
@@ -2073,6 +2079,9 @@ export class RendererLite {
    * @param {number} widgetIndex - Widget index
    */
   async stopWidget(regionId, widgetIndex) {
+    const key = `${regionId}:${widgetIndex}`;
+    if (!this._startedWidgets.delete(key)) return; // idempotent: already stopped
+
     const region = this.regions.get(regionId);
     if (!region) return;
 
@@ -2085,6 +2094,24 @@ export class RendererLite {
         type: widget.type,
         enableStat: widget.enableStat
       });
+    }
+  }
+
+  /**
+   * Stop all started widgets across regions (symmetric counterpart to startRegion)
+   * Canvas regions start ALL widgets; non-canvas regions have one active widget.
+   * @param {Map} regions - Region map
+   * @param {Function} stopFn - (regionId, widgetIndex) => void
+   */
+  _stopAllRegionWidgets(regions, stopFn) {
+    for (const [regionId, region] of regions) {
+      if (region.isCanvas) {
+        for (let i = 0; i < region.widgets.length; i++) {
+          stopFn(regionId, i);
+        }
+      } else if (region.widgets.length > 0) {
+        stopFn(regionId, region.currentIndex);
+      }
     }
   }
 
@@ -2946,6 +2973,7 @@ export class RendererLite {
       // Region elements live directly in this.container (not a wrapper),
       // so we must remove them individually.
       this._clearRegionTimers(this.regions);
+      this._stopAllRegionWidgets(this.regions, (rid, idx) => this.stopWidget(rid, idx));
       for (const [, region] of this.regions) {
         // Release video/audio resources before removing from DOM
         LayoutPool.releaseMediaElements(region.element);
@@ -3101,14 +3129,10 @@ export class RendererLite {
         this.revokeBlobUrlsForLayout(endedLayoutId);
       }
 
-      // Stop all regions
+      // Stop all regions — use helper to stop ALL started widgets (canvas fix)
       this._clearRegionTimers(this.regions);
-      for (const [regionId, region] of this.regions) {
-        // Stop current widget
-        if (region.widgets.length > 0) {
-          this.stopWidget(regionId, region.currentIndex);
-        }
-
+      this._stopAllRegionWidgets(this.regions, (rid, idx) => this.stopWidget(rid, idx));
+      for (const [, region] of this.regions) {
         // Release video/audio resources before removing from DOM
         LayoutPool.releaseMediaElements(region.element);
 
@@ -3300,6 +3324,7 @@ export class RendererLite {
       const widget = await this._showWidget(region, widgetIndex);
       if (widget) {
         this.log.info(`Showing overlay widget ${widget.type} (${widget.id}) in overlay ${overlayId} region ${regionId}`);
+        this._startedWidgets.add(`overlay:${overlayId}:${regionId}:${widgetIndex}`);
         this.emit('overlayWidgetStart', {
           overlayId, widgetId: widget.id, regionId,
           type: widget.type, duration: widget.duration
@@ -3318,6 +3343,9 @@ export class RendererLite {
    * @param {number} widgetIndex - Widget index
    */
   async stopOverlayWidget(overlayId, regionId, widgetIndex) {
+    const key = `overlay:${overlayId}:${regionId}:${widgetIndex}`;
+    if (!this._startedWidgets.delete(key)) return; // idempotent
+
     const overlayState = this.activeOverlays.get(overlayId);
     if (!overlayState) return;
 
@@ -3353,17 +3381,11 @@ export class RendererLite {
     }
 
     // Stop all overlay regions
-    for (const [regionId, region] of overlayState.regions) {
-      if (region.timer) {
-        clearTimeout(region.timer);
-        region.timer = null;
-      }
-
-      // Stop current widget
-      if (region.widgets.length > 0) {
-        this.stopOverlayWidget(layoutId, regionId, region.currentIndex);
-      }
+    for (const [, region] of overlayState.regions) {
+      if (region.timer) { clearTimeout(region.timer); region.timer = null; }
     }
+    this._stopAllRegionWidgets(overlayState.regions,
+      (rid, idx) => this.stopOverlayWidget(layoutId, rid, idx));
 
     // Remove overlay container from DOM
     if (overlayState.container) {
@@ -3466,6 +3488,7 @@ export class RendererLite {
   cleanup() {
     this.stopAllOverlays();
     this.stopCurrentLayout();
+    this._startedWidgets.clear();
 
     // Clean up any remaining audio overlays
     for (const widgetId of this.audioOverlays.keys()) {
