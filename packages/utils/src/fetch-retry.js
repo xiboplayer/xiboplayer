@@ -74,8 +74,10 @@ export async function fetchWithRetry(url, options = {}, retryOptions = {}) {
         break; // Exhausted retries
       }
 
-      // Don't retry other client errors (4xx) — they won't change with retries
-      if (response.ok || (response.status >= 400 && response.status < 500)) {
+      // Don't retry anything below 500 — only 5xx server errors are retryable.
+      // This covers 2xx (success), 3xx (redirects including 304 Not Modified),
+      // and 4xx (client errors that won't change with retries).
+      if (response.status < 500) {
         return response;
       }
 
@@ -96,6 +98,7 @@ export async function fetchWithRetry(url, options = {}, retryOptions = {}) {
       }
     } catch (error) {
       // Network error — retryable
+      log.warn(`Fetch error (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message || error, String(url).slice(0, 80));
       lastError = error;
       lastResponse = null;
     }
