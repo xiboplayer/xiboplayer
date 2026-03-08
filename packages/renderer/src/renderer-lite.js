@@ -2961,6 +2961,7 @@ export class RendererLite {
     }
 
     const oldLayoutId = this.currentLayoutId;
+    const alreadyEmittedEnd = this.layoutEndEmitted;
 
     this.layoutEndEmitted = false;
     this.currentLayout = null;
@@ -3015,7 +3016,8 @@ export class RendererLite {
     // Emit layoutEnd for old layout AFTER setting new currentLayoutId —
     // the listener guard in main.ts sees the new layout already playing
     // and skips advance, while stats/tracking still run.
-    if (oldLayoutId) {
+    // Skip if the layout timer already emitted layoutEnd (avoids double stats).
+    if (oldLayoutId && !alreadyEmittedEnd) {
       this.emit('layoutEnd', oldLayoutId);
     }
 
