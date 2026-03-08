@@ -1751,6 +1751,7 @@ class PwaPlayer {
     // Guard: skip if already playing this layout (another event already rendered it)
     if (this.core.getCurrentLayoutId() === layoutId) {
       log.debug(`Layout ${layoutId} already playing, skipping duplicate prepare`);
+      this.core._preparingLayoutId = null;
       return;
     }
 
@@ -1850,6 +1851,8 @@ class PwaPlayer {
       const fileId = el.getAttribute('fileId');
       if (fileId) {
         const saveAs = this._fileIdToSaveAs.get(fileId) || fileId;
+        // Skip layout XLF references — stored in layouts/ store, not media/file/
+        if (saveAs.endsWith('.xlf')) return;
         allMedia.push(saveAs);
         if (el.getAttribute('type') === 'video') {
           videoMedia.push(saveAs);
