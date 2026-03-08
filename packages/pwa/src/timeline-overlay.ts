@@ -99,23 +99,28 @@ export class TimelineOverlay {
   }
 
   update(timeline: TimelineEntry[] | null, currentLayoutId: number | null) {
-    // Detect layout change — save previous, record wall-clock start
-    if (currentLayoutId !== null && currentLayoutId !== this.currentLayoutId) {
-      if (this.currentLayoutId !== null && this.currentDuration !== null && this.layoutStartedAt !== null) {
-        this.previousLayout = { id: this.currentLayoutId, duration: this.currentDuration, startedAt: this.layoutStartedAt };
+    if (currentLayoutId !== null) {
+      // Detect layout change — save previous for history display
+      if (currentLayoutId !== this.currentLayoutId) {
+        if (this.currentLayoutId !== null && this.currentDuration !== null && this.layoutStartedAt !== null) {
+          this.previousLayout = { id: this.currentLayoutId, duration: this.currentDuration, startedAt: this.layoutStartedAt };
+        }
+        this.currentLayoutId = currentLayoutId;
+        this.currentDuration = null;
+        this.currentIsDefault = false;
       }
-      this.currentLayoutId = currentLayoutId;
+      // Always reset start time — same-layout replays emit layoutStart too
       this.layoutStartedAt = Date.now();
-      this.currentDuration = null;
-      this.currentIsDefault = false;
     }
 
     if (timeline !== null) {
       this.timeline = timeline;
     }
 
-    // Lock currentDuration from matching timeline entry (try on every update)
-    if (this.currentDuration === null && this.currentLayoutId !== null && this.timeline.length > 0) {
+    // Update currentDuration from matching timeline entry on every update —
+    // duration corrections (video metadata) recalculate the timeline, so we
+    // must pick up the corrected value, not stay locked to the initial estimate.
+    if (this.currentLayoutId !== null && this.timeline.length > 0) {
       const match = this.timeline.find(e =>
         parseInt(e.layoutFile.replace('.xlf', ''), 10) === this.currentLayoutId
       );
