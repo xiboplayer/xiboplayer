@@ -883,6 +883,7 @@ export class PlayerCore extends EventEmitter {
         log.info(`No layouts in queue, replaying ${this.currentLayoutId} to avoid blank screen`);
         const replayId = this.currentLayoutId;
         this.currentLayoutId = null;
+        this._preparingLayoutId = replayId;
         this.emit('layout-prepare-request', replayId);
       } else {
         log.info('No layouts scheduled during advance');
@@ -937,6 +938,11 @@ export class PlayerCore extends EventEmitter {
     );
     const pos = this.schedule._queuePosition;
     log.info(`Advancing to layout ${layoutId} (queue pos ${pos}/${queue.length})`);
+
+    // Set _preparingLayoutId BEFORE emitting to prevent collect() cycles
+    // from seeing both currentLayoutId=null and _preparingLayoutId=null
+    // and popping another layout from the queue (double-pop race).
+    this._preparingLayoutId = layoutId;
     this.emit('layout-prepare-request', layoutId);
   }
 
