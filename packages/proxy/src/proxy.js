@@ -804,6 +804,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     if (!cmsUrl) return res.status(502).json({ error: 'CMS URL not configured' });
 
     const targetUrl = `${cmsUrl}${req.originalUrl}`;
+    const t0 = Date.now();
     logApi.info(`${req.method} ${req.originalUrl} → ${targetUrl}`);
 
     try {
@@ -824,6 +825,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       delete fetchOptions.headers['content-length'];
 
       const response = await fetch(targetUrl, fetchOptions);
+      logApi.info(`${req.method} ${req.originalUrl} ← ${response.status} (${Date.now() - t0}ms)`);
 
       // Forward response headers
       for (const [key, value] of response.headers) {
