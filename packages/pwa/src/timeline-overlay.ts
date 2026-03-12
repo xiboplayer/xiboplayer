@@ -100,7 +100,7 @@ export class TimelineOverlay {
     this.render();
   }
 
-  update(timeline: TimelineEntry[] | null, currentLayoutId: number | null) {
+  update(timeline: TimelineEntry[] | null, currentLayoutId: number | null, currentDuration?: number) {
     if (currentLayoutId !== null) {
       // Detect layout change — save previous for history display
       if (currentLayoutId !== this.currentLayoutId) {
@@ -108,28 +108,19 @@ export class TimelineOverlay {
           this.previousLayout = { id: this.currentLayoutId, duration: this.currentDuration, startedAt: this.layoutStartedAt };
         }
         this.currentLayoutId = currentLayoutId;
-        this.currentDuration = null;
         this.currentIsDefault = false;
       }
       // Always reset start time — same-layout replays emit layoutStart too
       this.layoutStartedAt = Date.now();
+      // Duration is known at layout start — set it directly rather than
+      // searching the timeline (which only contains future layouts).
+      if (currentDuration !== undefined) {
+        this.currentDuration = currentDuration;
+      }
     }
 
     if (timeline !== null) {
       this.timeline = timeline;
-    }
-
-    // Update currentDuration from matching timeline entry on every update —
-    // duration corrections (video metadata) recalculate the timeline, so we
-    // must pick up the corrected value, not stay locked to the initial estimate.
-    if (this.currentLayoutId !== null && this.timeline.length > 0) {
-      const match = this.timeline.find(e =>
-        parseInt(e.layoutFile.replace('.xlf', ''), 10) === this.currentLayoutId
-      );
-      if (match) {
-        this.currentDuration = match.duration;
-        this.currentIsDefault = match.isDefault;
-      }
     }
 
     this.render();

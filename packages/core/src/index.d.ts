@@ -49,6 +49,7 @@ export class PlayerCore {
   setCurrentLayout(layoutId: number): void;
   clearCurrentLayout(): void;
   getCurrentLayoutId(): number | null;
+  getLayoutDuration(layoutId: number | string): number | undefined;
   getPendingLayouts(): number[];
   setPendingLayout(layoutId: number, requiredMediaIds: string[]): void;
   isLayoutOverridden(): boolean;

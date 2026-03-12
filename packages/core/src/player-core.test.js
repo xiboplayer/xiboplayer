@@ -2482,4 +2482,175 @@ describe('PlayerCore', () => {
     });
   });
 
+  describe('Layout duration lifecycle', () => {
+    /** Set up mockSchedule with timeline support methods */
+    function setupTimelineSupport() {
+      mockSchedule.getLayoutsAtTime = vi.fn(() => ['100.xlf']);
+      mockSchedule.getAllLayoutsAtTime = vi.fn(() => [
+        { file: '100.xlf', priority: 10, maxPlaysPerHour: 0 },
+      ]);
+      mockSchedule.playHistory = new Map();
+    }
+
+    describe('getLayoutDuration', () => {
+      it('should return undefined for unknown layouts', () => {
+        expect(core.getLayoutDuration(999)).toBeUndefined();
+      });
+
+      it('should return duration by numeric ID', () => {
+        core._layoutDurations.set('100.xlf', 325);
+        expect(core.getLayoutDuration(100)).toBe(325);
+      });
+
+      it('should return duration by string ID', () => {
+        core._layoutDurations.set('200.xlf', 60);
+        expect(core.getLayoutDuration('200')).toBe(60);
+      });
+
+      it('should return duration stored under bare ID (no .xlf)', () => {
+        core._layoutDurations.set('300', 120);
+        expect(core.getLayoutDuration(300)).toBe(120);
+      });
+
+      it('should prefer .xlf key over bare ID', () => {
+        core._layoutDurations.set('400', 60);
+        core._layoutDurations.set('400.xlf', 325);
+        expect(core.getLayoutDuration(400)).toBe(325);
+      });
+    });
+
+    describe('recordLayoutDuration', () => {
+      it('should store duration under both bare ID and .xlf key', () => {
+        core.recordLayoutDuration('500', 120);
+        expect(core._layoutDurations.get('500')).toBe(120);
+        expect(core._layoutDurations.get('500.xlf')).toBe(120);
+      });
+
+      it('should normalize .xlf input to both keys', () => {
+        core.recordLayoutDuration('600.xlf', 200);
+        expect(core._layoutDurations.get('600')).toBe(200);
+        expect(core._layoutDurations.get('600.xlf')).toBe(200);
+      });
+
+      it('should overwrite non-final durations', () => {
+        core.recordLayoutDuration('700', 60);
+        expect(core.getLayoutDuration(700)).toBe(60);
+
+        core.recordLayoutDuration('700', 325);
+        expect(core.getLayoutDuration(700)).toBe(325);
+      });
+
+      it('should not overwrite a final duration', () => {
+        core.recordLayoutDuration('800', 325, true);
+        expect(core.getLayoutDuration(800)).toBe(325);
+
+        // Attempt to overwrite — should be ignored
+        core.recordLayoutDuration('800', 60);
+        expect(core.getLayoutDuration(800)).toBe(325);
+      });
+
+      it('should not overwrite final even with another final call', () => {
+        core.recordLayoutDuration('850', 300, true);
+        core.recordLayoutDuration('850', 400, true);
+        expect(core.getLayoutDuration(850)).toBe(300);
+      });
+
+      it('should skip no-op updates (same duration, not final)', () => {
+        core.recordLayoutDuration('900', 120);
+        const timer1 = core._timelineRecalcTimer;
+
+        // Clear the debounce timer to check if a new one is created
+        clearTimeout(core._timelineRecalcTimer);
+        core._timelineRecalcTimer = null;
+
+        core.recordLayoutDuration('900', 120); // same value, not final
+        expect(core._timelineRecalcTimer).toBeNull(); // no recalc scheduled
+      });
+    });
+
+    describe('Duration correction triggers timeline recalc', () => {
+      it('should recalculate timeline when duration changes', () => {
+        setupTimelineSupport();
+        core._layoutDurations.set('100.xlf', 60);
+        core._lastCheckSchedule = 'crc-aaa';
+        core.currentLayoutId = 100;
+
+        const spy = createSpy();
+        core.on('timeline-updated', spy);
+
+        // Initial timeline
+        core.logUpcomingTimeline();
+        expect(spy).toHaveBeenCalledTimes(1);
+        const initialDuration = spy.mock.calls[0][0][0].duration;
+        expect(initialDuration).toBe(60);
+
+        // Simulate video metadata correction — set directly + call logUpcomingTimeline
+        // (recordLayoutDuration debounces at 500ms; here we test the end result)
+        core._layoutDurations.set('100.xlf', 325);
+        core._layoutDurations.set('100', 325);
+        core._lastTimelineFingerprint = null; // force recalc
+        core.logUpcomingTimeline();
+
+        expect(spy).toHaveBeenCalledTimes(2);
+        const correctedDuration = spy.mock.calls[1][0][0].duration;
+        expect(correctedDuration).toBe(325);
+      });
+
+      it('should use corrected duration in timeline entries', () => {
+        setupTimelineSupport();
+        // Start with XLF estimate
+        core._layoutDurations.set('100.xlf', 60);
+        core._lastCheckSchedule = 'crc-aaa';
+        core.currentLayoutId = 100;
+
+        const spy = createSpy();
+        core.on('timeline-updated', spy);
+
+        core.logUpcomingTimeline();
+        const before = spy.mock.calls[0][0];
+        // With 60s durations, many entries fit in 2 hours
+        const countBefore = before.length;
+
+        // Correct to 325s
+        core._layoutDurations.set('100.xlf', 325);
+        core._layoutDurations.set('100', 325);
+        core._lastTimelineFingerprint = null; // force recalc
+        core.logUpcomingTimeline();
+
+        const after = spy.mock.calls[1][0];
+        // With 325s durations, far fewer entries fit in 2 hours
+        expect(after.length).toBeLessThan(countBefore);
+        expect(after[0].duration).toBe(325);
+      });
+    });
+
+    describe('getLayoutDuration reflects live corrections', () => {
+      it('should return XLF estimate before correction', () => {
+        core.recordLayoutDuration('100', 60);
+        expect(core.getLayoutDuration(100)).toBe(60);
+      });
+
+      it('should return corrected duration after video metadata arrives', () => {
+        core.recordLayoutDuration('100', 60);
+        expect(core.getLayoutDuration(100)).toBe(60);
+
+        // Video metadata correction
+        core.recordLayoutDuration('100', 325, true);
+        expect(core.getLayoutDuration(100)).toBe(325);
+      });
+
+      it('should remain stable after final is set', () => {
+        core.recordLayoutDuration('100', 325, true);
+        expect(core.getLayoutDuration(100)).toBe(325);
+
+        // Another call tries to overwrite
+        core.recordLayoutDuration('100', 60);
+        expect(core.getLayoutDuration(100)).toBe(325);
+
+        core.recordLayoutDuration('100', 999, true);
+        expect(core.getLayoutDuration(100)).toBe(325);
+      });
+    });
+  });
+
 });

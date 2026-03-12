@@ -179,8 +179,10 @@ export function calculateTimeline(queue, queuePosition, options = {}) {
 
   const timeline = [];
   let currentTime = new Date(from);
+  // queuePosition has already advanced past the currently-playing layout
+  // (via popNextFromQueue), so entries here start from the NEXT layout.
+  // The current layout's duration is passed directly to the overlay.
   let pos = queuePosition % queue.length;
-  let isFirstEntry = true;
   const maxEntries = 500;
 
   while (currentTime < to && timeline.length < maxEntries) {
@@ -188,12 +190,6 @@ export function calculateTimeline(queue, queuePosition, options = {}) {
     // Use live-corrected duration (from video metadata, etc.) if available,
     // otherwise fall back to the queue's baked-in duration
     let dur = (durations && durations.get(entry.layoutId)) || entry.duration;
-
-    // Note: queuePosition has already advanced past the current layout
-    // (via popNextFromQueue), so the first entry here is the NEXT layout.
-    // No elapsed-time adjustment needed — the overlay handles countdown
-    // for the current layout via wall-clock layoutStartedAt.
-    isFirstEntry = false;
 
     const endMs = currentTime.getTime() + dur * 1000;
 

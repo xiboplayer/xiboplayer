@@ -1875,6 +1875,16 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
+   * Get known duration for a layout (from video metadata or XLF parse).
+   * @param {number|string} layoutId
+   * @returns {number|undefined}
+   */
+  getLayoutDuration(layoutId) {
+    const id = String(layoutId);
+    return this._layoutDurations.get(`${id}.xlf`) || this._layoutDurations.get(id);
+  }
+
+  /**
    * Check if collecting
    */
   isCollecting() {

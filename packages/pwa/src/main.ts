@@ -879,7 +879,9 @@ class PwaPlayer {
 
     // Timeline overlay — visualize upcoming schedule
     this.core.on('timeline-updated', (timeline: any[]) => {
-      this.timelineOverlay?.update(timeline, this.core.getCurrentLayoutId());
+      const id = this.core.getCurrentLayoutId();
+      const dur = id ? this.core.getLayoutDuration(id) : undefined;
+      this.timelineOverlay?.update(timeline, id, dur);
     });
   }
 
@@ -1478,8 +1480,9 @@ class PwaPlayer {
       // Store layout-level enableStat for use in layoutEnd
       this._currentLayoutEnableStat = _layout?.enableStat !== false;
 
-      // Update timeline overlay highlight
-      this.timelineOverlay?.update(null, layoutId);
+      // Update timeline overlay with current layout's known duration
+      const layoutDur = this.core.getLayoutDuration(layoutId) || _layout?.duration;
+      this.timelineOverlay?.update(null, layoutId, layoutDur);
 
       // Track stats: start layout (only if enableStat is not disabled)
       if (this.statsCollector && this._currentLayoutEnableStat) {
