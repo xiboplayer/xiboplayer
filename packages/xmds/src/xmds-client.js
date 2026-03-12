@@ -152,7 +152,7 @@ export class XmdsClient {
       displayName: this.config.displayName,
       clientType: this.config.clientType || 'linux',
       clientVersion: this.config.clientVersion || '0.1.0',
-      clientCode: this.config.clientCode || '1',
+      clientCode: this.config.clientCode || '400',
       operatingSystem: os,
       macAddress: this.config.macAddress || 'n/a',
       xmrChannel: this.config.xmrChannel || '',
