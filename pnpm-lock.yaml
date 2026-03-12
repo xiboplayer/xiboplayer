@@ -73,9 +73,6 @@ importers:
       '@xiboplayer/xmds':
         specifier: workspace:*
         version: link:../xmds
-      '@xibosignage/xibo-communication-framework':
-        specifier: ^0.0.6
-        version: 0.0.6
       nanoevents:
         specifier: ^9.1.0
         version: 9.1.0
@@ -318,9 +315,6 @@ importers:
       '@xiboplayer/utils':
         specifier: workspace:*
         version: link:../utils
-      '@xibosignage/xibo-communication-framework':
-        specifier: ^0.0.6
-        version: 0.0.6
     devDependencies:
       vitest:
         specifier: ^2.0.0
@@ -1064,9 +1058,6 @@ packages:
 
   '@vitest/utils@4.0.18':
     resolution: {integrity: sha512-msMRKLMVLWygpK3u2Hybgi4MNjcYJvwTb0Ru09+fOyCXIgT5raYP041DRRdiJiI3k/2U6SEbAETB3YtBrUkCFA==}
-
-  '@xibosignage/xibo-communication-framework@0.0.6':
-    resolution: {integrity: sha512-4qRHIfUFZXWK3ZTG+t9w3cwtaULppi/V+pnyX1KWLT07v1dxUJuS8IcZTeAQa0OZ1AlkPIwFtcYZJpo21T/40Q==}
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -2678,8 +2669,6 @@ snapshots:
     dependencies:
       '@vitest/pretty-format': 4.0.18
       tinyrainbow: 3.0.3
-
-  '@xibosignage/xibo-communication-framework@0.0.6': {}
 
   accepts@2.0.0:
     dependencies:

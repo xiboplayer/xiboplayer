@@ -83,7 +83,6 @@ packages/
 **Production dependencies:**
 ```json
 {
-  "@xibosignage/xibo-communication-framework": "^0.0.6",  // XMR
   "pdfjs-dist": "^4.10.38",  // PDF rendering
   "spark-md5": "^3.0.2"      // File checksums
 }

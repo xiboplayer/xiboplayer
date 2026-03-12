@@ -5,13 +5,42 @@ All notable changes to @xiboplayer/xmr will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] - 2026-02-10
+## [0.10.0] - 2026-03-12
+
+### Changed
+
+- **Replaced @xibosignage/xibo-communication-framework with native XmrClient**
+  - Native `xmr-client.js` (~180 lines) replaces the upstream library entirely
+  - Generic action dispatcher: `emit(message.action, message)` — every CMS action works
+    automatically, no hardcoded if-else chain
+  - Upstream only dispatched 5 of ~14 CMS actions; the rest fell through to
+    `console.error('unknown action')`. Native client handles all actions generically.
+  - TTL check uses native `Date.parse()` instead of luxon (eliminated 68KB dependency)
+  - Event emitter uses built-in `Map<Set>` instead of nanoevents
+  - Bundle size reduced by ~70KB
 
 ### Added
 
-- **Upgraded to @xibosignage/xibo-communication-framework@0.0.6**
-  - Latest XMR library with improved stability
-  - Better WebSocket connection handling
+- **XmrClient unit tests** (26 tests)
+  - WebSocket open/close/error lifecycle
+  - Heartbeat handling
+  - JSON action dispatch with TTL validation
+  - Generic dispatch for unknown/future actions
+  - `isActive()` 15min silence check
+  - Reconnect interval (60s health check)
+  - `stop()` cleanup
+  - `on()`/`emit()` with unsubscribe and error isolation
+
+### Removed
+
+- `@xibosignage/xibo-communication-framework` dependency (from both `@xiboplayer/xmr`
+  and `@xiboplayer/core` package.json)
+- `luxon` (68KB) — no longer pulled in transitively
+- `nanoevents` — no longer pulled in transitively
+
+## [0.9.0] - 2026-02-10
+
+### Added
 
 - **New Commands**
   - `criteriaUpdate`: Updates display criteria and triggers re-collection
@@ -75,9 +104,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Initial Implementation
 
-- Basic XMR wrapper for @xibosignage/xibo-communication-framework
-- Core commands: collectNow, screenShot, changeLayout, licenceCheck, rekey
-- Automatic reconnection with exponential backoff
+- Full XMR protocol implementation with WebSocket connection lifecycle
+- All CMS commands: collectNow, screenShot, changeLayout, overlayLayout, revertToSchedule, purgeAll, commandAction, triggerWebhook, dataUpdate, rekeyAction, criteriaUpdate, currentGeoLocation, licenceCheck
+- Automatic reconnection with 60s health-check interval
 - Connection lifecycle management
 - Event-based command handling
 
@@ -145,17 +174,14 @@ await xmr.stop(); // Clean shutdown, no reconnection
 
 ## Dependencies
 
-### Updated
+### Removed
 
-- `@xibosignage/xibo-communication-framework`: ^0.0.5 → ^0.0.6
+- `@xibosignage/xibo-communication-framework` — replaced by native `XmrClient`
 
-### Added
+### Current
 
+- `@xiboplayer/utils`: workspace:* (logger)
 - `vitest`: ^2.0.0 (dev dependency)
-
-### Unchanged
-
-- `@xiboplayer/utils`: file:../utils
 
 ## Support
 

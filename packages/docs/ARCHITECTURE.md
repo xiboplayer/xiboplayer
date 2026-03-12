@@ -251,12 +251,12 @@ Database: xibo-player
 | MD5 hashing | spark-md5 | Tiny (4KB), ArrayBuffer support |
 | PDF rendering | PDF.js (lazy-loaded) | Industry standard, canvas-based |
 | HLS streaming | hls.js (lazy-loaded) | Polyfill for non-Safari browsers |
-| XMR client | @xibosignage/xibo-communication-framework | Official Xibo WebSocket library |
+| XMR client | Native XmrClient (`xmr-client.js`) | Full XMR protocol, generic action dispatch, zero deps |
 | Animations | Web Animations API | Built-in, GPU-accelerated |
 | Build tool | Vite | Fast dev server, tree-shaking, minification |
 | Package manager | pnpm workspaces | Workspace management |
 
-**Runtime dependencies:** spark-md5 (4KB), hls.js (lazy), PDF.js (lazy), xibo-communication-framework
+**Runtime dependencies:** spark-md5 (4KB), hls.js (lazy), PDF.js (lazy). XMR client is native (no external deps).
 
 ## Comparison with Upstream Players
 
@@ -266,7 +266,9 @@ Database: xibo-player
 | Rendering | XLR library | CEF WebView | Qt WebEngine | RendererLite |
 | Transport | SOAP only | SOAP only | SOAP only | SOAP + REST |
 | Media serving | Express | File system | tiny_http | Service Worker |
-| XMR | WebSocket | ZeroMQ/WS | ZeroMQ + RSA | WebSocket |
+| XMR transport | WebSocket | ZeroMQ/WS | ZeroMQ + RSA | WebSocket |
+| XMR actions | collectNow only | collectNow only | collectNow only | All 14 CMS actions (generic dispatch) |
+| XMR library | upstream framework (5/14 actions) | built-in | built-in | Native XmrClient (zero deps) |
 | Platform | Desktop | Windows | Linux | Any browser |
 | Core reuse | Electron-coupled | Monolithic | Monolithic | Platform-independent |
 | Total code | ~15,000 lines | ~50,000 lines | ~8,000 lines | ~12,000 lines |

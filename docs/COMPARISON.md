@@ -2,8 +2,9 @@
 
 > Generated 2026-03-05. Based on analysis of: xiboplayer SDK (16 packages), PlayerRestApi
 > (CMS custom module), upstream xibo-linux (C++), xibo-dotnetclient (C#/.NET),
-> xibo-layout-renderer (XLR), xibo-interactive-control (XIC), xibo-communication-framework
-> (XMR client), and CMS source (XMDS Soap3→Soap7, Widget/Render, Entity layer).
+> xibo-layout-renderer (XLR), xibo-interactive-control (XIC), and CMS source
+> (XMDS Soap3→Soap7, Widget/Render, Entity layer). XMR client is native (replaced upstream
+> xibo-communication-framework which only handled 5/14 CMS actions).
 
 ---
 
@@ -94,7 +95,7 @@ Renderer process: XLR library (shared npm module)
 | **navWidget** | ✅ | ✅ | ❌ | ✅ |
 | **next/previous** | ✅ | ✅ | ❌ | ✅ |
 | **XIC support** | ✅ (SW intercept + renderer) | ✅ (EmbeddedServer) | ❌ | ✅ |
-| **XMR (real-time)** | ✅ WebSocket | ✅ WebSocket+ZMQ | ✅ ZMQ only | ✅ WebSocket |
+| **XMR (real-time)** | ✅ WebSocket (all 14 actions) | ✅ WebSocket+ZMQ (collectNow only) | ✅ ZMQ only (collectNow only) | ✅ WebSocket (collectNow only) |
 | **Transitions** | ✅ CSS (fade/fly) | ✅ WPF (fade/fly) | ✅ GTK (fade/fly) | ✅ (XLR) |
 | **Video** | HTML5 `<video>` | WPF MediaElement | GStreamer | HTML5 |
 | **Audio overlays** | ✅ | ✅ | ✅ | ✅ |
@@ -342,6 +343,7 @@ Our codebase is **leaner per feature** because:
 | cache | `packages/cache/src/download-manager.js` | ~600 |
 | cache | `packages/cache/src/store-client.js` | ~200 |
 | stats | `packages/stats/src/stats-collector.js` | ~200 |
+| xmr | `packages/xmr/src/xmr-client.js` | ~180 |
 | xmr | `packages/xmr/src/xmr-wrapper.js` | ~200 |
 | sync | `packages/sync/src/sync-manager.js` | ~300 |
 | proxy | `packages/proxy/src/proxy.js` | ~400 |
@@ -367,4 +369,4 @@ Our codebase is **leaner per feature** because:
 | C++ Region | `/control/region/RegionImpl.hpp` |
 | C++ Schedule | `/schedule/Scheduler.hpp` |
 | XIC | `/src/xibo-interactive-control.js` (626 lines) |
-| XMR Client | `/src/modules/xmr/xmr.ts` (231 lines) |
+| XMR Client | `/src/modules/xmr/xmr.ts` (231 lines) — hardcoded 5/14 actions, rest silently dropped |

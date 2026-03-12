@@ -3,10 +3,10 @@
 /**
  * XMR (Xibo Message Relay) Wrapper
  *
- * Integrates the official @xibosignage/xibo-communication-framework
- * to enable real-time push commands from CMS via WebSocket.
+ * Integrates the native XmrClient (xmr-client.js) to enable real-time
+ * push commands from CMS via WebSocket.
  *
- * Connection lifecycle is delegated to the framework, which has a
+ * Connection lifecycle is delegated to XmrClient, which has a
  * built-in 60s health-check interval that reconnects automatically.
  * This wrapper only routes events to player callbacks.
  *
@@ -26,7 +26,7 @@
  * - currentGeoLocation: Report current geo location to CMS
  */
 
-import { Xmr } from '@xibosignage/xibo-communication-framework';
+import { XmrClient } from './xmr-client.js';
 import { createLogger } from '@xiboplayer/utils';
 
 const log = createLogger('XMR');
@@ -62,7 +62,7 @@ export class XmrWrapper {
       if (!this.xmr) {
         log.info('Initializing connection to:', xmrUrl);
         const channel = this.config.xmrChannel || `player-${this.config.hardwareKey}`;
-        this.xmr = new Xmr(channel);
+        this.xmr = new XmrClient(channel);
         this.setupEventHandlers();
         await this.xmr.init();
       }

@@ -32,24 +32,32 @@ npm run test:watch
 
 ### Test Coverage
 
-Current coverage: **48 test cases**
+Current coverage: **82 test cases** (26 XmrClient + 56 XmrWrapper)
 
-Categories:
-- ✅ **Constructor** (2 tests) - Initialization and state
-- ✅ **Connection lifecycle** (8 tests) - Start, stop, reconnect
-- ✅ **Connection events** (4 tests) - connected, disconnected, error
-- ✅ **CMS commands** (14 tests) - All 7 commands + error handling
-- ✅ **Reconnection logic** (4 tests) - Exponential backoff, max attempts
-- ✅ **stop() method** (4 tests) - Cleanup, error handling
+**XmrClient** (`xmr-client.test.js`):
+- ✅ **start()** (5 tests) - WebSocket open, init handshake, close, error, reconnect
+- ✅ **Message handling** (7 tests) - Heartbeat, JSON dispatch, TTL check, generic dispatch, commandAction, malformed JSON
+- ✅ **isActive()** (3 tests) - Connected + recent, 15min timeout, not connected
+- ✅ **Reconnect interval** (2 tests) - 60s health check, no reconnect after stop
+- ✅ **stop()** (2 tests) - Cleanup, safe when not started
+- ✅ **on()/emit()** (4 tests) - Multiple listeners, unsubscribe, error isolation
+- ✅ **send()** (2 tests) - JSON via WebSocket, throw when disconnected
+
+**XmrWrapper** (`xmr-wrapper.test.js`):
+- ✅ **Constructor** (1 test) - Initialization and state
+- ✅ **Connection lifecycle** (7 tests) - Start, stop, reuse, custom channel
+- ✅ **Connection events** (3 tests) - connected, disconnected, error
+- ✅ **CMS commands** (31 tests) - All 13 commands + error handling
+- ✅ **stop() method** (3 tests) - Cleanup, error handling
 - ✅ **isConnected()** (3 tests) - Connection state queries
 - ✅ **send()** (4 tests) - Sending messages to CMS
 - ✅ **Edge cases** (3 tests) - Simultaneous commands, rapid cycles
-- ✅ **Memory management** (2 tests) - Timer cleanup, garbage collection
+- ✅ **Memory management** (1 test) - Instance cleanup
 
 ### Test Structure
 
 Tests use Vitest with:
-- **Mocking**: `vi.mock()` for @xibosignage/xibo-communication-framework
+- **Mocking**: `vi.mock()` for `./xmr-client.js` (native XmrClient)
 - **Fake timers**: `vi.useFakeTimers()` for reconnection testing
 - **Async handling**: `vi.runAllTimersAsync()` for event handlers
 
@@ -504,6 +512,6 @@ jobs:
 ## References
 
 - XMR Commands: [XMR_COMMANDS.md](./XMR_COMMANDS.md)
-- XMR Library: [@xibosignage/xibo-communication-framework](https://www.npmjs.com/package/@xibosignage/xibo-communication-framework)
+- XMR Client: Native `XmrClient` (`xmr-client.js`) — full XMR protocol implementation
 - Xibo CMS: https://xibosignage.com
 - WebSocket Testing: https://github.com/websockets/wscat
