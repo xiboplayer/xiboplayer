@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2024-2026 Pau Aliagas <linuxnow@gmail.com>
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { CMS_CLIENT_METHODS, assertCmsClient } from './cms-client.js';

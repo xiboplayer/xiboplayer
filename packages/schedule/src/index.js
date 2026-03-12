@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2024-2026 Pau Aliagas <linuxnow@gmail.com>
 // @xiboplayer/schedule - Campaign scheduling and advanced features
 // Basic scheduling, interrupts, overlays, and dayparting
 import pkg from '../package.json' with { type: 'json' };

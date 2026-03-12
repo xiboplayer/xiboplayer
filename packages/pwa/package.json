@@ -36,7 +36,7 @@
     "vite": "^5.4.11"
   },
   "author": "Pau Aliagas <linuxnow@gmail.com>",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xibo-players/xiboplayer.git",

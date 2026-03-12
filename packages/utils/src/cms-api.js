@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2024-2026 Pau Aliagas <linuxnow@gmail.com>
 /**
  * CMS API Client — OAuth2-authenticated REST client for Xibo CMS
  *

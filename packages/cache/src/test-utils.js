@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2024-2026 Pau Aliagas <linuxnow@gmail.com>
 /**
  * Test Utilities for Xibo Player Cache package
  * Re-exports common test helpers.
