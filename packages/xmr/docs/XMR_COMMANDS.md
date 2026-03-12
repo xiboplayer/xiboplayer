@@ -119,7 +119,7 @@ xmr.send('rekey');
 
 ---
 
-### criteriaUpdate (New in v0.0.6)
+### criteriaUpdate (since v0.9.0)
 
 Updates display criteria and triggers immediate re-collection.
 
@@ -142,7 +142,7 @@ await player.collect(); // Gets new criteria from registerDisplay
 
 ---
 
-### currentGeoLocation (New in v0.0.6)
+### currentGeoLocation (since v0.9.0)
 
 Reports current geographic location to CMS.
 
@@ -285,19 +285,25 @@ To add support for a new XMR command:
 
 ## Version History
 
-### v0.0.6 (Current)
-- ✅ Added `criteriaUpdate` command
-- ✅ Added `currentGeoLocation` command
-- ✅ Intentional shutdown flag (no reconnect on stop)
-- ✅ Comprehensive test suite (48 tests)
+### v0.10.0 (Current)
+- ✅ Replaced upstream library with native `XmrClient` (generic action dispatch)
+- ✅ All 14 CMS commands supported (upstream only handled 5)
+- ✅ Any future CMS action works automatically (no code changes needed)
+- ✅ Eliminated luxon (68KB) and nanoevents dependencies
+- ✅ 82 tests (26 XmrClient + 56 XmrWrapper)
 
-### v0.0.5 and earlier
-- Basic commands: collectNow, screenShot, changeLayout, licenceCheck, rekey
+### v0.9.0
+- ✅ Added `criteriaUpdate` and `currentGeoLocation` commands
+- ✅ Intentional shutdown flag (no reconnect on stop)
+- ✅ Comprehensive test suite
+
+### v0.8.0
+- Initial implementation with full command set
 - Connection lifecycle management
-- Automatic reconnection with exponential backoff
+- Automatic reconnection with 60s health-check interval
 
 ## References
 
-- **XMR Library**: @xibosignage/xibo-communication-framework
+- **XMR Client**: Native `XmrClient` (`xmr-client.js`) — full XMR protocol implementation
 - **Xibo CMS**: https://xibosignage.com
 - **XMR Protocol**: WebSocket-based push messaging

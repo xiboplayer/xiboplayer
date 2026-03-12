@@ -22,13 +22,13 @@ export function createSpy() {
 }
 
 /**
- * Mock Xmr class from @xibosignage/xibo-communication-framework
+ * Mock XmrClient class (native xmr-client.js)
  *
  * Usage:
- *   const MockXmr = mockXmr();
+ *   const MockXmrClient = mockXmrClient();
  *   // Use in tests
  */
-export function mockXmr() {
+export function mockXmrClient() {
   class MockXmr {
     constructor(channel) {
       this.channel = channel;

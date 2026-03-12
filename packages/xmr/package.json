@@ -14,8 +14,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@xiboplayer/utils": "workspace:*",
-    "@xibosignage/xibo-communication-framework": "^0.0.6"
+    "@xiboplayer/utils": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^2.0.0"

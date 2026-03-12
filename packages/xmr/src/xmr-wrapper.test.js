@@ -15,9 +15,9 @@ import { createSpy, createMockPlayer, createMockConfig, wait } from './test-util
 const ts = (name, suffix = '') =>
   expect.stringMatching(new RegExp(`^\\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[${name}\\]${suffix}$`));
 
-// Mock the official Xmr class
-vi.mock('@xibosignage/xibo-communication-framework', () => {
-  class MockXmr {
+// Mock the native XmrClient
+vi.mock('./xmr-client.js', () => {
+  class MockXmrClient {
     constructor(channel) {
       this.channel = channel;
       this.events = new Map();
@@ -56,7 +56,7 @@ vi.mock('@xibosignage/xibo-communication-framework', () => {
     }
   }
 
-  return { Xmr: MockXmr };
+  return { XmrClient: MockXmrClient };
 });
 
 describe('XmrWrapper', () => {

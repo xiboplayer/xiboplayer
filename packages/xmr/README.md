@@ -103,8 +103,39 @@ new XmrWrapper(config, player)
 
 ## Dependencies
 
-- `@xibosignage/xibo-communication-framework` -- XMR protocol implementation
 - `@xiboplayer/utils` -- logger
+
+No external XMR dependencies. The native `XmrClient` (`xmr-client.js`) replaces the
+upstream `@xibosignage/xibo-communication-framework`, providing a complete implementation
+with generic action dispatch and zero third-party dependencies (no luxon, no nanoevents).
+
+### Upstream comparison
+
+| Feature | upstream `xibo-communication-framework@0.0.6` | native `XmrClient` |
+|---------|------------------------------------------------|---------------------|
+| `collectNow` | hardcoded | generic dispatch |
+| `screenShot` | hardcoded | generic dispatch |
+| `licenceCheck` | hardcoded | generic dispatch |
+| `criteriaUpdate` | hardcoded | generic dispatch |
+| `commandAction` (showStatusWindow) | hardcoded, splits commandCode | generic dispatch (full message) |
+| `commandAction` (forceUpdateChromeOS) | hardcoded, splits commandCode | generic dispatch (full message) |
+| `commandAction` (currentGeoLocation) | hardcoded, splits commandCode | generic dispatch (full message) |
+| `commandAction` (other) | **missing** -- `console.error('unknown action')` | generic dispatch (full message) |
+| `changeLayout` | **missing** -- `console.error('unknown action')` | generic dispatch |
+| `overlayLayout` | **missing** -- `console.error('unknown action')` | generic dispatch |
+| `revertToSchedule` | **missing** -- `console.error('unknown action')` | generic dispatch |
+| `purgeAll` | **missing** -- `console.error('unknown action')` | generic dispatch |
+| `triggerWebhook` | **missing** -- `console.error('unknown action')` | generic dispatch |
+| `dataUpdate` | **missing** -- `console.error('unknown action')` | generic dispatch |
+| `rekeyAction` | **missing** -- `console.error('unknown action')` | generic dispatch |
+| Any future CMS action | requires library update | works automatically |
+| TTL check | luxon `DateTime.fromISO().plus()` (68KB) | native `Date.parse()` (0KB) |
+| Event emitter | nanoevents (external) | built-in `Map<Set>` (0KB) |
+| Bundle size impact | ~70KB (luxon + nanoevents + framework) | ~2KB |
+| Reconnect interval | 60s `setInterval` | 60s `setInterval` (same) |
+| `isActive()` check | 15min silence threshold | 15min silence threshold (same) |
+| Init handshake | `{type:'init', key, channel}` | `{type:'init', key, channel}` (same) |
+| Heartbeat handling | `"H"` → update lastMessageAt | `"H"` → update lastMessageAt (same) |
 
 ---
 
