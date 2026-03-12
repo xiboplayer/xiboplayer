@@ -189,6 +189,18 @@ export class DataConnectorManager extends EventEmitter {
   }
 
   /**
+   * Force refresh all connectors — re-fetch immediately and restart polling.
+   * Called by XMR dataUpdate command.
+   */
+  refreshAll() {
+    if (this.connectors.size === 0) return;
+
+    log.info(`Refreshing all ${this.connectors.size} data connector(s)`);
+    this.stopPolling();
+    this.startPolling();
+  }
+
+  /**
    * Cleanup - stop all polling and remove listeners
    */
   cleanup() {
