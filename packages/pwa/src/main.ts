@@ -1291,7 +1291,9 @@ class PwaPlayer {
 
       // Try store first, then cache-through fetches from CMS on miss
       try {
-        const resp = await fetch(xlfFile.path);
+        const headers: Record<string, string> = {};
+        if (xlfFile.cmsDownloadUrl) headers['X-Cms-Download-Url'] = xlfFile.cmsDownloadUrl;
+        const resp = await fetch(xlfFile.path, Object.keys(headers).length ? { headers } : undefined);
         if (resp.ok) {
           xlfText = await resp.text();
           log.info(`Fetched XLF ${layoutId} (${xlfText.length} bytes)`);
