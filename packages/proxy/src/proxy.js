@@ -454,7 +454,9 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     const cmsUrl = currentPwaConfig?.cmsUrl;
     if (!cmsUrl) return res.status(502).json({ error: 'CMS URL not configured' });
 
-    const fullUrl = `${cmsUrl}${cmsPath}`;
+    // Use direct CMS download URL if provided (XMDS signed URLs)
+    const directUrl = req.headers['x-cms-download-url'];
+    const fullUrl = directUrl || `${cmsUrl}${cmsPath}`;
     logFile.info(`Cache miss: ${storeKey} → GET ${redactUrl(fullUrl)}`);
 
     const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
