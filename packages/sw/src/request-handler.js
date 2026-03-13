@@ -41,7 +41,44 @@ export class RequestHandler {
       return fetch(event.request);
     }
 
+    // XMDS file downloads — route through Express cache-through
+    if (url.pathname.includes('xmds.php') && url.searchParams.has('file')) {
+      return this._handleXmdsFile(event, url);
+    }
+
     // Not a cache request — pass through to network
     return fetch(event.request);
+  }
+
+  /**
+   * Route XMDS file downloads to the local Express cache-through proxy.
+   *
+   * XMDS RequiredFiles returns cross-origin signed URLs like:
+   *   https://cms/xmds.php?file=42.mp4&type=M&X-Amz-Signature=...
+   *
+   * We rewrite these to local proxy mirror paths so the download goes through
+   * ContentStore caching, avoiding CORS issues and enabling chunked downloads.
+   */
+  _handleXmdsFile(event, url) {
+    const filename = url.searchParams.get('file');
+    const fileType = url.searchParams.get('type'); // L=layout, M=media, P=resource/font
+    const itemId = url.searchParams.get('itemId');
+
+    let proxyPath;
+    if (fileType === 'L') {
+      proxyPath = `${PLAYER_API}/layouts/${itemId}`;
+    } else if (fileType === 'P') {
+      proxyPath = `${PLAYER_API}/dependencies/${filename}`;
+    } else {
+      proxyPath = `${PLAYER_API}/media/file/${filename}`;
+    }
+
+    this.log.info(`XMDS redirect: ${fileType}/${filename} → ${proxyPath}`);
+
+    // Pass original XMDS URL so proxy can fetch from CMS on cache miss
+    const headers = new Headers(event.request.headers);
+    headers.set('X-Cms-Download-Url', url.href);
+
+    return fetch(proxyPath, { headers });
   }
 }

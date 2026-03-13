@@ -146,6 +146,9 @@ export class DownloadTask {
     if (this.fileInfo.updateInterval) {
       headers['X-Cache-TTL'] = String(this.fileInfo.updateInterval);
     }
+    if (this.fileInfo.cmsDownloadUrl) {
+      headers['X-Cms-Download-Url'] = this.fileInfo.cmsDownloadUrl;
+    }
 
     const maxRetries = this._typeConfig.maxRetries;
 
