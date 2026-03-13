@@ -169,6 +169,26 @@ The ContentStore manages files on disk with metadata:
 
 ## Download Flow
 
+### Cache-Through with XMDS Support (v0.6.12)
+
+The proxy's `cacheThrough()` function serves files from the ContentStore or fetches them from the CMS on cache miss. It supports both REST and XMDS transports:
+
+```
+Request for /player/api/v2/media/file/42.mp4
+    │
+    ├── Check ContentStore → HIT → serve from disk
+    │
+    └── MISS → build CMS fetch URL:
+        ├── Has X-Cms-Download-Url header? → use it (XMDS signed URL)
+        └── No header? → build REST URL: ${cmsUrl}/player/api/v2/media/file/42.mp4
+            │
+            └── Fetch from CMS → store in ContentStore → serve
+```
+
+The `X-Cms-Download-Url` header carries the original XMDS signed URL (e.g., `xmds.php?file=42.mp4&X-Amz-Signature=...`). This is set by:
+- `DownloadTask` in `download-manager.js` (when `fileInfo.cmsDownloadUrl` is present)
+- `RequestHandler._handleXmdsFile()` in the Service Worker (for intercepted XMDS URLs)
+
 ### Service Worker Download
 
 ```

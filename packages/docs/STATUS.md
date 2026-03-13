@@ -1,37 +1,35 @@
-# PWA Player Status - v0.6.3
+# PWA Player Status - v0.6.12
 
 ## Current Status: PRODUCTION READY
 
 **Feature Parity:** 100% vs upstream Xibo players
-**Last Updated:** 2026-03-05
+**Last Updated:** 2026-03-13
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
 
-## What's New in v0.6.3
+## What's New in v0.6.12
 
-### Canvas Regions
-- Full canvas region support — layouts with canvas-type regions render correctly alongside standard regions
+### XMDS File Download Caching
+- XMDS signed URLs (`xmds.php?file=...&X-Amz-Signature=...`) now route through the cache-through proxy
+- Eliminates CORS failures on cross-origin XMDS downloads
+- ContentStore caching works identically for both REST and XMDS transports
+- Layout XLFs, media, fonts, bundles all cached and served from the same mirror paths
 
-### Protocol Auto-Detection
-- Player probes `/api/v2/player/auth` at startup and auto-selects REST or SOAP transport
-- Zero configuration — works with any CMS version
+### Idempotent Cache-Through Architecture
+- Both REST and XMDS downloads converge on the same proxy mirror paths
+- The ContentStore is transport-agnostic: files cached via XMDS are served identically to REST-cached files
+- `X-Cms-Download-Url` header lets the proxy fetch from XMDS signed URLs on cache miss
+- Second collection cycle serves everything from cache regardless of transport
 
-### Persistent Layout Durations (IndexedDB)
-- Layout durations cached in IndexedDB — on restart, the timeline and queue use correct durations immediately instead of 60s defaults
-- Three-phase correction: XLF parse → video metadata probe → renderer DURATION comments
+### What's New in v0.6.4
 
-### XIC Interactive Control Handlers
-- Renderer fires XIC events for widget interactions — enables interactive digital signage workflows
+### Cross-Device Sync, Shell Commands, Per-CMS Cache
+- See [CHANGELOG.md](../../CHANGELOG.md) for v0.6.4 details
 
-### Missing Media Timeline Overlay
-- Timeline overlay highlights layouts with missing/uncached media in red
-- Helps diagnose content delivery issues at a glance
+### What's New in v0.6.3
 
-### Download Resume
-- Incomplete chunked downloads resume from last successful chunk instead of re-downloading entirely
-
-### Sub-Playlist & Drawer Fixes
-- Sub-playlist playCount enforcement — widgets respect their configured play count per cycle
-- Drawer navigation via triggerCode and multi-widget re-hide works correctly
+### Canvas Regions, Protocol Auto-Detection, Download Resume
+- Full canvas region support, auto REST/SOAP detection, chunked download resume
+- Persistent layout durations (IndexedDB), XIC interactive control, missing media overlay
 
 ### Full REST API Support (v0.6.0)
 First Xibo player to implement the complete CMS REST API (`/api/v2/player/*`). See [REST.md](REST.md) for full documentation.

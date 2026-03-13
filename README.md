@@ -14,7 +14,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 ## Features
 
 ### CMS Communication
-- **Dual transport** — XMDS SOAP v3–v7 and REST API v2 with automatic protocol detection
+- **Dual transport** — XMDS SOAP v3–v7 and REST API v2 with automatic protocol detection and idempotent cache-through (both transports converge on the same proxy mirror paths)
 - **XMR real-time commands** — collectNow, screenshot, changeLayout, overlayLayout, revertToSchedule, purgeAll, dataUpdate via WebSocket with auto-reconnect
 - **Network resilience** — exponential backoff with jitter, CRC32-based skip optimization, ETag HTTP caching, HTTP 429 Retry-After support
 - **CMS REST API client** — 77 methods covering layouts, campaigns, schedules, commands, displays, playlists, datasets, notifications, folders, tags, and display group actions
@@ -54,7 +54,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Screenshot capture** — periodic and on-demand via getDisplayMedia + html2canvas fallback
 
 ### Infrastructure
-- **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving
+- **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving. Cache-through accepts `X-Cms-Download-Url` for XMDS-only CMSes
 - **Protocol auto-detection** — probes REST API at startup, auto-selects REST or SOAP transport
 - **Persistent layout durations** — cached in IndexedDB for correct timeline on restart
 - **1402 tests** across 36 test suites

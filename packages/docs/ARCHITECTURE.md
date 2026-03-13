@@ -115,7 +115,7 @@ StatsCollector listens: layoutStart, layoutEnd, widgetStart, widgetEnd
 LogReporter listens: reportFault calls from IC, renderer errors, collection errors
 ```
 
-### 3. Dual Transport (SOAP + REST)
+### 3. Dual Transport (SOAP + REST) with Idempotent Cache-Through
 
 The XMDS package provides two transport implementations with identical API surfaces:
 
@@ -123,6 +123,22 @@ The XMDS package provides two transport implementations with identical API surfa
 - **RestClient** (REST/JSON) - PWA-exclusive, 30% smaller payloads, ETag 304 caching
 
 Selectable per deployment; the PlayerCore does not know which transport is active.
+
+**Idempotent cache architecture (v0.6.12):** Both transports converge on the same proxy mirror paths, making the ContentStore transport-agnostic:
+
+```
+REST RequiredFiles  → file.path already uses /player/api/v2/{layouts,media,dependencies}/...
+XMDS RequiredFiles  → XmdsClient rewrites xmds.php URLs to the same mirror paths
+                      + stores original as file.cmsDownloadUrl
+```
+
+| XMDS fileType | Rewritten path | Example |
+|---------------|----------------|---------|
+| `L` (layout)  | `${PLAYER_API}/layouts/${id}` | `/player/api/v2/layouts/506` |
+| `M` (media)   | `${PLAYER_API}/media/file/${saveAs}` | `/player/api/v2/media/file/42.mp4` |
+| `P` (resource) | `${PLAYER_API}/dependencies/${saveAs}` | `/player/api/v2/dependencies/font.otf` |
+
+The proxy's `cacheThrough()` accepts an `X-Cms-Download-Url` header: on cache miss, it fetches from the provided URL (XMDS signed URL) instead of building a REST API path. This enables XMDS-only CMSes (without REST endpoints) to use the full cache-through pipeline. The Service Worker also intercepts any remaining cross-origin `xmds.php` URLs and rewrites them to local proxy paths, eliminating CORS failures.
 
 ### 4. Element Reuse (Arexibo Pattern, Refined)
 
@@ -193,24 +209,28 @@ Network down:
 ### ContentStore (Filesystem via Proxy)
 
 All binary content is stored on the filesystem via the proxy's ContentStore.
-The Service Worker intercepts fetch requests and routes them to `/store/*` REST endpoints.
+The Service Worker intercepts fetch requests and routes them to the proxy's cache-through endpoints.
+
+**Mirror paths (v0.6.12):** Content is stored under CMS API mirror paths, not arbitrary keys. Both REST and XMDS downloads converge on the same paths:
 
 ```
 ~/.config/xiboplayer/{electron,chromium}/content-store/
-├── media/
-│   ├── 12.bin              -> Media files (images, videos)
-│   └── 12.meta.json        -> { contentType, size, cachedAt, md5 }
-├── layout/
-│   └── 472.bin             -> XLF layout XML
+├── player/api/v2/
+│   ├── layouts/
+│   │   └── 506.bin            -> XLF layout XML
+│   ├── media/file/
+│   │   ├── 42.mp4.bin         -> Media files (images, videos)
+│   │   └── 42.mp4.meta.json   -> { contentType, size, cachedAt, md5 }
+│   └── dependencies/
+│       ├── bundle.min.js.bin  -> Widget JS bundle
+│       ├── fonts.css.bin      -> Font CSS
+│       └── Aileron-Heavy.otf.bin -> Font files
 ├── widget/
-│   └── 472/221/190.bin     -> Widget HTML
-└── static/
-    ├── bundle.min.js.bin   -> Widget JS bundle
-    ├── fonts.css.bin        -> Font CSS
-    └── Aileron-Heavy.otf.bin -> Font files
+│   └── 472/221/190.bin        -> Widget HTML (server-rendered)
+└── static/                    -> Legacy static resources
 ```
 
-No Cache API is used anywhere. Zero `caches.open()` calls.
+Files cached via XMDS are served identically to REST-cached files — the ContentStore is transport-agnostic. No Cache API is used anywhere. Zero `caches.open()` calls.
 
 ### IndexedDB (Structured Data)
 

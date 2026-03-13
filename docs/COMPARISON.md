@@ -1,6 +1,6 @@
 # Xibo Player Comparison: xiboplayer SDK vs Upstream
 
-> Generated 2026-03-05. Based on analysis of: xiboplayer SDK (16 packages), PlayerRestApi
+> Generated 2026-03-13. Based on analysis of: xiboplayer SDK (16 packages), PlayerRestApi
 > (CMS custom module), upstream xibo-linux (C++), xibo-dotnetclient (C#/.NET),
 > xibo-layout-renderer (XLR), xibo-interactive-control (XIC), and CMS source
 > (XMDS Soap3→Soap7, Widget/Render, Entity layer). XMR client is native (replaced upstream
@@ -76,7 +76,7 @@ Renderer process: XLR library (shared npm module)
 
 | Feature | xiboplayer | .NET (Win) | Linux (C++) | Upstream Electron |
 |---------|:----------:|:----------:|:-----------:|:-----------------:|
-| **CMS Protocol** | REST (PlayerRestApi) + SOAP (auto-detected) | SOAP only | SOAP only | SOAP only |
+| **CMS Protocol** | REST + SOAP (auto-detected), idempotent cache-through | SOAP only | SOAP only | SOAP only |
 | **Auth** | JWT Bearer | hardwareKey per call | hardwareKey per call | hardwareKey per call |
 | **Schedule parse** | Server-side JSON | Client-side XML | Client-side XML | Client-side XML |
 | **Layout format** | XLF (XML) | XLF | XLF | XLF |
@@ -128,77 +128,62 @@ Upstream players all use SOAP/XML. Our REST API provides:
 - **Dual JSON/XML input** — backward-compatible stats/logs submission
 - **Sendfile modes** — Apache X-Sendfile, Nginx X-Accel-Redirect for large files
 
-### 3b. LayoutPool (pre-loading)
+### 3b. Idempotent Cache-Through Architecture (v0.6.12)
+
+Both REST and XMDS transports converge on the same proxy mirror paths (`/player/api/v2/{layouts,media,dependencies}/...`), making the ContentStore transport-agnostic:
+- **XMDS signed URLs** rewritten to local proxy mirror paths (eliminates CORS failures)
+- **`X-Cms-Download-Url` header** — proxy fetches from original XMDS URL on cache miss
+- **Transport-agnostic caching** — files cached via XMDS are served identically to REST-cached files
+- **Second collection** serves everything from cache regardless of which transport was used
+
+### 3c. LayoutPool (pre-loading)
 
 Only our player and XLR have this. The .NET and C++ players tear down and rebuild the DOM/widget tree on every layout switch. Our LayoutPool keeps 2 layouts ready (hot + warm) for instant transitions.
 
-### 3c. Cross-Device Video Walls (BroadcastChannel + WebSocket)
+### 3d. Cross-Device Video Walls (BroadcastChannel + WebSocket)
 
 No upstream player has this. Our SyncManager coordinates layout transitions across multiple displays with a lead/follower protocol. Two transport layers: BroadcastChannel for same-machine sync (multi-tab), and a WebSocket relay on the lead's proxy server for cross-device LAN sync. Auto-reconnect, stats delegation, and synchronized video start across all screens.
 
-### 3d. Advanced Schedule Features
+### 3e. Advanced Schedule Features
 
 - **Interrupt layouts** with ShareOfVoice (seconds-per-hour quota tracking)
 - **Weather criteria** (temperature, humidity, wind, condition)
 - **Deterministic LCM-based queue** for predictable timeline
 - **Timeline projection** (2-hour lookahead for debug overlay)
 
-### 3e. Chunked Downloads with Barrier
+### 3f. Chunked Downloads with Barrier
 
 Our DownloadManager uses a BARRIER symbol in the task queue to ensure video can start playing before all chunks arrive. No upstream player does this — they all wait for complete file download.
 
-### 3f. PDF Support
+### 3g. PDF Support
 
 Native PDF rendering via pdfjs-dist. No upstream player supports PDF widgets.
 
 ---
 
-## 4. What Upstream Has That We're Missing or Could Improve
+## 4. Remaining Gaps
 
-### 4a. XIC (Interactive Control) — DONE (v0.6.2)
+### 4a. Engagement Tracking
 
-All 7 XIC HTTP endpoints are implemented via Service Worker intercept (PWA) with
-MessageChannel relay to the main thread. The renderer now handles `widgetExpire`,
-`widgetExtendDuration`, `widgetSetDuration`, and `interactiveTrigger` events.
-Widget iframes calling `xiboIC.expireNow()` etc. work end-to-end.
+The .NET player has a full `StatManager` (1020 lines) that tracks direct user engagement (clicks, form submissions) and impression URLs for ad exchange. Our StatsCollector handles layout/widget stats and event-based stats but does not track ad impressions.
 
-**Phase 2 complete** (PR #199): Proxy IC routes for Electron/Chromium,
-`xiboICTargetId` injection in widget HTML, DataConnector `rtNotifyData`
-postMessage notifications to all widget iframes.
+Priority: LOW unless ad exchange integration is needed.
 
-### 4b. Canvas Regions — DONE (v0.6.2)
+### 4b. PowerPoint / Flash
 
-Canvas regions (`type="canvas"`) now render all widgets simultaneously. Duration
-uses `Math.max()` of widget durations. Auto-detects canvas from region attribute
-or CMS "global" widget type.
+Legacy .NET-only features. Not applicable.
 
-### 4c. Cycle Playback / Sub-Playlists — DONE (v0.6.2)
+### 4c. RS232 Serial Port
 
-Round-robin and random selection work correctly. `playCount` attribute is now
-enforced — the same widget repeats N times before the cycle advances. CMS
-pre-flattens sub-playlists so the player receives a simple ordered widget list.
+Not available in the browser sandbox. Only relevant for industrial signage with physical serial-connected displays.
 
-### 4d. Shell Commands / Native Commands
+### Implemented (full parity)
 
-~~The .NET and C++ players can execute shell commands from widgets (type `shellcommand`).~~
-
-**DONE** (#202): Electron uses IPC (`execute-shell-command`), Chromium uses HTTP endpoint (`POST /shell-command`). Gated by `allowShellCommands: true` in config.json. 30-second timeout per command.
-
-### 4e. Engagement Tracking
-
-The .NET player has a full `StatManager` (1020 lines) that tracks:
-- Layout start/stop with duration
-- Widget start/stop with duration
-- Direct user engagement (clicks, form submissions)
-- Impression URLs for ad exchange
-
-Our StatsCollector handles layout/widget stats but may not track engagement events or ad impressions.
-
-**Priority**: LOW for now, HIGH if ad exchange integration is needed
-
-### 4f. PowerPoint / Flash
-
-Legacy .NET-only features. Not worth implementing.
+All other features that upstream players have are fully implemented:
+- **Interactive Control (XIC)** — all 7 HTTP endpoints, proxy IC routes, `xiboICTargetId` injection, DataConnector realtime notifications
+- **Canvas regions** — simultaneous widget rendering with `Math.max()` duration
+- **Cycle playback / sub-playlists** — round-robin, random selection, `playCount` enforcement
+- **Shell commands** — Electron IPC + Chromium HTTP endpoint, gated by `allowShellCommands` config, 30s timeout
 
 ---
 
@@ -209,14 +194,11 @@ Legacy .NET-only features. Not worth implementing.
 **Constraint**: xiboplayer must work with any vanilla Xibo CMS, not just our custom
 image with PlayerRestApi. SOAP/XMDS is the universal protocol every CMS speaks.
 
-**Current state**: We have both:
+Both transports are maintained:
 - `xmds-client.js` — Full SOAP envelope builder, XML parser (400+ lines)
 - `rest-client.js` — Clean REST/JSON client for PlayerRestApi
 
-**Recommendation**: Keep both. SOAP is the baseline; REST/PlayerRestApi is the
-optimization layer. ✅ **Done (v0.6.2)**: `ProtocolDetector` auto-probes
-`GET /api/v2/player/health` at startup — uses REST if available, falls back to
-SOAP. Re-probes on connection errors for runtime hot-swap.
+`ProtocolDetector` auto-probes `GET /api/v2/player/health` at startup — uses REST if available, falls back to SOAP. Re-probes on connection errors for runtime hot-swap.
 
 ### 5b. Schedule Parser (schedule-parser.js) — MUST KEEP
 
@@ -257,12 +239,12 @@ The `@xiboplayer/proxy` package serves multiple roles:
 
 With PlayerRestApi now handling media serving directly (with proper CORS headers), the CORS proxy role may be reducible. Evaluate whether the proxy can be slimmed down.
 
-### 5e. Dual REST + SOAP Support in PlayerCore — DONE (v0.6.3)
+### 5e. Dual REST + SOAP Support in PlayerCore
 
-Both `RestClient` and `XmdsClient` already implement the same 12-method interface.
-Formalized via `cms-client.js` with JSDoc types, `CMS_CLIENT_METHODS` canonical list,
+Both `RestClient` and `XmdsClient` implement the same 12-method `CmsClient` interface,
+formalized via `cms-client.js` with JSDoc types, `CMS_CLIENT_METHODS` canonical list,
 and `assertCmsClient()` runtime validator. `ProtocolDetector` validates conformance
-on every `detect()` / `reprobe()` call — catches missing methods at startup (#200).
+on every `detect()` / `reprobe()` call — catches missing methods at startup.
 
 ```
 CmsClient interface:
@@ -280,32 +262,12 @@ CmsClient interface:
 
 ---
 
-## 6. Implementation Priorities
+## 6. Future Work
 
-### Done (v0.6.2)
-
-1. ~~**Full XIC HTTP API**~~ — ✅ 7 endpoints wired via SW + renderer event handlers (#183)
-2. ~~**Canvas region support**~~ — ✅ simultaneous widget rendering (#186)
-3. ~~**Widget duration control from XIC**~~ — ✅ expire/extend/set modify renderer timers (#183)
-4. ~~**Auto-detect CMS protocol**~~ — ✅ ProtocolDetector probes health endpoint at startup (#187)
-5. ~~**Fly transitions (exit)**~~ — ✅ fixed switch fallthrough bug (#184)
-6. ~~**Drawer navWidget via triggerCode**~~ — ✅ wired navigate-to-widget event (#185)
-7. ~~**Sub-playlist playCount**~~ — ✅ enforced repeat count before advancing (#188)
-
-8. ~~**XIC Phase 2**~~ — ✅ `xiboICTargetId` injection, DataConnector `postMessage`, proxy IC routes (#199)
-
-9. ~~**Unify CmsClient interface**~~ — ✅ formalized with JSDoc types, conformance checks, runtime validation (#200, PR #207)
-
-### Should Have (next)
-
-10. **Evaluate proxy slimdown** — audit which proxy roles are redundant with PlayerRestApi CORS (#201)
-
-### Nice to Have
-
-11. ~~**Shell command execution**~~ — ✅ Electron IPC + Chromium HTTP (#202)
-12. **Engagement tracking** in StatsCollector (#203)
-13. **Config system documentation** — platform-specific key reference (#204)
-14. **Ad exchange support** (SSP widget type) (#84)
+1. **Evaluate proxy slimdown** — audit which proxy roles are redundant with PlayerRestApi CORS
+2. **Engagement tracking** — ad impressions and direct user engagement in StatsCollector
+3. **Config system documentation** — platform-specific key reference
+4. **Ad exchange support** (SSP widget type)
 
 ---
 

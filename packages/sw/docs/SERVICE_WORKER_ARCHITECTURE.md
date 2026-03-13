@@ -115,41 +115,59 @@ Handles fetch events from the browser.
 
 **Request Flow**:
 ```
-fetch('/player/cache/media/123')
-         │
-         ▼
-  ┌──────────────────────┐
-  │ Fetch from /store/*  │
-  └──────────────────────┘
-         │
-   200   │  404
-    ┌────┴────┐
-    ▼         ▼
-┌────────┐  ┌─────────────────────┐
-│ Serve  │  │ Is it downloading?  │
-│  file  │  └─────────────────────┘
-└────────┘         │
-             Yes   │   No
-            ┌──────┴────────┐
-            ▼               ▼
-    ┌──────────────┐   ┌────────┐
-    │ Wait & serve │   │ 404    │
-    └──────────────┘   └────────┘
+fetch(url)
+    │
+    ├── Static page (index.html, manifest.json)
+    │   └── Pass through to Express
+    │
+    ├── Player API (/player/api/v2/*)
+    │   └── Pass through to Express cache-through routes
+    │
+    ├── XMDS file download (xmds.php?file=...)     ← v0.6.5
+    │   └── _handleXmdsFile() → rewrite to mirror path
+    │       └── fetch(proxyPath, { X-Cms-Download-Url: original })
+    │
+    └── Other requests
+        └── Pass through to network
 ```
+
+**XMDS URL Interception (v0.6.12)**:
+
+Cross-origin XMDS signed URLs (`xmds.php?file=42.mp4&X-Amz-Signature=...`) would fail CORS preflight. The RequestHandler intercepts these and rewrites them to local proxy mirror paths:
+
+```javascript
+_handleXmdsFile(event, url) {
+  const filename = url.searchParams.get('file');
+  const fileType = url.searchParams.get('type');  // L=layout, M=media, P=resource
+  const itemId = url.searchParams.get('itemId');
+
+  // Map to cache-through mirror routes (same paths REST uses)
+  if (fileType === 'L')      → /player/api/v2/layouts/{itemId}
+  else if (fileType === 'P') → /player/api/v2/dependencies/{filename}
+  else                       → /player/api/v2/media/file/{filename}
+
+  // Pass original XMDS URL so proxy can fetch from CMS on cache miss
+  headers.set('X-Cms-Download-Url', url.href);
+  return fetch(proxyPath, { headers });
+}
+```
+
+This is the second layer of XMDS rewriting (the first is in `XmdsClient.parseRequiredFilesResponse()`). It catches any XMDS URLs that weren't rewritten at the client level (e.g., direct fetches, widget resources).
 
 **No HTTP 202**: The Service Worker waits internally and returns actual files, never HTTP 202.
 
 **Methods**:
-- `handleRequest(event)` - Main fetch handler
+- `handleRequest(event)` - Main fetch handler with XMDS interception
+- `_handleXmdsFile(event, url)` - Rewrite XMDS URLs to proxy mirror paths
 - `handleRangeRequest(response, rangeHeader)` - Handle video seeking
 
 **Special Handling**:
 - Static files (index.html, manifest.json)
 - Widget resources (bundle.min.js, fonts)
-- XMDS media requests (XLR compatibility)
+- XMDS file downloads (rewritten to proxy mirror paths)
+- Player API requests (cache-through routes)
 - Widget HTML (/player/cache/widget/*)
-- Media files (/player/cache/media/*)
-- Layout files (/player/cache/layout/*)
+- Media files via proxy mirror paths
 
 ### Class 4: MessageHandler
 
