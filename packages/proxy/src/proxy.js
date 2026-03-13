@@ -731,14 +731,41 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   });
 
   // Dependencies: {PLAYER_API}/dependencies/*
+  // XMDS downloads store dependencies as media (type=M) under media/file/.
+  // Fall back to media/file/{filename} when dependencies/{filename} is missing.
   app.get(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
     const filename = decodeURIComponent([req.params.splat].flat().pop());
     const key = `${STORE_PREFIX}/dependencies/${filename}`;
+    const mediaKey = `${STORE_PREFIX}/media/file/${filename}`;
+    // Try dependencies/ first; if not in store, try media/file/ (XMDS path)
+    if (store) {
+      try {
+        const info = store.has(key);
+        if (!info?.exists) {
+          const mediaInfo = store.has(mediaKey);
+          if (mediaInfo?.exists) {
+            logFile.info(`Dependencies fallback: ${key} → ${mediaKey}`);
+            return serveFromStore(req, res, mediaKey);
+          }
+        }
+      } catch (_) {}
+    }
     cacheThrough(req, res, key, `${PLAYER_API}/dependencies/${filename}`);
   });
   app.head(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
     const filename = decodeURIComponent([req.params.splat].flat().pop());
-    headFromStore(req, res, `${STORE_PREFIX}/dependencies/${filename}`, 'application/octet-stream');
+    const depKey = `${STORE_PREFIX}/dependencies/${filename}`;
+    const mediaKey = `${STORE_PREFIX}/media/file/${filename}`;
+    // Fall back to media/file/ for HEAD too
+    if (store) {
+      try {
+        const info = store.has(depKey);
+        if (!info?.exists && store.has(mediaKey)?.exists) {
+          return headFromStore(req, res, mediaKey, 'application/octet-stream');
+        }
+      } catch (_) {}
+    }
+    headFromStore(req, res, depKey, 'application/octet-stream');
   });
 
   // Datasets (widget data): {PLAYER_API}/datasets/:widgetId/data
