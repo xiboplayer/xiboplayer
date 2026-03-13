@@ -14,5 +14,4 @@ jobs:
     uses: xibo-players/.github/.github/workflows/publish-npm.yml@main
     with:
       publish-command: 'pnpm --filter @xiboplayer/pwa build && pnpm -r publish --no-git-checks --access public --provenance'
-    secrets:
-      npm-token: ${{ secrets.NPM_TOKEN }}
+    # Trusted publishing via OIDC — no NPM_TOKEN needed
