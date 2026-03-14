@@ -239,16 +239,6 @@ export class XmrWrapper {
       }
     });
 
-    // CMS command: Screen Shot (alternative event name)
-    this.xmr.on('screenshot', async () => {
-      log.info('Received screenshot command from CMS');
-      try {
-        await this.player.captureScreenshot();
-      } catch (error) {
-        log.error('screenshot failed:', error);
-      }
-    });
-
     // CMS command: Criteria Update
     this.xmr.on('criteriaUpdate', async (data) => {
       log.info('Received criteriaUpdate command:', data);

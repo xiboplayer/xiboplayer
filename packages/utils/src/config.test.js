@@ -224,51 +224,6 @@ describe('Config', () => {
     });
   });
 
-  describe('Hash Function (FNV-1a)', () => {
-    beforeEach(() => {
-      config = new Config();
-    });
-
-    it('should generate 32-character hex hash', () => {
-      const hash = config.hash('test string');
-
-      expect(hash).toMatch(/^[0-9a-f]{32}$/);
-    });
-
-    it('should be deterministic for same input', () => {
-      const hash1 = config.hash('test');
-      const hash2 = config.hash('test');
-
-      expect(hash1).toBe(hash2);
-    });
-
-    it('should produce different hashes for different inputs', () => {
-      const hash1 = config.hash('test1');
-      const hash2 = config.hash('test2');
-
-      expect(hash1).not.toBe(hash2);
-    });
-
-    it('should handle empty string', () => {
-      const hash = config.hash('');
-
-      expect(hash).toMatch(/^[0-9a-f]{32}$/);
-    });
-
-    it('should produce good entropy for similar inputs', () => {
-      const hash1 = config.hash('a');
-      const hash2 = config.hash('b');
-
-      // Hashes should be completely different (not just 1 character difference)
-      let differences = 0;
-      for (let i = 0; i < hash1.length; i++) {
-        if (hash1[i] !== hash2[i]) differences++;
-      }
-
-      expect(differences).toBeGreaterThan(15); // At least half different
-    });
-  });
-
   describe('Canvas Fingerprint', () => {
     let createElementSpy;
 
@@ -482,22 +437,6 @@ describe('Config', () => {
       expect(config.cmsUrl).toBe('');
     });
 
-    it('should handle very long strings', () => {
-      config = new Config();
-
-      const longString = 'a'.repeat(10000);
-      const hash = config.hash(longString);
-
-      expect(hash).toMatch(/^[0-9a-f]{32}$/);
-    });
-
-    it('should handle unicode in hash', () => {
-      config = new Config();
-
-      const hash = config.hash('测试中文🎉');
-
-      expect(hash).toMatch(/^[0-9a-f]{32}$/);
-    });
   });
 
   describe('Persistence', () => {

@@ -222,13 +222,6 @@ describe('XmrWrapper', () => {
         expect(mockPlayer.captureScreenshot).toHaveBeenCalled();
       });
 
-      it('should handle screenshot command (alternative)', async () => {
-        xmrInstance.simulateCommand('screenshot');
-        await vi.runAllTimersAsync();
-
-        expect(mockPlayer.captureScreenshot).toHaveBeenCalled();
-      });
-
       it('should handle screenShot failure gracefully', async () => {
         mockPlayer.captureScreenshot.mockRejectedValue(new Error('Screenshot failed'));
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

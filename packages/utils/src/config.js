@@ -510,34 +510,6 @@ export class Config {
     console.log('[Config] RSA key pair generated and saved');
   }
 
-  hash(str) {
-    // FNV-1a hash algorithm (better distribution than simple hash)
-    // Produces high-entropy 32-character hex string
-    let hash = 2166136261; // FNV offset basis
-
-    for (let i = 0; i < str.length; i++) {
-      hash ^= str.charCodeAt(i);
-      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-
-    // Convert to unsigned 32-bit integer
-    hash = hash >>> 0;
-
-    // Extend to 32 characters by hashing multiple times with different seeds
-    let result = '';
-    for (let round = 0; round < 4; round++) {
-      let roundHash = hash + round * 1234567;
-      for (let i = 0; i < str.length; i++) {
-        roundHash ^= str.charCodeAt(i) + round;
-        roundHash += (roundHash << 1) + (roundHash << 4) + (roundHash << 7) + (roundHash << 8) + (roundHash << 24);
-      }
-      roundHash = roundHash >>> 0;
-      result += roundHash.toString(16).padStart(8, '0');
-    }
-
-    return result.substring(0, 32);
-  }
-
   get cmsUrl() { return this.data.cmsUrl; }
   set cmsUrl(val) { this.data.cmsUrl = val; this.save(); }
 

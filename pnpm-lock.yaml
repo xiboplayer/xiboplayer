@@ -187,7 +187,7 @@ importers:
         specifier: ^1.4.1
         version: 1.4.1
       nanoevents:
-        specifier: ^9.0.0
+        specifier: ^9.1.0
         version: 9.1.0
       xml2js:
         specifier: ^0.6.2
