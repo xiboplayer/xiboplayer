@@ -43,6 +43,7 @@ let LogReporter: any;
 let formatLogs: any;
 let DisplaySettings: any;
 let SyncManager: any;
+let computeStagger: any;
 
 // SDK package versions (populated in loadCoreModules)
 const sdkVersions: Record<string, string> = {};
@@ -380,6 +381,7 @@ class PwaPlayer {
 
       cacheWidgetHtml = cacheModule.cacheWidgetHtml;
       SyncManager = syncModule.SyncManager;
+      computeStagger = syncModule.computeStagger;
       scheduleManager = scheduleModule.scheduleManager;
       config = configModule.config;
       RestClient = xmdsModule.RestClient;
@@ -556,8 +558,23 @@ class PwaPlayer {
           this.syncManager?.reportReady(layoutId);
         },
         onLayoutShow: (layoutId: string) => {
-          // Lead/Follower: show the layout now (already rendered by prepareAndRenderLayout)
-          log.info(`[Sync] Show signal for layout ${layoutId}`);
+          // Compute choreography stagger delay (0 if no choreography configured)
+          const stagger = computeStagger({
+            choreography: syncConfig.choreography || 'simultaneous',
+            position: syncConfig.position ?? 0,
+            totalDisplays: syncConfig.totalDisplays ?? 1,
+            staggerMs: syncConfig.staggerMs ?? 150,
+          });
+
+          if (stagger > 0) {
+            log.info(`[Sync] Show layout ${layoutId} with ${stagger}ms choreography delay (${syncConfig.choreography})`);
+            setTimeout(() => {
+              this.renderer.showLayout?.();
+            }, stagger);
+          } else {
+            log.info(`[Sync] Show layout ${layoutId}`);
+            this.renderer.showLayout?.();
+          }
         },
         onVideoStart: (layoutId: string, regionId: string) => {
           // Resume paused video in the specified region

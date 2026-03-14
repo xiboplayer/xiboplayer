@@ -515,3 +515,4 @@ export class SyncManager {
 
 export { BroadcastChannelTransport } from './bc-transport.js';
 export { WebSocketTransport } from './ws-transport.js';
+export { computeStagger } from './choreography.js';

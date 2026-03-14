@@ -9,6 +9,8 @@ export interface SyncTransport {
   readonly connected: boolean;
 }
 
+export type Choreography = 'simultaneous' | 'wave-right' | 'wave-left' | 'center-out' | 'outside-in' | 'random';
+
 export interface SyncConfig {
   syncGroup: string;
   syncPublisherPort: number;
@@ -18,6 +20,14 @@ export interface SyncConfig {
   relayUrl?: string;
   /** Wall mode: map lead layoutId → this display's position-specific layoutId */
   layoutMap?: Record<string, string | number>;
+  /** This display's 0-indexed position in the wall (for choreography) */
+  position?: number;
+  /** Total number of displays in the group (for choreography) */
+  totalDisplays?: number;
+  /** Transition choreography pattern */
+  choreography?: Choreography;
+  /** Base delay between consecutive displays in ms (default: 150) */
+  staggerMs?: number;
 }
 
 export class BroadcastChannelTransport implements SyncTransport {
@@ -35,6 +45,13 @@ export class WebSocketTransport implements SyncTransport {
   close(): void;
   readonly connected: boolean;
 }
+
+export function computeStagger(options: {
+  choreography: string;
+  position: number;
+  totalDisplays: number;
+  staggerMs: number;
+}): number;
 
 export class SyncManager {
   constructor(options: {
