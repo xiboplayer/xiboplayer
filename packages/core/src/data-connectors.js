@@ -24,11 +24,14 @@ import { EventEmitter, createLogger, fetchWithRetry } from '@xiboplayer/utils';
 
 const log = createLogger('DataConnector');
 
+const MAX_BACKOFF_MS = 300000; // 5 minutes
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+
 export class DataConnectorManager extends EventEmitter {
   constructor() {
     super();
 
-    // dataKey -> { config, data, timer, lastFetch }
+    // dataKey -> { config, data, timer, lastFetch, failures }
     this.connectors = new Map();
   }
 
@@ -60,7 +63,8 @@ export class DataConnectorManager extends EventEmitter {
         config: connector,
         data: null,
         timer: null,
-        lastFetch: null
+        lastFetch: null,
+        failures: 0
       });
 
       log.info(`Registered data connector: ${connector.dataKey} (interval: ${connector.updateInterval}s)`);
@@ -171,8 +175,12 @@ export class DataConnectorManager extends EventEmitter {
       const previousData = entry.data;
       entry.data = data;
       entry.lastFetch = Date.now();
+      entry.failures = 0; // Reset on success
 
       log.debug(`Data updated for ${dataKey} (fetched at ${new Date(entry.lastFetch).toISOString()})`);
+
+      // Restore normal polling interval if it was backed off
+      this._ensureNormalPolling(entry);
 
       // Emit event for listeners (IC route, platform layer)
       this.emit('data-updated', dataKey, data);
@@ -183,8 +191,40 @@ export class DataConnectorManager extends EventEmitter {
       }
 
     } catch (error) {
-      log.error(`Failed to fetch data for ${dataKey}:`, error);
+      entry.failures = (entry.failures || 0) + 1;
+      log.error(`Failed to fetch data for ${dataKey} (${entry.failures}x):`, error);
       this.emit('fetch-error', dataKey, error);
+
+      // Circuit breaker: slow down polling after repeated failures
+      if (entry.failures >= CIRCUIT_BREAKER_THRESHOLD && entry.timer) {
+        const baseMs = (config.updateInterval || 300) * 1000;
+        const backoffMs = Math.min(baseMs * Math.pow(2, entry.failures - CIRCUIT_BREAKER_THRESHOLD + 1), MAX_BACKOFF_MS);
+        clearInterval(entry.timer);
+        entry.timer = setTimeout(() => {
+          this.fetchData(entry).catch(() => {});
+          // Re-arm with backoff interval
+          entry.timer = setInterval(() => {
+            this.fetchData(entry).catch(() => {});
+          }, backoffMs);
+        }, backoffMs);
+        log.warn(`Circuit breaker: ${dataKey} backing off to ${Math.round(backoffMs / 1000)}s`);
+      }
+    }
+  }
+
+  /**
+   * Restore normal polling interval after circuit breaker backoff.
+   * @private
+   */
+  _ensureNormalPolling(entry) {
+    if (entry.failures === 0 && entry.timer) {
+      const baseMs = (entry.config.updateInterval || 300) * 1000;
+      // Clear any backed-off timer and restore the normal interval
+      clearInterval(entry.timer);
+      clearTimeout(entry.timer);
+      entry.timer = setInterval(() => {
+        this.fetchData(entry).catch(() => {});
+      }, baseMs);
     }
   }
 
