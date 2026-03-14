@@ -527,16 +527,24 @@ class PwaPlayer {
       }
     });
 
-    // Multi-display sync: create SyncManager when CMS provides sync config
+    // Multi-display sync: local config fallback when CMS doesn't provide syncConfig
+    this.core.on('register-complete', (regResult: any) => {
+      if (!regResult.syncConfig && config.data?.sync) {
+        log.info('[Sync] Using local sync config (CMS did not provide syncConfig)');
+        this.core.emit('sync-config', config.data.sync);
+      }
+    });
+
+    // Multi-display sync: create SyncManager when CMS provides sync config (or local fallback)
     this.core.on('sync-config', (syncConfig: any) => {
       if (this.syncManager) {
         this.syncManager.stop();
       }
 
-      // Cross-device sync: build WebSocket relay URL when syncGroup is an IP.
+      // Cross-device sync: build WebSocket relay URL if not explicitly set.
       // Lead connects to its own relay (localhost), followers connect to lead's IP.
       // When syncGroup is 'lead', this is same-machine only (BroadcastChannel).
-      if (syncConfig.syncPublisherPort && syncConfig.syncGroup !== 'lead') {
+      if (!syncConfig.relayUrl && syncConfig.syncPublisherPort && syncConfig.syncGroup !== 'lead') {
         const host = syncConfig.isLead ? 'localhost' : syncConfig.syncGroup;
         syncConfig.relayUrl = `ws://${host}:${syncConfig.syncPublisherPort}/sync`;
       }
