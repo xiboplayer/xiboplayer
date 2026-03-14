@@ -1169,10 +1169,10 @@ describe('PlayerCore', () => {
 
       await core.executeCommand('restart', commands);
 
-      expect(global.fetch).toHaveBeenCalledWith('http://test.com/restart', {
+      expect(global.fetch).toHaveBeenCalledWith('http://test.com/restart', expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
+        headers: { 'Content-Type': 'application/json' },
+      }));
       expect(spy).toHaveBeenCalledWith({
         code: 'restart',
         success: true,
@@ -1240,10 +1240,10 @@ describe('PlayerCore', () => {
 
       await core.executeCommand('action', commands);
 
-      expect(global.fetch).toHaveBeenCalledWith('http://test.com/action', {
+      expect(global.fetch).toHaveBeenCalledWith('http://test.com/action', expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
+        headers: { 'Content-Type': 'application/json' },
+      }));
     });
   });
 

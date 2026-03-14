@@ -29,9 +29,10 @@ export class RestClient {
     this._tokenExpiresAt = 0;
     this._displayId = null;
 
-    // ETag-based HTTP caching
+    // ETag-based HTTP caching (capped at _maxCacheSize entries)
     this._etags = new Map();
     this._responseCache = new Map();
+    this._maxCacheSize = 100;
 
     log.info('Using REST transport');
   }
@@ -59,6 +60,19 @@ export class RestClient {
     return typeof window !== 'undefined' &&
       (window.electronAPI?.isElectron ||
        window.location.hostname === 'localhost');
+  }
+
+  /**
+   * Store a response in the ETag cache, evicting the oldest entry if full.
+   */
+  _cacheSet(path, etag, data) {
+    if (this._etags.size >= this._maxCacheSize) {
+      const oldest = this._etags.keys().next().value;
+      this._etags.delete(oldest);
+      this._responseCache.delete(oldest);
+    }
+    this._etags.set(path, etag);
+    this._responseCache.set(path, data);
   }
 
   // ─── JWT auth ─────────────────────────────────────────────────
@@ -108,7 +122,7 @@ export class RestClient {
   /**
    * Make an authenticated GET request with ETag caching.
    */
-  async restGet(path, queryParams = {}) {
+  async restGet(path, queryParams = {}, _retrying = false) {
     const token = await this._getToken();
     const url = new URL(`${this.getRestBaseUrl()}${path}`);
     for (const [key, value] of Object.entries(queryParams)) {
@@ -131,8 +145,11 @@ export class RestClient {
 
     // Token expired mid-flight — re-auth and retry once
     if (response.status === 401) {
+      if (_retrying) {
+        throw new Error(`REST GET ${path} failed: 401 Unauthorized (after re-auth)`);
+      }
       this._token = null;
-      return this.restGet(path, queryParams);
+      return this.restGet(path, queryParams, true);
     }
 
     if (response.status === 304) {
@@ -148,11 +165,6 @@ export class RestClient {
       throw new Error(`REST GET ${path} failed: ${response.status} ${response.statusText} ${errorBody}`);
     }
 
-    const etag = response.headers.get('ETag');
-    if (etag) {
-      this._etags.set(cacheKey, etag);
-    }
-
     const contentType = response.headers.get('Content-Type') || '';
     let data;
     if (contentType.includes('application/json')) {
@@ -161,14 +173,18 @@ export class RestClient {
       data = await response.text();
     }
 
-    this._responseCache.set(cacheKey, data);
+    const etag = response.headers.get('ETag');
+    if (etag) {
+      this._cacheSet(cacheKey, etag, data);
+    }
+
     return data;
   }
 
   /**
    * Make an authenticated POST/PUT request with JSON body.
    */
-  async restSend(method, path, body = {}) {
+  async restSend(method, path, body = {}, _retrying = false) {
     const token = await this._getToken();
     const url = new URL(`${this.getRestBaseUrl()}${path}`);
 
@@ -185,8 +201,11 @@ export class RestClient {
 
     // Token expired mid-flight — re-auth and retry once
     if (response.status === 401) {
+      if (_retrying) {
+        throw new Error(`REST ${method} ${path} failed: 401 Unauthorized (after re-auth)`);
+      }
       this._token = null;
-      return this.restSend(method, path, body);
+      return this.restSend(method, path, body, true);
     }
 
     if (!response.ok) {

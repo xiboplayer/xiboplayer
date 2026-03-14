@@ -29,9 +29,23 @@ export class StoreClient {
   async has(type, id) {
     try {
       const response = await fetch(`/store/${type}/${id}`, { method: 'HEAD' });
-      return response.ok;
-    } catch {
-      return false;
+      if (response.ok) return true;
+      if (response.status === 404) return false;
+      // Non-404 HTTP errors (500, 502, etc.) indicate proxy/store problems
+      const err = new Error(`Store error: ${response.status}`);
+      err.status = response.status;
+      log.warn(`has(${type}/${id}): unexpected status ${response.status}`);
+      throw err;
+    } catch (error) {
+      // Re-throw errors that are not simple network failures swallowed above
+      // (includes HTTP errors we threw, AbortError, TypeError from fetch)
+      if (error.status || error.name === 'AbortError' || error.name === 'TimeoutError') {
+        throw error;
+      }
+      // Network errors (proxy unreachable) — log and re-throw so callers
+      // can distinguish from "not cached" (which returns false)
+      log.warn(`has(${type}/${id}): network error — ${error.message}`);
+      throw error;
     }
   }
 

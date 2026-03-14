@@ -236,6 +236,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         method: req.method,
         headers,
         body: req.method !== 'GET' && req.body ? req.body : undefined,
+        signal: AbortSignal.timeout(30000),
       });
 
       const contentType = response.headers.get('content-type');
@@ -245,6 +246,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.status(response.status).send(responseText);
       logProxy.info(`${response.status} (${responseText.length} bytes)`);
     } catch (error) {
+      if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+        logProxy.error('XMDS timeout (30s):', redactUrl(xmdsUrl));
+        return res.status(504).json({ error: 'Gateway Timeout', message: 'CMS did not respond within 30s' });
+      }
       logProxy.error('Error:', error.message);
       res.status(500).json({ error: 'Proxy error', message: error.message });
     }
@@ -467,7 +472,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
 
     try {
-      const response = await fetch(fullUrl, { headers });
+      const response = await fetch(fullUrl, { headers, signal: AbortSignal.timeout(30000) });
 
       if (!response.ok && response.status !== 206) {
         logFile.warn(`CMS ${response.status} for ${storeKey}`);
@@ -581,7 +586,12 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         logFile.info(`${response.status} streaming (no store)`);
       }
     } catch (error) {
-      logFile.warn(`CMS fetch failed: ${storeKey} — ${error.message}`);
+      const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
+      if (isTimeout) {
+        logFile.warn(`CMS timeout (30s): ${storeKey}`);
+      } else {
+        logFile.warn(`CMS fetch failed: ${storeKey} — ${error.message}`);
+      }
       // Serve stale cached data if CMS is unreachable
       if (store && !res.headersSent) {
         const staleInfo = store.getMetadata(storeKey);
@@ -592,7 +602,11 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
           return serveFromStore(req, res, storeKey);
         }
       }
-      if (!res.headersSent) res.status(502).json({ error: 'CMS fetch failed', message: error.message });
+      if (!res.headersSent) {
+        const status = isTimeout ? 504 : 502;
+        const msg = isTimeout ? 'CMS did not respond within 30s' : error.message;
+        res.status(status).json({ error: isTimeout ? 'Gateway Timeout' : 'CMS fetch failed', message: msg });
+      }
     }
   }
 
@@ -855,6 +869,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       }
       delete fetchOptions.headers['content-length'];
 
+      fetchOptions.signal = AbortSignal.timeout(30000);
       const response = await fetch(targetUrl, fetchOptions);
       logApi.info(`${req.method} ${req.originalUrl} ← ${response.status} (${Date.now() - t0}ms)`);
 
@@ -873,6 +888,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         res.end();
       }
     } catch (err) {
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        logApi.error(`API forward timeout (30s): ${req.originalUrl}`);
+        return res.status(504).json({ error: 'Gateway Timeout', message: 'CMS did not respond within 30s' });
+      }
       logApi.error(`Forward failed: ${err.message}`);
       res.status(502).json({ error: err.message });
     }

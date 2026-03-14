@@ -1356,7 +1356,8 @@ export class PlayerCore extends EventEmitter {
       try {
         const response = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': contentType }
+          headers: { 'Content-Type': contentType },
+          signal: AbortSignal.timeout(10000),
         });
         const success = response.ok;
         this._lastCommandSuccess = success;

@@ -52,12 +52,10 @@ describe('StoreClient', () => {
       expect(exists).toBe(false);
     });
 
-    it('should return false on fetch error', async () => {
+    it('should throw on network error (not silently return false)', async () => {
       global.fetch = vi.fn(() => Promise.reject(new Error('Network error')));
 
-      const exists = await store.has('media', '123');
-
-      expect(exists).toBe(false);
+      await expect(store.has('media', '123')).rejects.toThrow('Network error');
     });
   });
 
