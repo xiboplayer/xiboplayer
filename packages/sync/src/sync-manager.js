@@ -104,7 +104,7 @@ export class SyncManager {
     // Select transport if none injected
     if (!this.transport) {
       if (this.syncConfig.relayUrl) {
-        this.transport = new WebSocketTransport(this.syncConfig.relayUrl);
+        this.transport = new WebSocketTransport(this.syncConfig.relayUrl, { syncGroup: this.syncConfig.syncGroup });
       } else if (typeof BroadcastChannel !== 'undefined') {
         this.transport = new BroadcastChannelTransport();
       } else {

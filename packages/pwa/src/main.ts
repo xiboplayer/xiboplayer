@@ -543,10 +543,16 @@ class PwaPlayer {
         displayId: config.hardwareKey,
         syncConfig,
         onLayoutChange: async (layoutId: string) => {
-          // Follower: lead requested a layout change — load it but don't show yet
-          log.info(`[Sync] Loading layout ${layoutId} (waiting for show signal)`);
-          await this.prepareAndRenderLayout(parseInt(layoutId, 10));
-          // Report ready to lead
+          // Wall mode: map lead's layout to this display's position-specific layout
+          const layoutMap = syncConfig.layoutMap || config.sync?.layoutMap;
+          const mappedId = layoutMap?.[layoutId] ?? layoutId;
+          if (mappedId !== layoutId) {
+            log.info(`[Sync] Wall mode: lead layout ${layoutId} → local layout ${mappedId}`);
+          }
+          // Follower: load the (possibly mapped) layout but don't show yet
+          log.info(`[Sync] Loading layout ${mappedId} (waiting for show signal)`);
+          await this.prepareAndRenderLayout(parseInt(String(mappedId), 10));
+          // Report ready to lead (use lead's layoutId so lead can track readiness)
           this.syncManager?.reportReady(layoutId);
         },
         onLayoutShow: (layoutId: string) => {

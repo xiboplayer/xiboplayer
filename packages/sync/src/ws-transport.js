@@ -23,9 +23,12 @@ const BACKOFF_FACTOR = 2;
 export class WebSocketTransport {
   /**
    * @param {string} url — WebSocket URL, e.g. ws://192.168.1.100:8765/sync
+   * @param {Object} [options]
+   * @param {string} [options.syncGroup] — group name for relay isolation
    */
-  constructor(url) {
+  constructor(url, { syncGroup } = {}) {
     this._url = url;
+    this._syncGroup = syncGroup || null;
     this._callback = null;
     this._closed = false;
     this._retryMs = INITIAL_RETRY_MS;
@@ -87,6 +90,11 @@ export class WebSocketTransport {
     this.ws.onopen = () => {
       this._log.info(`Connected to ${this._url}`);
       this._retryMs = INITIAL_RETRY_MS; // Reset backoff on success
+
+      // Join sync group for relay isolation
+      if (this._syncGroup) {
+        this.ws.send(JSON.stringify({ type: 'join', syncGroup: this._syncGroup }));
+      }
     };
 
     this.ws.onmessage = (event) => {

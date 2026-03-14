@@ -6,10 +6,12 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./cli": "./bin/cli.js"
+    "./cli": "./bin/cli.js",
+    "./relay": "./src/sync-relay.js"
   },
   "bin": {
-    "xiboplayer-proxy": "./bin/cli.js"
+    "xiboplayer-proxy": "./bin/cli.js",
+    "xiboplayer-relay": "./bin/relay.js"
   },
   "scripts": {
     "test": "vitest run",

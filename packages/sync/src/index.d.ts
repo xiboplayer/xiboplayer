@@ -16,6 +16,8 @@ export interface SyncConfig {
   syncVideoPauseDelay: number;
   isLead: boolean;
   relayUrl?: string;
+  /** Wall mode: map lead layoutId → this display's position-specific layoutId */
+  layoutMap?: Record<string, string | number>;
 }
 
 export class BroadcastChannelTransport implements SyncTransport {
@@ -27,7 +29,7 @@ export class BroadcastChannelTransport implements SyncTransport {
 }
 
 export class WebSocketTransport implements SyncTransport {
-  constructor(url: string);
+  constructor(url: string, options?: { syncGroup?: string });
   send(msg: any): void;
   onMessage(callback: (msg: any) => void): void;
   close(): void;
