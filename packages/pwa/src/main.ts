@@ -531,7 +531,16 @@ class PwaPlayer {
     this.core.on('register-complete', (regResult: any) => {
       if (!regResult.syncConfig && config.data?.sync) {
         log.info('[Sync] Using local sync config (CMS did not provide syncConfig)');
-        // Set syncConfig on PlayerCore so isSyncLead() works
+        this.core.syncConfig = config.data.sync;
+        this.core.emit('sync-config', config.data.sync);
+      }
+    });
+
+    // Offline sync: if CMS is unreachable but local config has sync settings,
+    // start SyncManager so LAN-only displays can still sync with each other.
+    this.core.on('offline-mode', (isOffline: boolean) => {
+      if (isOffline && !this.syncManager && config.data?.sync) {
+        log.info('[Sync] Offline mode with local sync config — starting sync');
         this.core.syncConfig = config.data.sync;
         this.core.emit('sync-config', config.data.sync);
       }
