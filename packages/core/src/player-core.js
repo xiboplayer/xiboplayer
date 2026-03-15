@@ -945,9 +945,11 @@ export class PlayerCore extends EventEmitter {
           this.emit('layout-prepare-request', layoutId);
         });
         return;
-      } else {
+      } else if (this.syncManager.transport?.connected) {
         log.info(`[Sync] Follower waiting for lead signal (not advancing independently)`);
         return;
+      } else {
+        log.warn(`[Sync] Follower: lead unreachable, advancing independently`);
       }
     }
 
