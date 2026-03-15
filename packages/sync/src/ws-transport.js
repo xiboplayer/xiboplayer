@@ -27,12 +27,14 @@ export class WebSocketTransport {
    * @param {string} [options.syncGroup] — group name for relay isolation
    * @param {string} [options.displayId] — this display's unique ID
    * @param {Object} [options.topology] — this display's topology { x, y, orientation? }
+   * @param {string} [options.token] — auth token for relay join validation
    */
-  constructor(url, { syncGroup, displayId, topology } = {}) {
+  constructor(url, { syncGroup, displayId, topology, token } = {}) {
     this._url = url;
     this._syncGroup = syncGroup || null;
     this._displayId = displayId || null;
     this._topology = topology || null;
+    this._token = token || null;
     this._callback = null;
     this._closed = false;
     this._retryMs = INITIAL_RETRY_MS;
@@ -100,6 +102,7 @@ export class WebSocketTransport {
         const join = { type: 'join', syncGroup: this._syncGroup };
         if (this._displayId) join.displayId = this._displayId;
         if (this._topology) join.topology = this._topology;
+        if (this._token) join.token = this._token;
         this.ws.send(JSON.stringify(join));
       }
     };

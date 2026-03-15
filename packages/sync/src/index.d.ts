@@ -34,6 +34,8 @@ export interface SyncConfig {
   syncVideoPauseDelay: number;
   isLead: boolean;
   relayUrl?: string;
+  /** Auth token for relay join validation (typically CMS server key) */
+  syncToken?: string;
   /** Wall mode: map lead layoutId → this display's position-specific layoutId */
   layoutMap?: Record<string, string | number>;
 
@@ -71,6 +73,7 @@ export class WebSocketTransport implements SyncTransport {
     syncGroup?: string;
     displayId?: string;
     topology?: DisplayTopology;
+    token?: string;
   });
   send(msg: any): void;
   onMessage(callback: (msg: any) => void): void;
