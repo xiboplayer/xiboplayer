@@ -531,6 +531,8 @@ class PwaPlayer {
     this.core.on('register-complete', (regResult: any) => {
       if (!regResult.syncConfig && config.data?.sync) {
         log.info('[Sync] Using local sync config (CMS did not provide syncConfig)');
+        // Set syncConfig on PlayerCore so isSyncLead() works
+        this.core.syncConfig = config.data.sync;
         this.core.emit('sync-config', config.data.sync);
       }
     });
@@ -547,6 +549,11 @@ class PwaPlayer {
       if (!syncConfig.relayUrl && syncConfig.syncPublisherPort && syncConfig.syncGroup !== 'lead') {
         const host = syncConfig.isLead ? 'localhost' : syncConfig.syncGroup;
         syncConfig.relayUrl = `ws://${host}:${syncConfig.syncPublisherPort}/sync`;
+      }
+
+      // Pass CMS server key as sync token for relay auth (shared by all displays on this CMS)
+      if (!syncConfig.syncToken) {
+        syncConfig.syncToken = config.cmsKey;
       }
 
       this.syncManager = new SyncManager({
