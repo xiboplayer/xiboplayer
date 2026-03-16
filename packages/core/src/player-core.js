@@ -945,9 +945,13 @@ export class PlayerCore extends EventEmitter {
     if (this.syncManager && this.schedule.isSyncEvent(layoutFile)) {
       if (this.isSyncLead()) {
         log.info(`[Sync] Lead requesting coordinated layout change: ${layoutId}`);
+        // Lead must render the layout itself (not just coordinate followers).
+        // Emit layout-prepare-request so the renderer builds it, while
+        // requestLayoutChange coordinates the show timing with followers.
+        this._preparingLayoutId = layoutId;
+        this.emit('layout-prepare-request', layoutId);
         this.syncManager.requestLayoutChange(layoutId).catch(err => {
           log.error('[Sync] Layout change failed:', err);
-          this.emit('layout-prepare-request', layoutId);
         });
         return;
       } else if (this.syncManager.transport?.connected) {
