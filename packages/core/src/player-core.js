@@ -474,12 +474,17 @@ export class PlayerCore extends EventEmitter {
         this.schedule.setDisplayProperties(regResult.settings);
       }
 
-      // Store sync config if display is in a sync group
+      // Store sync config if display is in a sync group — only emit if CMS config changed
+      // (compare raw CMS response, not the mutated config with relayUrl/syncGroupId added by PWA)
       if (regResult.syncConfig) {
-        this.syncConfig = regResult.syncConfig;
-        log.info('Sync group:', regResult.syncConfig.isLead ? 'LEAD' : `follower → ${regResult.syncConfig.syncGroup}`,
-          `(switchDelay: ${regResult.syncConfig.syncSwitchDelay}ms, videoPauseDelay: ${regResult.syncConfig.syncVideoPauseDelay}ms)`);
-        this.emit('sync-config', regResult.syncConfig);
+        const rawKey = JSON.stringify(regResult.syncConfig);
+        if (rawKey !== this._lastRawSyncConfig) {
+          this._lastRawSyncConfig = rawKey;
+          this.syncConfig = regResult.syncConfig;
+          log.info('Sync group:', regResult.syncConfig.isLead ? 'LEAD' : `follower → ${regResult.syncConfig.syncGroup}`,
+            `(switchDelay: ${regResult.syncConfig.syncSwitchDelay}ms, videoPauseDelay: ${regResult.syncConfig.syncVideoPauseDelay}ms)`);
+          this.emit('sync-config', regResult.syncConfig);
+        }
       }
 
       // Extract config from display tags (key|value convention)
@@ -940,9 +945,13 @@ export class PlayerCore extends EventEmitter {
     if (this.syncManager && this.schedule.isSyncEvent(layoutFile)) {
       if (this.isSyncLead()) {
         log.info(`[Sync] Lead requesting coordinated layout change: ${layoutId}`);
+        // Lead must render the layout itself (not just coordinate followers).
+        // Emit layout-prepare-request so the renderer builds it, while
+        // requestLayoutChange coordinates the show timing with followers.
+        this._preparingLayoutId = layoutId;
+        this.emit('layout-prepare-request', layoutId);
         this.syncManager.requestLayoutChange(layoutId).catch(err => {
           log.error('[Sync] Layout change failed:', err);
-          this.emit('layout-prepare-request', layoutId);
         });
         return;
       } else if (this.syncManager.transport?.connected) {

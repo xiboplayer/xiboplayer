@@ -2510,24 +2510,6 @@ export class RendererLite {
         // Use cache URL — SW serves HTML and intercepts sub-resources
         iframe.src = result.url;
 
-        // On hard reload (Ctrl+Shift+R), iframe navigation bypasses SW → server 404
-        // Detect and fall back to blob URL with original CMS signed URLs
-        if (result.fallback) {
-          const self = this;
-          iframe.addEventListener('load', function() {
-            try {
-              // Our cached widget HTML has a <base> tag; server 404 page doesn't
-              if (!iframe.contentDocument?.querySelector('base')) {
-                self.log.warn('Cache URL failed (hard reload?), using original CMS URLs');
-                const blob = new Blob([result.fallback], { type: 'text/html' });
-                const blobUrl = URL.createObjectURL(blob);
-                self.trackBlobUrl(blobUrl);
-                iframe.src = blobUrl;
-              }
-            } catch (e) { /* cross-origin — should not happen */ }
-          }, { once: true });
-        }
-
         // Parse NUMITEMS/DURATION from fallback HTML (cache path)
         if (result.fallback) {
           this._parseDurationComments(result.fallback, widget);
@@ -2748,24 +2730,6 @@ export class RendererLite {
       if (result && typeof result === 'object' && result.url) {
         // Use cache URL — SW serves HTML and intercepts sub-resources
         iframe.src = result.url;
-
-        // On hard reload (Ctrl+Shift+R), iframe navigation bypasses SW → server 404
-        // Detect and fall back to blob URL with original CMS signed URLs
-        if (result.fallback) {
-          const self = this;
-          iframe.addEventListener('load', function() {
-            try {
-              // Our cached widget HTML has a <base> tag; server 404 page doesn't
-              if (!iframe.contentDocument?.querySelector('base')) {
-                self.log.warn('Cache URL failed (hard reload?), using original CMS URLs');
-                const blob = new Blob([result.fallback], { type: 'text/html' });
-                const blobUrl = URL.createObjectURL(blob);
-                self.trackBlobUrl(blobUrl);
-                iframe.src = blobUrl;
-              }
-            } catch (e) { /* cross-origin — should not happen */ }
-          }, { once: true });
-        }
 
         // Parse NUMITEMS/DURATION from fallback HTML (cache path)
         if (result.fallback) {
@@ -3146,6 +3110,32 @@ export class RendererLite {
     }
 
     this.log.info(`Swapped to preloaded layout ${layoutId} (instant transition)`);
+  }
+
+  /**
+   * Show a preloaded layout (swap from pool to visible).
+   * If no layoutId, shows the most recently preloaded layout.
+   * No-ops if the layout is not in the pool.
+   * @param {number} [layoutId]
+   */
+  showLayout(layoutId) {
+    if (layoutId === undefined) {
+      layoutId = this.layoutPool.getLatest();
+      if (layoutId === undefined) {
+        this.log.warn('showLayout: no preloaded layout to show');
+        return;
+      }
+    }
+    // Already showing this layout — no-op (avoids double swap/layoutEnd cascade)
+    if (this.currentLayoutId === layoutId) {
+      this.log.info(`showLayout: layout ${layoutId} already showing`);
+      return;
+    }
+    if (!this.layoutPool.has(layoutId)) {
+      this.log.warn(`showLayout: layout ${layoutId} not in preload pool`);
+      return;
+    }
+    this._swapToPreloadedLayout(layoutId);
   }
 
   /**

@@ -554,10 +554,32 @@ class PwaPlayer {
 
       // Cross-device sync: build WebSocket relay URL if not explicitly set.
       // Lead connects to its own relay (localhost), followers connect to lead's IP.
-      // When syncGroup is 'lead', this is same-machine only (BroadcastChannel).
-      if (!syncConfig.relayUrl && syncConfig.syncPublisherPort && syncConfig.syncGroup !== 'lead') {
+      // Use syncGroupId as relay group name — CMS gives different syncGroup values
+      // to lead ("lead") vs followers (lead's IP), but syncGroupId is the same for all.
+      if (!syncConfig.relayUrl && syncConfig.syncPublisherPort) {
         const host = syncConfig.isLead ? 'localhost' : syncConfig.syncGroup;
         syncConfig.relayUrl = `ws://${host}:${syncConfig.syncPublisherPort}/sync`;
+        if (syncConfig.syncGroupId) {
+          syncConfig.syncGroup = String(syncConfig.syncGroupId);
+        }
+      }
+
+      // Persist resolved sync config to config.json so offline restarts
+      // can sync over LAN without CMS. Strips runtime-only fields.
+      const { syncToken, ...persistable } = syncConfig;
+      if ((window as any).electronAPI?.setConfig) {
+        (window as any).electronAPI.setConfig({ sync: persistable });
+      } else {
+        fetch('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sync: persistable }),
+        }).catch(() => {});
+      }
+
+      // Pass CMS server key as sync token for relay auth (shared by all displays on this CMS)
+      if (!syncConfig.syncToken) {
+        syncConfig.syncToken = config.cmsKey;
       }
 
       // Persist resolved sync config to config.json so offline restarts
@@ -582,13 +604,18 @@ class PwaPlayer {
           if (mappedId !== layoutId) {
             log.info(`[Sync] Wall mode: lead layout ${layoutId} → local layout ${mappedId}`);
           }
-          // Follower: load the (possibly mapped) layout but don't show yet
-          log.info(`[Sync] Loading layout ${mappedId} (waiting for show signal)`);
-          await this.prepareAndRenderLayout(parseInt(String(mappedId), 10));
+          // Follower: preload layout hidden, don't show until onLayoutShow
+          log.info(`[Sync] Preloading layout ${mappedId} (waiting for show signal)`);
+          await this.prepareAndRenderLayout(parseInt(String(mappedId), 10), { preloadOnly: true });
           // Report ready to lead (use lead's layoutId so lead can track readiness)
           this.syncManager?.reportReady(layoutId);
         },
         onLayoutShow: (layoutId: string) => {
+          // Map lead's layout ID to this display's layout (wall mode)
+          const layoutMap = syncConfig.layoutMap || config.sync?.layoutMap;
+          const mappedId = layoutMap?.[layoutId] ?? layoutId;
+          const numericId = parseInt(String(mappedId), 10);
+
           // Compute choreography stagger delay (0 if no choreography configured)
           const choreo = syncConfig.choreography || 'simultaneous';
           const staggerMs = syncConfig.staggerMs ?? 150;
@@ -606,13 +633,11 @@ class PwaPlayer {
           const stagger = computeStagger(staggerOpts);
 
           if (stagger > 0) {
-            log.info(`[Sync] Show layout ${layoutId} with ${stagger}ms choreography delay (${choreo})`);
-            setTimeout(() => {
-              this.renderer.showLayout?.();
-            }, stagger);
+            log.info(`[Sync] Show layout ${numericId} with ${stagger}ms choreography delay (${choreo})`);
+            setTimeout(() => this.renderer.showLayout(numericId), stagger);
           } else {
-            log.info(`[Sync] Show layout ${layoutId}`);
-            this.renderer.showLayout?.();
+            log.info(`[Sync] Show layout ${numericId}`);
+            this.renderer.showLayout(numericId);
           }
         },
         onVideoStart: (layoutId: string, regionId: string) => {
@@ -755,7 +780,11 @@ class PwaPlayer {
     });
 
     this.core.on('layout-prepare-request', async (layoutId: number) => {
-      await this.prepareAndRenderLayout(layoutId);
+      // Sync displays with a layout already playing: preload only,
+      // showLayout() handles showing after stagger via onLayoutShow.
+      // Initial start (no layout yet) or non-sync: render immediately.
+      const preloadOnly = !!this.syncManager && this.renderer.currentLayoutId !== null;
+      await this.prepareAndRenderLayout(layoutId, { preloadOnly });
     });
 
     this.core.on('layout-expire-current', () => {
@@ -783,6 +812,17 @@ class PwaPlayer {
 
     this.core.on('collection-error', async (error: any) => {
       this.updateStatus(`Collection error: ${error}`, 'error');
+
+      // Display not found / not authorized — show setup screen so user can re-register
+      const msg = error?.message || String(error);
+      if (msg.includes('403') && (msg.includes('Display not found') || msg.includes('not authorized'))) {
+        log.warn('Display not registered or not authorized — showing setup screen');
+        if (!this.setupOverlay) {
+          this.setupOverlay = new SetupOverlay();
+        }
+        this.setupOverlay.show();
+        return;
+      }
 
       // Report fault to CMS (triggers dashboard alert)
       this.logReporter?.reportFault(
@@ -1819,7 +1859,7 @@ class PwaPlayer {
   /**
    * Prepare and render layout (Platform-specific logic)
    */
-  private async prepareAndRenderLayout(layoutId: number) {
+  private async prepareAndRenderLayout(layoutId: number, { preloadOnly = false } = {}) {
     // Guard: skip if already playing this layout (another event already rendered it)
     if (this.core.getCurrentLayoutId() === layoutId) {
       log.debug(`Layout ${layoutId} already playing, skipping duplicate prepare`);
@@ -1872,9 +1912,14 @@ class PwaPlayer {
         await this.fetchWidgetHtml(xlfXml, layoutId);
       }
 
-      // Render layout
-      await this.renderer.renderLayout(xlfXml, layoutId);
-      this.updateStatus(`Playing layout ${layoutId}`);
+      // Render or preload layout
+      if (preloadOnly) {
+        await this.renderer.preloadLayout(xlfXml, layoutId);
+        log.info(`Layout ${layoutId} preloaded (waiting for showLayout)`);
+      } else {
+        await this.renderer.renderLayout(xlfXml, layoutId);
+        this.updateStatus(`Playing layout ${layoutId}`);
+      }
 
     } catch (error: any) {
       log.error('Failed to prepare layout:', layoutId, error);

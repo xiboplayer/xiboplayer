@@ -186,7 +186,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   app.post('/config', (req, res) => {
     logConfig.info('POST /config received:', JSON.stringify(req.body));
     const { cmsUrl } = req.body;
-    if (!cmsUrl) return res.status(400).json({ error: 'cmsUrl is required' });
+    if (!cmsUrl && !req.body.sync) return res.status(400).json({ error: 'cmsUrl or sync is required' });
 
     // Update in-memory config — merge all POSTed fields (takes effect on next page load injection)
     currentPwaConfig = { ...(currentPwaConfig || {}), ...req.body };
@@ -1106,7 +1106,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false, relaxSslCerts = true } = {}) {
+export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false, relaxSslCerts = true, syncSecret } = {}) {
   if (relaxSslCerts) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands });
 
@@ -1116,7 +1116,7 @@ export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath,
       logServer.info('READY');
 
       // Attach WebSocket sync relay (lightweight — no cost when unused)
-      attachSyncRelay(server);
+      attachSyncRelay(server, { secret: syncSecret });
 
       resolve({ server, port });
     });

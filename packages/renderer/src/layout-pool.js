@@ -280,6 +280,18 @@ export class LayoutPool {
   }
 
   /**
+   * Get the most recently added layout ID.
+   * @returns {number|undefined}
+   */
+  getLatest() {
+    let latest;
+    for (const id of this.layouts.keys()) {
+      latest = id;
+    }
+    return latest;
+  }
+
+  /**
    * Clear all entries (both hot and warm).
    */
   clear() {

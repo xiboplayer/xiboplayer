@@ -73,14 +73,18 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
     (url) => '/stream-proxy?url=' + encodeURIComponent(url)
   );
 
-  // Rewrite dependency URLs to local mirror paths. CMS sends absolute URLs
-  // like https://cms.example.com${PLAYER_API}/dependencies/bundle.min.js
-  // which fail due to CORS/auth. Replace with local PLAYER_API/dependencies/...
+  // Rewrite dependency URLs to absolute local paths. CMS SOAP GetResource sends
+  // bare filenames (e.g. src="bundle.min.js") which resolve against <base> to the
+  // wrong /media/file/ path. Normalize all dependency references to absolute paths.
   const depsPattern = new RegExp(
     `https?://[^"'\\s)]+?(${PLAYER_API.replace(/\//g, '\\/')}/dependencies/[^"'\\s?)]+)(\\?[^"'\\s)]*)?`,
     'g'
   );
   modifiedHtml = modifiedHtml.replace(depsPattern, (_, path) => path);
+  modifiedHtml = modifiedHtml.replace(
+    /(<(?:script|link)\b[^>]*(?:src|href)=")(?!\/|https?:\/\/)(bundle\.min\.js|fonts\.css)(")/g,
+    `$1${PLAYER_API}/dependencies/$2$3`
+  );
 
   // Inject xiboICTargetId — XIC library reads this global before its IIFE runs
   // to set _lib.targetId, which is included in every IC HTTP request as {id: ...}

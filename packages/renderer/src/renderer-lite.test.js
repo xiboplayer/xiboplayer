@@ -1230,6 +1230,38 @@ describe('RendererLite', () => {
 
       vi.useRealTimers();
     });
+
+    it('should show a preloaded layout via showLayout()', async () => {
+      const xlf = `<layout><region id="r1"></region></layout>`;
+      const layoutStartHandler = vi.fn();
+      renderer.on('layoutStart', layoutStartHandler);
+
+      // Preload layout hidden
+      await renderer.preloadLayout(xlf, 42);
+      expect(renderer.currentLayoutId).not.toBe(42);
+      expect(layoutStartHandler).not.toHaveBeenCalled();
+
+      // Show it
+      renderer.showLayout(42);
+      expect(renderer.currentLayoutId).toBe(42);
+      expect(layoutStartHandler).toHaveBeenCalledWith(42, expect.any(Object));
+    });
+
+    it('should show the latest preloaded layout when no id given', async () => {
+      const xlf1 = `<layout bgcolor="#ff0000"><region id="r1"></region></layout>`;
+      const xlf2 = `<layout bgcolor="#00ff00"><region id="r2"></region></layout>`;
+
+      await renderer.preloadLayout(xlf1, 10);
+      await renderer.preloadLayout(xlf2, 20);
+
+      renderer.showLayout();
+      expect(renderer.currentLayoutId).toBe(20);
+    });
+
+    it('should no-op showLayout when pool is empty', () => {
+      renderer.showLayout(999);
+      expect(renderer.currentLayoutId).toBeNull();
+    });
   });
 
   describe('Layout Replay Optimization', () => {
