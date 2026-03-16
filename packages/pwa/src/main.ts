@@ -566,14 +566,17 @@ class PwaPlayer {
 
       // Persist resolved sync config to config.json so offline restarts
       // can sync over LAN without CMS. Strips runtime-only fields.
+      // Merge with existing sync config to preserve local-only fields
+      // (topology, choreography, staggerMs, gridCols, gridRows).
       const { syncToken, ...persistable } = syncConfig;
+      const merged = { ...(config.data?.sync || {}), ...persistable };
       if ((window as any).electronAPI?.setConfig) {
-        (window as any).electronAPI.setConfig({ sync: persistable });
+        (window as any).electronAPI.setConfig({ sync: merged });
       } else {
         fetch('/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sync: persistable }),
+          body: JSON.stringify({ sync: merged }),
         }).catch(() => {});
       }
 
