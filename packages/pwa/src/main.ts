@@ -527,18 +527,49 @@ class PwaPlayer {
       }
     });
 
-    // Multi-display sync: create SyncManager when CMS provides sync config
+    // Multi-display sync: local config fallback when CMS doesn't provide syncConfig
+    this.core.on('register-complete', (regResult: any) => {
+      if (!regResult.syncConfig && config.data?.sync) {
+        log.info('[Sync] Using local sync config (CMS did not provide syncConfig)');
+        this.core.syncConfig = config.data.sync;
+        this.core.emit('sync-config', config.data.sync);
+      }
+    });
+
+    // Offline sync: if CMS is unreachable but local config has sync settings,
+    // start SyncManager so LAN-only displays can still sync with each other.
+    this.core.on('offline-mode', (isOffline: boolean) => {
+      if (isOffline && !this.syncManager && config.data?.sync) {
+        log.info('[Sync] Offline mode with local sync config — starting sync');
+        this.core.syncConfig = config.data.sync;
+        this.core.emit('sync-config', config.data.sync);
+      }
+    });
+
+    // Multi-display sync: create SyncManager when CMS provides sync config (or local fallback)
     this.core.on('sync-config', (syncConfig: any) => {
       if (this.syncManager) {
         this.syncManager.stop();
       }
 
-      // Cross-device sync: build WebSocket relay URL when syncGroup is an IP.
+      // Cross-device sync: build WebSocket relay URL if not explicitly set.
       // Lead connects to its own relay (localhost), followers connect to lead's IP.
       // When syncGroup is 'lead', this is same-machine only (BroadcastChannel).
-      if (syncConfig.syncPublisherPort && syncConfig.syncGroup !== 'lead') {
+      if (!syncConfig.relayUrl && syncConfig.syncPublisherPort && syncConfig.syncGroup !== 'lead') {
         const host = syncConfig.isLead ? 'localhost' : syncConfig.syncGroup;
         syncConfig.relayUrl = `ws://${host}:${syncConfig.syncPublisherPort}/sync`;
+      }
+
+      // Persist resolved sync config to config.json so offline restarts
+      // can sync over LAN without CMS. Strips runtime-only fields.
+      if ((window as any).electronAPI?.setConfig) {
+        const { syncToken, ...persistable } = syncConfig;
+        (window as any).electronAPI.setConfig({ sync: persistable });
+      }
+
+      // Pass CMS server key as sync token for relay auth (shared by all displays on this CMS)
+      if (!syncConfig.syncToken) {
+        syncConfig.syncToken = config.cmsKey;
       }
 
       this.syncManager = new SyncManager({
@@ -1751,7 +1782,19 @@ class PwaPlayer {
         const resp = await fetch(`/store/missing-chunks/${storeKey}`);
         const { missing } = await resp.json();
         if (missing.length === 0) {
-          log.warn(`Video error for ${storedAs} but no missing chunks — possible decode error`);
+          log.warn(`Video ${storedAs}: corrupt file (all chunks present), deleting for re-download`);
+          await fetch('/store/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: [{ key: storeKey }] }),
+          });
+          const layoutId = this.core.getCurrentLayoutId();
+          if (layoutId) {
+            this.core.setPendingLayout(layoutId, [storedAs]);
+          }
+          this.core.collectNow().catch((err: any) => {
+            log.error(`Failed to trigger re-download for ${storedAs}:`, err.message);
+          });
           return;
         }
         log.warn(`Video ${storedAs}: ${missing.length} missing chunks (${missing.join(', ')}), re-downloading`);

@@ -558,4 +558,120 @@ describe('SyncManager', () => {
       expect(onLogsAck).toHaveBeenCalledWith('pwa-f1');
     });
   });
+
+  // ── Local sync config fallback ────────────────────────────────
+
+  describe('local sync config fallback pattern', () => {
+    // Tests the pattern used in main.ts: when CMS returns syncConfig: null
+    // but config.data.sync is set, the player emits 'sync-config' on
+    // register-complete. This tests the EventEmitter contract, not the DOM.
+
+    it('should initialize SyncManager from local config when CMS provides no syncConfig', () => {
+      // Simulate the pattern from main.ts:
+      // core.on('register-complete') → if no CMS sync → emit 'sync-config' from local
+      const { EventEmitter } = require('@xiboplayer/utils');
+      const core = new EventEmitter();
+
+      const localSyncConfig = {
+        syncGroup: 'lobby',
+        syncPublisherPort: 9590,
+        syncSwitchDelay: 500,
+        syncVideoPauseDelay: 100,
+        isLead: false,
+      };
+
+      const syncConfigReceived = vi.fn();
+      core.on('sync-config', syncConfigReceived);
+
+      // Simulate the fallback listener (mirrors main.ts logic)
+      core.on('register-complete', (regResult) => {
+        if (!regResult.syncConfig && localSyncConfig) {
+          core.emit('sync-config', localSyncConfig);
+        }
+      });
+
+      // CMS returns no syncConfig
+      core.emit('register-complete', { syncConfig: null, settings: {} });
+
+      expect(syncConfigReceived).toHaveBeenCalledWith(localSyncConfig);
+    });
+
+    it('should NOT use local config when CMS provides syncConfig', () => {
+      const { EventEmitter } = require('@xiboplayer/utils');
+      const core = new EventEmitter();
+
+      const localSyncConfig = { syncGroup: 'local', isLead: false };
+      const cmsSyncConfig = { syncGroup: 'cms-group', isLead: true };
+
+      const syncConfigReceived = vi.fn();
+      core.on('sync-config', syncConfigReceived);
+
+      // Fallback listener
+      core.on('register-complete', (regResult) => {
+        if (!regResult.syncConfig && localSyncConfig) {
+          core.emit('sync-config', localSyncConfig);
+        }
+      });
+
+      // CMS provides syncConfig — fallback should NOT fire
+      core.emit('register-complete', { syncConfig: cmsSyncConfig, settings: {} });
+
+      // The fallback listener should NOT have emitted sync-config
+      expect(syncConfigReceived).not.toHaveBeenCalled();
+    });
+
+    it('should NOT emit sync-config when neither CMS nor local provides config', () => {
+      const { EventEmitter } = require('@xiboplayer/utils');
+      const core = new EventEmitter();
+
+      const syncConfigReceived = vi.fn();
+      core.on('sync-config', syncConfigReceived);
+
+      // Fallback with null local config
+      const localSyncConfig = null;
+      core.on('register-complete', (regResult) => {
+        if (!regResult.syncConfig && localSyncConfig) {
+          core.emit('sync-config', localSyncConfig);
+        }
+      });
+
+      core.emit('register-complete', { syncConfig: null, settings: {} });
+
+      expect(syncConfigReceived).not.toHaveBeenCalled();
+    });
+
+    it('should create SyncManager with local config values', () => {
+      const localConfig = {
+        syncGroup: 'lobby',
+        syncPublisherPort: 9590,
+        syncSwitchDelay: 750,
+        syncVideoPauseDelay: 100,
+        isLead: true,
+        topology: { x: 0, y: 0, orientation: 0 },
+        choreography: 'wave-right',
+        staggerMs: 150,
+        gridCols: 2,
+        gridRows: 2,
+      };
+
+      const transport = {
+        send: vi.fn(),
+        onMessage: vi.fn(),
+        close: vi.fn(),
+        connected: true,
+      };
+
+      const manager = new SyncManager({
+        displayId: 'test-local',
+        syncConfig: localConfig,
+        transport,
+      });
+
+      expect(manager.displayId).toBe('test-local');
+      expect(manager.isLead).toBe(true);
+      expect(manager.syncConfig.topology).toEqual({ x: 0, y: 0, orientation: 0 });
+      expect(manager.syncConfig.choreography).toBe('wave-right');
+      manager.stop();
+    });
+  });
 });

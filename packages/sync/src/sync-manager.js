@@ -109,6 +109,7 @@ export class SyncManager {
           syncGroup: this.syncConfig.syncGroup,
           displayId: this.displayId,
           topology: this.syncConfig.topology,
+          token: this.syncConfig.syncToken,
         });
       } else if (typeof BroadcastChannel !== 'undefined') {
         this.transport = new BroadcastChannelTransport();

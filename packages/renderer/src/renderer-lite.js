@@ -215,6 +215,7 @@ export class RendererLite {
     this.layoutTimer = null;
     this.layoutEndEmitted = false; // Prevents double layoutEnd on stop after timer
     this._deferredTimerLayoutId = null; // Set when timer is deferred for dynamic layouts
+    this._deferredTimerFallback = null; // Safety timeout: starts layout timer if metadata never arrives
     this._paused = false;
     this._layoutTimerStartedAt = null;  // Date.now() when layout timer started
     this._layoutTimerDurationMs = null; // Total layout duration in ms
@@ -720,6 +721,11 @@ export class RendererLite {
         if (this._hasUnprobedVideos()) {
           this.log.info(`Layout duration updated to ${maxRegionDuration}s but still has unprobed videos — keeping timer deferred`);
         } else {
+          // Cancel safety fallback — metadata arrived in time
+          if (this._deferredTimerFallback) {
+            clearTimeout(this._deferredTimerFallback);
+            this._deferredTimerFallback = null;
+          }
           const elapsed = Date.now() - (this._layoutTimerStartedAt || Date.now());
           const remainingMs = Math.max(1000, maxRegionDuration * 1000 - elapsed);
           this._deferredTimerLayoutId = null;
@@ -1205,8 +1211,13 @@ export class RendererLite {
           clearTimeout(this.layoutTimer);
           this.layoutTimer = null;
         }
-        this._deferredTimerLayoutId = null;
+
         this.layoutEndEmitted = false;
+        this._deferredTimerLayoutId = null;
+        if (this._deferredTimerFallback) {
+          clearTimeout(this._deferredTimerFallback);
+          this._deferredTimerFallback = null;
+        }
 
         // DON'T call stopCurrentLayout() - keep elements alive!
         // DON'T recreate regions/elements - already exist!
@@ -1599,12 +1610,24 @@ export class RendererLite {
     }
 
     // Dynamic layouts (useDuration=0 videos): defer timer until video metadata
-    // provides real durations. Without this, the 60s fallback fires prematurely
-    // causing rapid layout cycling ("layout storm") on startup.
+    // provides real durations. Safety timeout ensures corrupt/missing videos
+    // don't freeze the display forever.
     if (layout.isDynamic && this._hasUnprobedVideos()) {
       this._deferredTimerLayoutId = layoutId;
       this._layoutTimerStartedAt = Date.now();
       this.log.info(`Layout ${layoutId} has unprobed videos — deferring timer until metadata loads`);
+
+      // Safety: if metadata never arrives (corrupt file, codec error), start
+      // the timer with the estimated duration after 30s so the display keeps cycling.
+      this._deferredTimerFallback = setTimeout(() => {
+        this._deferredTimerFallback = null;
+        if (this._deferredTimerLayoutId === layoutId && !this.layoutTimer) {
+          this.log.warn(`Layout ${layoutId}: metadata timeout after 30s — starting timer with ${layout.duration}s estimate`);
+          this._deferredTimerLayoutId = null;
+          this._startLayoutTimer(layoutId, layout);
+        }
+      }, 30000);
+
       return;
     }
 
@@ -1628,6 +1651,10 @@ export class RendererLite {
    */
   _startLayoutTimer(layoutId, layout) {
     this._deferredTimerLayoutId = null;
+    if (this._deferredTimerFallback) {
+      clearTimeout(this._deferredTimerFallback);
+      this._deferredTimerFallback = null;
+    }
     const layoutDurationMs = layout.duration * 1000;
     this.log.info(`Layout ${layoutId} will end after ${layout.duration}s`);
 
@@ -2274,6 +2301,18 @@ export class RendererLite {
       const errorCode = error?.code;
       const errorMessage = error?.message || 'Unknown error';
       this.log.warn(`Video error: ${storedAs}, code: ${errorCode}, time: ${video.currentTime.toFixed(1)}s, message: ${errorMessage}`);
+
+      // Set fallback duration so the deferred timer can proceed.
+      // Without this, a corrupt video leaves widget.duration=0 forever,
+      // _hasUnprobedVideos() stays true, and the deferred timer never unblocks.
+      if (widget.useDuration === 0 && widget.duration === 0) {
+        widget.duration = 60;
+        this.log.info(`Set fallback duration 60s for errored widget ${widget.id}`);
+        if (this.currentLayoutId === createdForLayoutId) {
+          this.updateLayoutDuration();
+        }
+      }
+
       this.emit('videoError', { storedAs, fileId, errorCode, errorMessage, currentTime: video.currentTime });
     };
     video.addEventListener('error', onError);
@@ -3144,6 +3183,10 @@ export class RendererLite {
 
     this.layoutEndEmitted = false;
     this._deferredTimerLayoutId = null;
+    if (this._deferredTimerFallback) {
+      clearTimeout(this._deferredTimerFallback);
+      this._deferredTimerFallback = null;
+    }
     this.currentLayout = null;
     this.currentLayoutId = null;
 

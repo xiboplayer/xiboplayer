@@ -27,9 +27,11 @@ const log = createLogger('SyncRelay', 'INFO');
  * Attach a WebSocket sync relay to an existing HTTP server.
  *
  * @param {import('http').Server} server — the HTTP server from Express
+ * @param {Object} [options]
+ * @param {string} [options.secret] — when set, join messages must include a matching token
  * @returns {WebSocketServer} the wss instance (for testing / inspection)
  */
-export function attachSyncRelay(server) {
+export function attachSyncRelay(server, { secret } = {}) {
   const wss = new WebSocketServer({ noServer: true });
 
   // Group isolation: Map<groupName, Set<WebSocket>>
@@ -68,6 +70,11 @@ export function attachSyncRelay(server) {
 
       // Handle join: client declares its sync group and optional topology
       if (parsed.type === 'join') {
+        if (secret && parsed.token !== secret) {
+          log.warn(`Client ${addr} rejected: invalid token`);
+          ws.close(4001, 'Invalid token');
+          return;
+        }
         const group = parsed.syncGroup || 'default';
         ws.syncGroup = group;
         ws.displayId = parsed.displayId || null;

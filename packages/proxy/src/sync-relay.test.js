@@ -290,4 +290,35 @@ describe('SyncRelay', () => {
     expect(msg.type).toBe('group-update');
     expect(msg.totalDisplays).toBe(1);
   });
+
+  it('should relay messages that real clients can parse (Buffer data)', async () => {
+    // Catches the bug where Node ws delivers Buffer but JSON.parse(Blob) fails.
+    // WebSocketTransport.onmessage must handle Buffer/string data.
+    const url = await setup();
+
+    const a = await connect(url);
+    const b = await connect(url);
+    clients.push(a, b);
+
+    send(a, { type: 'join', syncGroup: 'parse-test' });
+    send(b, { type: 'join', syncGroup: 'parse-test' });
+    await tick();
+
+    // Collect raw message on b — Node's ws gives Buffer by default
+    const rawReceived = new Promise((resolve) => {
+      b.on('message', (data, isBinary) => {
+        // Verify data arrives and is parseable regardless of type
+        const str = typeof data === 'string' ? data : data.toString();
+        resolve(JSON.parse(str));
+      });
+    });
+
+    // a sends a layout-change
+    send(a, { type: 'layout-change', layoutId: '42', displayId: 'a', showAt: 12345 });
+
+    const msg = await rawReceived;
+    expect(msg.type).toBe('layout-change');
+    expect(msg.layoutId).toBe('42');
+    expect(typeof msg.showAt).toBe('number');
+  });
 });

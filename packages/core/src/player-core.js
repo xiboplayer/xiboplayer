@@ -51,6 +51,18 @@ import { DataConnectorManager } from './data-connectors.js';
 
 const log = createLogger('PlayerCore');
 
+/**
+ * Discover a local/LAN IP address.
+ * Electron: os.networkInterfaces() via preload (reliable, skips VPN/Docker).
+ * Browser: not supported (WebRTC returns mDNS or wrong interface).
+ */
+async function discoverLanIp() {
+  if (typeof window !== 'undefined' && window.electronAPI?.getLanIpAddress) {
+    try { return await window.electronAPI.getLanIpAddress(); } catch (_) {}
+  }
+  return '';
+}
+
 // IndexedDB database/store for offline cache
 const OFFLINE_DB_BASE = 'xibo-offline-cache';
 const OFFLINE_DB_VERSION = 1;
@@ -96,6 +108,12 @@ export class PlayerCore extends EventEmitter {
 
     // Data connectors manager (real-time data for widgets)
     this.dataConnectorManager = new DataConnectorManager();
+
+    // Discover LAN IP early (async, non-blocking)
+    discoverLanIp().then((ip) => {
+      this._lanIpAddress = ip;
+      log.info('LAN IP:', ip || '(not discovered)');
+    });
 
     // State
     this.xmr = null;
@@ -927,9 +945,11 @@ export class PlayerCore extends EventEmitter {
           this.emit('layout-prepare-request', layoutId);
         });
         return;
-      } else {
+      } else if (this.syncManager.transport?.connected) {
         log.info(`[Sync] Follower waiting for lead signal (not advancing independently)`);
         return;
+      } else {
+        log.warn(`[Sync] Follower: lead unreachable, advancing independently`);
       }
     }
 
@@ -1028,6 +1048,9 @@ export class PlayerCore extends EventEmitter {
       // Add geo-location if available
       if (this.config?.latitude) status.latitude = this.config.latitude;
       if (this.config?.longitude) status.longitude = this.config.longitude;
+
+      // Report LAN IP so CMS can tell sync followers where the lead is
+      if (this._lanIpAddress) status.lanIpAddress = this._lanIpAddress;
 
       await this.xmds.notifyStatus(status);
       this.emit('status-notified', layoutId);

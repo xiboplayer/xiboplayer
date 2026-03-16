@@ -302,13 +302,14 @@ export class RestClient {
       version_instructions: attrs.version_instructions || display.version_instructions || null,
     };
 
-    const syncConfig = display.syncGroup ? {
+    // Prefer structured syncConfig from REST module; fall back to flat SOAP fields
+    const syncConfig = display.syncConfig || (display.syncGroup ? {
       syncGroup: String(display.syncGroup),
       syncPublisherPort: parseInt(display.syncPublisherPort || '9590', 10),
       syncSwitchDelay: parseInt(display.syncSwitchDelay || '750', 10),
       syncVideoPauseDelay: parseInt(display.syncVideoPauseDelay || '100', 10),
       isLead: String(display.syncGroup) === 'lead',
-    } : null;
+    } : null);
 
     return { code, message, settings, tags, commands, displayAttrs, checkRf, checkSchedule, syncConfig };
   }
