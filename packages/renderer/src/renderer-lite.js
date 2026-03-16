@@ -3126,6 +3126,11 @@ export class RendererLite {
         return;
       }
     }
+    // Already showing this layout — no-op (avoids double swap/layoutEnd cascade)
+    if (this.currentLayoutId === layoutId) {
+      this.log.info(`showLayout: layout ${layoutId} already showing`);
+      return;
+    }
     if (!this.layoutPool.has(layoutId)) {
       this.log.warn(`showLayout: layout ${layoutId} not in preload pool`);
       return;

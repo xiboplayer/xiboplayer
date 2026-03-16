@@ -768,8 +768,10 @@ class PwaPlayer {
     });
 
     this.core.on('layout-prepare-request', async (layoutId: number) => {
-      // Sync displays: preload only, showLayout() handles showing after stagger
-      const preloadOnly = !!this.syncManager;
+      // Sync displays with a layout already playing: preload only,
+      // showLayout() handles showing after stagger via onLayoutShow.
+      // Initial start (no layout yet) or non-sync: render immediately.
+      const preloadOnly = !!this.syncManager && this.renderer.currentLayoutId !== null;
       await this.prepareAndRenderLayout(layoutId, { preloadOnly });
     });
 
