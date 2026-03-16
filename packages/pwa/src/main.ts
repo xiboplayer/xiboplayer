@@ -592,13 +592,18 @@ class PwaPlayer {
           if (mappedId !== layoutId) {
             log.info(`[Sync] Wall mode: lead layout ${layoutId} → local layout ${mappedId}`);
           }
-          // Follower: load the (possibly mapped) layout but don't show yet
-          log.info(`[Sync] Loading layout ${mappedId} (waiting for show signal)`);
-          await this.prepareAndRenderLayout(parseInt(String(mappedId), 10));
+          // Follower: preload layout hidden, don't show until onLayoutShow
+          log.info(`[Sync] Preloading layout ${mappedId} (waiting for show signal)`);
+          await this.prepareAndRenderLayout(parseInt(String(mappedId), 10), { preloadOnly: true });
           // Report ready to lead (use lead's layoutId so lead can track readiness)
           this.syncManager?.reportReady(layoutId);
         },
         onLayoutShow: (layoutId: string) => {
+          // Map lead's layout ID to this display's layout (wall mode)
+          const layoutMap = syncConfig.layoutMap || config.sync?.layoutMap;
+          const mappedId = layoutMap?.[layoutId] ?? layoutId;
+          const numericId = parseInt(String(mappedId), 10);
+
           // Compute choreography stagger delay (0 if no choreography configured)
           const choreo = syncConfig.choreography || 'simultaneous';
           const staggerMs = syncConfig.staggerMs ?? 150;
@@ -616,13 +621,11 @@ class PwaPlayer {
           const stagger = computeStagger(staggerOpts);
 
           if (stagger > 0) {
-            log.info(`[Sync] Show layout ${layoutId} with ${stagger}ms choreography delay (${choreo})`);
-            setTimeout(() => {
-              this.renderer.showLayout?.();
-            }, stagger);
+            log.info(`[Sync] Show layout ${numericId} with ${stagger}ms choreography delay (${choreo})`);
+            setTimeout(() => this.renderer.showLayout(numericId), stagger);
           } else {
-            log.info(`[Sync] Show layout ${layoutId}`);
-            this.renderer.showLayout?.();
+            log.info(`[Sync] Show layout ${numericId}`);
+            this.renderer.showLayout(numericId);
           }
         },
         onVideoStart: (layoutId: string, regionId: string) => {
@@ -765,7 +768,9 @@ class PwaPlayer {
     });
 
     this.core.on('layout-prepare-request', async (layoutId: number) => {
-      await this.prepareAndRenderLayout(layoutId);
+      // Sync displays: preload only, showLayout() handles showing after stagger
+      const preloadOnly = !!this.syncManager;
+      await this.prepareAndRenderLayout(layoutId, { preloadOnly });
     });
 
     this.core.on('layout-expire-current', () => {
@@ -1840,7 +1845,7 @@ class PwaPlayer {
   /**
    * Prepare and render layout (Platform-specific logic)
    */
-  private async prepareAndRenderLayout(layoutId: number) {
+  private async prepareAndRenderLayout(layoutId: number, { preloadOnly = false } = {}) {
     // Guard: skip if already playing this layout (another event already rendered it)
     if (this.core.getCurrentLayoutId() === layoutId) {
       log.debug(`Layout ${layoutId} already playing, skipping duplicate prepare`);
@@ -1893,9 +1898,14 @@ class PwaPlayer {
         await this.fetchWidgetHtml(xlfXml, layoutId);
       }
 
-      // Render layout
-      await this.renderer.renderLayout(xlfXml, layoutId);
-      this.updateStatus(`Playing layout ${layoutId}`);
+      // Render or preload layout
+      if (preloadOnly) {
+        await this.renderer.preloadLayout(xlfXml, layoutId);
+        log.info(`Layout ${layoutId} preloaded (waiting for showLayout)`);
+      } else {
+        await this.renderer.renderLayout(xlfXml, layoutId);
+        this.updateStatus(`Playing layout ${layoutId}`);
+      }
 
     } catch (error: any) {
       log.error('Failed to prepare layout:', layoutId, error);
