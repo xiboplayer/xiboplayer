@@ -3126,7 +3126,8 @@ export class RendererLite {
         return;
       }
     }
-    // Already showing this layout — no-op (avoids double swap/layoutEnd cascade)
+    // Same layout already showing — skip swap (self-swap would evict then fail).
+    // Same-layout replay is handled by renderLayout's replay path instead.
     if (this.currentLayoutId === layoutId) {
       this.log.info(`showLayout: layout ${layoutId} already showing`);
       return;

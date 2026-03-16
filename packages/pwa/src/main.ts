@@ -1869,10 +1869,15 @@ class PwaPlayer {
    * Prepare and render layout (Platform-specific logic)
    */
   private async prepareLayout(layoutId: number) {
-    // Guard: skip if already playing this layout (another event already rendered it)
-    if (this.core.getCurrentLayoutId() === layoutId) {
-      log.debug(`Layout ${layoutId} already playing, skipping duplicate prepare`);
+    // Same layout replay — use renderer's built-in replay path which
+    // re-emits layoutStart, restarts timer and widget cycling.
+    if (this.renderer.currentLayoutId === layoutId) {
+      log.debug(`Layout ${layoutId} replay`);
       this.core._preparingLayoutId = null;
+      const xlfBlob = await store.get(`${STORE_PREFIX}/layouts`, layoutId);
+      if (xlfBlob) {
+        await this.renderer.renderLayout(await xlfBlob.text(), layoutId);
+      }
       return;
     }
 
