@@ -1030,6 +1030,8 @@ class PwaPlayer {
     // Iframes steal focus — this pulls it back after a short delay so interactive
     // widgets still work momentarily but keyboard control returns to the player.
     window.addEventListener('blur', () => {
+      // Don't steal focus when setup overlay is open (user is typing in iframe inputs)
+      if (this.setupOverlay?.isVisible()) return;
       setTimeout(() => window.focus(), 200);
     });
 
@@ -1044,6 +1046,8 @@ class PwaPlayer {
           if ((iframe as any).__keyForwarderAttached) return;
           (iframe as any).__keyForwarderAttached = true;
           iframeDoc.addEventListener('keydown', (e: KeyboardEvent) => {
+            // Don't forward keys from setup overlay — user is typing in form inputs
+            if (this.setupOverlay?.isVisible()) return;
             // Re-dispatch on the main document so our handler fires
             const clone = new KeyboardEvent('keydown', {
               key: e.key, code: e.code, keyCode: e.keyCode,
