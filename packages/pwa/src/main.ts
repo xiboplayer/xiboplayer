@@ -690,6 +690,7 @@ class PwaPlayer {
       this.core.setSyncManager(this.syncManager);
       this.syncManager.start();
       log.info(`[Sync] SyncManager started as ${syncConfig.isLead ? 'LEAD' : 'FOLLOWER'}`);
+      this.updateConfigDisplay();
     });
 
     this.core.on('files-received', (files: any[]) => {
@@ -2225,7 +2226,13 @@ class PwaPlayer {
       const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?';
       const buildDate = typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__.replace('T', ' ').replace(/\.\d+Z$/, '') : '';
       const versionStr = buildDate ? `v${version} (${buildDate})` : `v${version}`;
-      configEl.textContent = `${versionStr} | CMS: ${config.cmsUrl} | Display: ${config.displayName || 'Unknown'} | HW: ${config.hardwareKey}`;
+      let text = `${versionStr} | CMS: ${config.cmsUrl} | Display: ${config.displayName || 'Unknown'} | HW: ${config.hardwareKey}`;
+      const sc = this.core?.getSyncConfig?.();
+      if (sc) {
+        const relay = sc.relayUrl ? new URL(sc.relayUrl).host : '';
+        text += ` | Sync: ${sc.isLead ? 'LEAD' : `FOLLOWER → ${relay}`} (group ${sc.syncGroupId || sc.syncGroup})`;
+      }
+      configEl.textContent = text;
     }
   }
 
