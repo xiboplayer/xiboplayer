@@ -92,9 +92,32 @@ Build a **platform-independent, modular player** that:
 | `@xiboplayer/utils` | `event-emitter.js` | 77 | EventEmitter base class |
 | `@xiboplayer/utils` | `fetch-retry.js` | 61 | fetchWithRetry: configurable retry with backoff |
 | `@xiboplayer/utils` | `cms-api.js` | 656 | CMS API helpers |
+| `@xiboplayer/sync` | `sync-manager.js` | 533 | Lead/follower sync protocol, heartbeat, readiness tracking |
+| `@xiboplayer/sync` | `ws-transport.js` | 176 | WebSocket relay transport for cross-device LAN sync |
+| `@xiboplayer/sync` | `choreography.js` | 95 | Transition stagger computation (12 effects) |
+| `@xiboplayer/proxy` | `sync-relay.js` | 140 | WebSocket relay server with token auth and group isolation |
 | `@xiboplayer/crypto` | `rsa.js` | 75 | RSA key pair generation via Web Crypto API |
 
-**Total source code: ~12,000 lines** (excluding tests)
+**Total source code: ~13,000 lines** (excluding tests)
+
+## Multi-Display Sync Architecture (v0.7.0)
+
+The sync system enables coordinated layout transitions across multiple displays over LAN.
+
+### Transport Layer
+- **WebSocketTransport**: Cross-device sync via WebSocket relay on the lead's proxy server (`/sync` endpoint)
+- **BroadcastChannelTransport**: Same-machine sync for multi-tab/window setups (automatic fallback)
+
+### Relay & Auth
+The lead's proxy server hosts a WebSocket relay (`SyncRelay`) that:
+- Authenticates connections with a shared token (CMS server key)
+- Isolates sync groups using `syncGroupId` as the group name
+- Relays messages only within the same group (multiple groups can share one relay)
+
+### Layout Flow
+All layout transitions follow: **prepare** (preload into hidden pool) → **show** (swap visible with stagger delay). This unified path works for both single-display and multi-display — single-display is sync with stagger=0.
+
+For details, see [SYNC.md](SYNC.md).
 
 ## Key Design Patterns
 

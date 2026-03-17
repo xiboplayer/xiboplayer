@@ -250,19 +250,81 @@ In the browser (PWA), `localStorage` is the primary source; env vars are not ava
 
 All other defaults (kiosk mode, fullscreen, hidden cursor, WARNING log level) apply automatically.
 
-## Example: Video Wall Lead
+## Example: Video Wall Lead (v0.7.0)
 
 ```json
 {
   "cmsUrl": "https://cms.example.com",
   "cmsKey": "yourKey",
   "displayName": "videowall-lead",
-  "listenAddress": "0.0.0.0",
-  "preventSleep": true
+  "preventSleep": true,
+  "sync": {
+    "isLead": true,
+    "choreography": "diagonal-tl",
+    "staggerMs": 200,
+    "topology": { "x": 0, "y": 0, "orientation": 0 },
+    "gridCols": 2,
+    "gridRows": 2
+  }
 }
 ```
 
-The `listenAddress: "0.0.0.0"` opens the proxy server to LAN connections, allowing follower devices to connect to the WebSocket sync relay at `ws://<lead-ip>:8765/sync`. Sync group and publisher port are configured in the CMS display settings. Follower devices only need standard CMS connection settings — no `listenAddress` override needed.
+The lead automatically binds to `0.0.0.0` when `sync.isLead` is true. The CMS provides `syncGroup`, `syncGroupId`, `syncPublisherPort`, `syncSwitchDelay`, and `syncVideoPauseDelay` via the sync group settings. Local config only needs display-specific fields: `topology`, `choreography`, `staggerMs`, and grid dimensions.
+
+## Example: Video Wall Follower (v0.7.0)
+
+```json
+{
+  "cmsUrl": "https://cms.example.com",
+  "cmsKey": "yourKey",
+  "displayName": "videowall-follower-1",
+  "preventSleep": true,
+  "sync": {
+    "topology": { "x": 1, "y": 0, "orientation": 0 },
+    "choreography": "diagonal-tl",
+    "staggerMs": 200,
+    "gridCols": 2,
+    "gridRows": 2
+  }
+}
+```
+
+Followers connect to the lead's relay automatically — the CMS provides the lead's LAN IP as `syncGroup`.
+
+## Sync Configuration Reference (v0.7.0)
+
+| Key | Type | Source | Description |
+|-----|------|--------|-------------|
+| `sync.isLead` | boolean | CMS | Whether this display is the sync group lead |
+| `sync.syncGroup` | string | CMS | Lead's LAN IP (followers) or `"lead"` (lead) |
+| `sync.syncGroupId` | number | CMS | Numeric group ID for relay isolation |
+| `sync.syncPublisherPort` | number | CMS | WebSocket relay port (default: 8765) |
+| `sync.syncSwitchDelay` | number | CMS | Milliseconds to wait before showing layout (default: 750) |
+| `sync.syncVideoPauseDelay` | number | CMS | Milliseconds before unpausing video (default: 100) |
+| `sync.relayUrl` | string | Auto | Built from syncGroup + port: `ws://<ip>:<port>/sync` |
+| `sync.topology` | object | Local | Display position: `{ x, y, orientation }` |
+| `sync.choreography` | string | Local | Transition effect (see below) |
+| `sync.staggerMs` | number | Local | Delay between displays in choreography (default: 150) |
+| `sync.gridCols` | number | Local | Grid width for 2D choreography |
+| `sync.gridRows` | number | Local | Grid height for 2D choreography |
+| `sync.layoutMap` | object | CMS | Wall mode: maps lead layout IDs to position-specific layouts |
+
+## Choreography Effects (v0.7.0)
+
+| Effect | Description | Stagger formula |
+|--------|-------------|-----------------|
+| `simultaneous` | All displays switch at once | 0ms for all |
+| `wave-right` | Sweep left → right | x × staggerMs |
+| `wave-left` | Sweep right → left | (maxX - x) × staggerMs |
+| `wave-down` | Sweep top → bottom | y × staggerMs |
+| `wave-up` | Sweep bottom → top | (maxY - y) × staggerMs |
+| `diagonal-tl` | Cascade from top-left | (x + y) × staggerMs |
+| `diagonal-tr` | Cascade from top-right | ((maxX - x) + y) × staggerMs |
+| `diagonal-bl` | Cascade from bottom-left | (x + (maxY - y)) × staggerMs |
+| `diagonal-br` | Cascade from bottom-right | ((maxX - x) + (maxY - y)) × staggerMs |
+| `center-out` | Center first, edges last | distance_from_center × staggerMs |
+| `outside-in` | Edges first, center last | (max_distance - distance) × staggerMs |
+| `random` | Random delay per display | random(0, staggerMs × max_distance) |
 
 ## CLI Flags
 

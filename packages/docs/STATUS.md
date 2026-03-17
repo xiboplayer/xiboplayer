@@ -1,10 +1,34 @@
-# PWA Player Status - v0.6.12
+# PWA Player Status - v0.7.0
 
 ## Current Status: PRODUCTION READY
 
-**Feature Parity:** 100% vs upstream Xibo players
-**Last Updated:** 2026-03-13
+**Feature Parity:** 100% vs upstream Xibo players + advanced sync
+**Last Updated:** 2026-03-17
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
+
+## What's New in v0.7.0
+
+### Cross-Device Multi-Display Sync (Video Walls)
+- **WebSocket relay** with token auth for LAN video walls
+- **Lead/follower architecture** — CMS assigns roles via sync groups
+- **<8ms sync precision** across all displays
+- **6 choreography transition effects**: simultaneous, wave-right/left/up/down, diagonal-tl/tr/bl/br, center-out, outside-in, random
+- **Unified prepare/show layout flow** — same code path for single and multi-display
+- **Config persistence** for offline LAN sync without CMS
+- **Works on both Electron and Chromium** kiosk players
+- **Sync status overlay** — LEAD/FOLLOWER role + relay IP in status bar
+
+### Sync Architecture
+- `syncGroupId` for relay group isolation (multiple sync groups on same relay)
+- SyncManager stability — no restart on unchanged CMS config
+- Same-layout replay with proper timeline advancement
+- Lead renders layouts locally while coordinating followers
+
+### Platform Improvements
+- Setup overlay focus fix (keyboard inputs work in iframe)
+- Widget HTML dependency URL fix (`bundle.min.js` / `fonts.css`)
+- Show setup screen on 403 (display not found)
+- Instance-aware Chromium data dirs for multi-instance sync
 
 ## What's New in v0.6.12
 

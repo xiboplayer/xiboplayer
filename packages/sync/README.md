@@ -1,21 +1,25 @@
 # @xiboplayer/sync
 
-**Multi-display synchronization for Xibo video walls — same-machine and cross-device.**
+**Multi-display synchronization for Xibo video walls — same-machine and cross-device. New in v0.7.0.**
 
 ## Overview
 
-Coordinates layout transitions and video playback across multiple displays:
+Coordinates layout transitions and video playback across multiple displays with <8ms precision:
 
-- **Same-machine sync** (Phase 2) — BroadcastChannel for multi-tab/multi-window setups on a single device
-- **Cross-device sync** (Phase 3) — WebSocket relay for LAN video walls where each screen is a separate mini-PC
+- **Cross-device sync** — WebSocket relay for LAN video walls where each screen is a separate device
+- **Same-machine sync** — BroadcastChannel for multi-tab/multi-window setups on a single device
 
 Both modes share the same sync protocol — only the transport layer differs.
 
 ### Capabilities
 
 - **Synchronized layout transitions** — lead signals followers to change layout, waits for all to be ready, then sends a simultaneous "show" signal
+- **12 choreography effects** — diagonal cascade, wave sweep, center-out, and more for dramatic transition patterns
 - **Coordinated video start** — video playback begins at the same moment on all displays
 - **Stats/logs delegation** — followers delegate proof-of-play stats and log submission through the lead, avoiding duplicate CMS traffic
+- **Token authentication** — shared CMS key secures the WebSocket relay
+- **Sync group isolation** — multiple sync groups can share the same relay via `syncGroupId`
+- **Offline LAN sync** — persisted config enables sync without CMS connectivity
 - **Automatic follower discovery** — heartbeats every 5s, stale detection after 15s
 - **Graceful degradation** — if a follower is unresponsive, the lead proceeds after a 10s timeout
 - **Auto-reconnect** — WebSocket transport reconnects with exponential backoff (1s → 30s)
