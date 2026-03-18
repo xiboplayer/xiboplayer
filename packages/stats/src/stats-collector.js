@@ -9,7 +9,7 @@
  * @module @xiboplayer/stats/collector
  */
 
-import { createLogger } from '@xiboplayer/utils';
+import { createLogger, openIDB } from '@xiboplayer/utils';
 
 const log = createLogger('@xiboplayer/stats');
 
@@ -64,46 +64,17 @@ export class StatsCollector {
       return;
     }
 
-    return new Promise((resolve, reject) => {
-      // Check if IndexedDB is available
-      if (typeof indexedDB === 'undefined') {
-        const error = new Error('IndexedDB not available');
-        log.error('IndexedDB not available - stats will not be persisted');
-        reject(error);
-        return;
-      }
-
-      const request = indexedDB.open(this._dbName, DB_VERSION);
-
-      request.onerror = () => {
-        const error = new Error(`Failed to open IndexedDB: ${request.error}`);
-        log.error('Failed to open stats database:', request.error);
-        reject(error);
-      };
-
-      request.onsuccess = () => {
-        this.db = request.result;
-        log.info('Stats database initialized');
-        resolve();
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-
-        // Create stats store if it doesn't exist
-        if (!db.objectStoreNames.contains(STATS_STORE)) {
-          const store = db.createObjectStore(STATS_STORE, {
-            keyPath: 'id',
-            autoIncrement: true
-          });
-
-          // Index on 'submitted' for fast queries
-          store.createIndex('submitted', 'submitted', { unique: false });
-
-          log.info('Stats store created');
-        }
-      };
-    });
+    try {
+      this.db = await openIDB(this._dbName, DB_VERSION, STATS_STORE, {
+        keyPath: 'id',
+        indexName: 'submitted',
+        indexKey: 'submitted',
+      });
+      log.info('Stats database initialized');
+    } catch (err) {
+      log.error('Failed to open stats database:', err);
+      throw err;
+    }
   }
 
   /**

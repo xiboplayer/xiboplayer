@@ -9,7 +9,7 @@
  * @module @xiboplayer/stats/logger
  */
 
-import { createLogger } from '@xiboplayer/utils';
+import { createLogger, openIDB } from '@xiboplayer/utils';
 
 const log = createLogger('@xiboplayer/stats');
 
@@ -63,46 +63,17 @@ export class LogReporter {
       return;
     }
 
-    return new Promise((resolve, reject) => {
-      // Check if IndexedDB is available
-      if (typeof indexedDB === 'undefined') {
-        const error = new Error('IndexedDB not available');
-        log.error('IndexedDB not available - logs will not be persisted');
-        reject(error);
-        return;
-      }
-
-      const request = indexedDB.open(this._dbName, DB_VERSION);
-
-      request.onerror = () => {
-        const error = new Error(`Failed to open IndexedDB: ${request.error}`);
-        log.error('Failed to open logs database:', request.error);
-        reject(error);
-      };
-
-      request.onsuccess = () => {
-        this.db = request.result;
-        log.info('Logs database initialized');
-        resolve();
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-
-        // Create logs store if it doesn't exist
-        if (!db.objectStoreNames.contains(LOGS_STORE)) {
-          const store = db.createObjectStore(LOGS_STORE, {
-            keyPath: 'id',
-            autoIncrement: true
-          });
-
-          // Index on 'submitted' for fast queries
-          store.createIndex('submitted', 'submitted', { unique: false });
-
-          log.info('Logs store created');
-        }
-      };
-    });
+    try {
+      this.db = await openIDB(this._dbName, DB_VERSION, LOGS_STORE, {
+        keyPath: 'id',
+        indexName: 'submitted',
+        indexKey: 'submitted',
+      });
+      log.info('Logs database initialized');
+    } catch (err) {
+      log.error('Failed to open logs database:', err);
+      throw err;
+    }
   }
 
   /**

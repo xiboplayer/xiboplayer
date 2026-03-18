@@ -13,6 +13,7 @@
  * In browser (PWA player): localStorage is primary, env vars override if set.
  */
 import { generateRsaKeyPair, isValidPemKey } from '@xiboplayer/crypto';
+import { openIDB } from './idb.js';
 
 const GLOBAL_KEY = 'xibo_global';         // Device identity (all CMSes)
 const CMS_PREFIX = 'xibo_cms:';           // Per-CMS config prefix
@@ -351,26 +352,17 @@ export class Config {
    * IndexedDB survives "Clear site data" in some browsers where localStorage doesn't.
    * @param {Object} keys - Key-value pairs to store (e.g. { hardwareKey: '...', xmrPubKey: '...' })
    */
-  _backupKeys(keys) {
+  async _backupKeys(keys) {
     try {
-      const req = indexedDB.open(HW_DB_NAME, HW_DB_VERSION);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains('keys')) {
-          db.createObjectStore('keys');
-        }
-      };
-      req.onsuccess = () => {
-        const db = req.result;
-        const tx = db.transaction('keys', 'readwrite');
-        const store = tx.objectStore('keys');
-        for (const [k, v] of Object.entries(keys)) {
-          store.put(v, k);
-        }
-        tx.oncomplete = () => {
-          console.log('[Config] Keys backed up to IndexedDB:', Object.keys(keys).join(', '));
-          db.close();
-        };
+      const db = await openIDB(HW_DB_NAME, HW_DB_VERSION, 'keys');
+      const tx = db.transaction('keys', 'readwrite');
+      const store = tx.objectStore('keys');
+      for (const [k, v] of Object.entries(keys)) {
+        store.put(v, k);
+      }
+      tx.oncomplete = () => {
+        console.log('[Config] Keys backed up to IndexedDB:', Object.keys(keys).join(', '));
+        db.close();
       };
     } catch (e) {
       // IndexedDB not available — localStorage-only mode
@@ -390,19 +382,8 @@ export class Config {
    * differs from the current one, it restores the original key.
    */
   async _restoreHardwareKeyFromBackup() {
-    if (typeof indexedDB === 'undefined') return;
     try {
-      const db = await new Promise((resolve, reject) => {
-        const req = indexedDB.open(HW_DB_NAME, HW_DB_VERSION);
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains('keys')) {
-            db.createObjectStore('keys');
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
+      const db = await openIDB(HW_DB_NAME, HW_DB_VERSION, 'keys');
 
       const tx = db.transaction('keys', 'readonly');
       const store = tx.objectStore('keys');

@@ -44,10 +44,11 @@
  *   await core.collect();
  */
 
-import { EventEmitter, createLogger, applyCmsLogLevel } from '@xiboplayer/utils';
+import { EventEmitter, createLogger, applyCmsLogLevel, openIDB } from '@xiboplayer/utils';
 import { calculateTimeline, parseLayoutFile } from '@xiboplayer/schedule';
 import { CacheAnalyzer } from '@xiboplayer/cache';
 import { DataConnectorManager } from './data-connectors.js';
+import { CORE_EVENTS as E } from './events.js';
 
 const log = createLogger('PlayerCore');
 
@@ -72,17 +73,7 @@ const OFFLINE_STORE = 'cache';
 /** Open the offline cache IndexedDB (creates store on first use) */
 function openOfflineDb(cmsId) {
   const dbName = cmsId ? `${OFFLINE_DB_BASE}-${cmsId}` : OFFLINE_DB_BASE;
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(dbName, OFFLINE_DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
-        db.createObjectStore(OFFLINE_STORE);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  return openIDB(dbName, OFFLINE_DB_VERSION, OFFLINE_STORE);
 }
 
 export class PlayerCore extends EventEmitter {
@@ -282,7 +273,7 @@ export class PlayerCore extends EventEmitter {
 
     if (!this.offlineMode) {
       this.offlineMode = true;
-      this.emit('offline-mode', true);
+      this.emit(E.OFFLINE_MODE, true);
     }
 
     // Exponential backoff: 30s → 60s → 120s → ... → capped at normal interval
@@ -318,17 +309,17 @@ export class PlayerCore extends EventEmitter {
     const cachedSchedule = this._offlineCache.schedule;
     if (cachedSchedule) {
       this.schedule.setSchedule(cachedSchedule);
-      this.emit('schedule-received', cachedSchedule);
+      this.emit(E.SCHEDULE_RECEIVED, cachedSchedule);
     }
 
     // Evaluate current schedule
     const layoutFiles = this.schedule.getCurrentLayouts();
     log.info('Offline layouts:', layoutFiles);
-    this.emit('layouts-scheduled', layoutFiles);
+    this.emit(E.LAYOUTS_SCHEDULED, layoutFiles);
 
     this._evaluateAndSwitchLayout(layoutFiles, 'Offline');
 
-    this.emit('collection-complete');
+    this.emit(E.COLLECTION_COMPLETE);
   }
 
   /**
@@ -356,13 +347,13 @@ export class PlayerCore extends EventEmitter {
           // The renderer's layoutEnd → advanceToNextLayout flow handles the switch.
           log.info(`Layout ${this.currentLayoutId} no longer in queue — expiring`);
           this.currentLayoutId = null;
-          this.emit('layout-expire-current');
+          this.emit(E.LAYOUT_EXPIRE_CURRENT);
         } else {
           // Layout is still in queue — don't interrupt, just rebuild queue in background.
           // The playing layout ends when its timer fires (layoutEnd event),
           // at which point advanceToNextLayout() pops from the already-updated queue.
           log.info(`Layout ${this.currentLayoutId} playing — queue updated in background, playback continues`);
-          this.emit('layout-already-playing', this.currentLayoutId);
+          this.emit(E.LAYOUT_ALREADY_PLAYING, this.currentLayoutId);
         }
       } else if (!this._preparingLayoutId) {
         // No layout playing or being prepared — start one from the queue.
@@ -373,14 +364,14 @@ export class PlayerCore extends EventEmitter {
         if (next) {
           this._preparingLayoutId = next.layoutId;
           log.info(`${prefix}switching to layout ${next.layoutId}`);
-          this.emit('layout-prepare-request', next.layoutId);
+          this.emit(E.LAYOUT_PREPARE_REQUEST, next.layoutId);
         }
       } else {
         log.info(`${prefix}layout ${this._preparingLayoutId} already being prepared, skipping`);
       }
     } else {
       log.info(`${context ? `${context}: n` : 'N'}o layouts${context ? ' in cached schedule' : ' scheduled, falling back to default'}`);
-      this.emit('no-layouts-scheduled');
+      this.emit(E.NO_LAYOUTS_SCHEDULED);
     }
 
     this.logUpcomingTimeline();
@@ -413,7 +404,7 @@ export class PlayerCore extends EventEmitter {
       await this._offlineDbReady;
 
       log.info('Starting collection cycle...');
-      this.emit('collection-start');
+      this.emit(E.COLLECTION_START);
 
       // Check if browser reports offline
       if (this.isOffline()) {
@@ -441,7 +432,7 @@ export class PlayerCore extends EventEmitter {
       if (this.offlineMode) {
         this.offlineMode = false;
         log.info('Back online — resuming normal collection');
-        this.emit('offline-mode', false);
+        this.emit(E.OFFLINE_MODE, false);
 
         // Restore normal collection interval (was shortened for offline retry)
         if (this._normalCollectInterval) {
@@ -464,7 +455,7 @@ export class PlayerCore extends EventEmitter {
           const applied = applyCmsLogLevel(regResult.settings.logLevel);
           if (applied) {
             log.info('Log level updated from CMS:', regResult.settings.logLevel);
-            this.emit('log-level-changed', regResult.settings.logLevel);
+            this.emit(E.LOG_LEVEL_CHANGED, regResult.settings.logLevel);
           }
         }
       }
@@ -483,7 +474,7 @@ export class PlayerCore extends EventEmitter {
           this.syncConfig = regResult.syncConfig;
           log.info('Sync group:', regResult.syncConfig.isLead ? 'LEAD' : `follower → ${regResult.syncConfig.syncGroup}`,
             `(switchDelay: ${regResult.syncConfig.syncSwitchDelay}ms, videoPauseDelay: ${regResult.syncConfig.syncVideoPauseDelay}ms)`);
-          this.emit('sync-config', regResult.syncConfig);
+          this.emit(E.SYNC_CONFIG, regResult.syncConfig);
         }
       }
 
@@ -499,7 +490,7 @@ export class PlayerCore extends EventEmitter {
         log.debug('Display commands:', Object.keys(this.displayCommands).join(', '));
       }
 
-      this.emit('register-complete', regResult);
+      this.emit(E.REGISTER_COMPLETE, regResult);
 
       // Initialize XMR if available
       log.debug('Collection step: initializeXmr');
@@ -521,13 +512,13 @@ export class PlayerCore extends EventEmitter {
         const purgeItems = rfResult.purge || [];
         log.info('Required files:', files.length, purgeItems.length > 0 ? `(+ ${purgeItems.length} purge)` : '');
         this._lastCheckRf = checkRf;
-        this.emit('files-received', files);
+        this.emit(E.FILES_RECEIVED, files);
 
         // Cache required files for offline use
         this._offlineSave('requiredFiles', rfResult);
 
         if (purgeItems.length > 0) {
-          this.emit('purge-request', purgeItems);
+          this.emit(E.PURGE_REQUEST, purgeItems);
         }
 
         // Get schedule (skip if CRC unchanged)
@@ -537,7 +528,7 @@ export class PlayerCore extends EventEmitter {
           log.info('Schedule received');
           this._lastCheckSchedule = checkSchedule;
           log.debug('Collection step: processing schedule');
-          this.emit('schedule-received', schedule);
+          this.emit(E.SCHEDULE_RECEIVED, schedule);
           this.schedule.setSchedule(schedule);
           this._executedCommands.clear();
           this.updateDataConnectors();
@@ -562,7 +553,7 @@ export class PlayerCore extends EventEmitter {
           const nextWindow = this.displaySettings.getNextDownloadWindow?.();
           log.info(`Outside download window, skipping downloads${nextWindow ? ` (next: ${nextWindow.toLocaleTimeString()})` : ''}`);
         } else {
-          this.emit('download-request', { layoutOrder, files, layoutDependants: Object.fromEntries(this.schedule.getDependantsMap()) });
+          this.emit(E.DOWNLOAD_REQUEST, { layoutOrder, files, layoutDependants: Object.fromEntries(this.schedule.getDependantsMap()) });
         }
 
         // Non-blocking cache analysis (stale media detection)
@@ -582,7 +573,7 @@ export class PlayerCore extends EventEmitter {
           const schedule = await this.xmds.schedule();
           log.info('Schedule received (RF unchanged but schedule changed)');
           this._lastCheckSchedule = checkSchedule;
-          this.emit('schedule-received', schedule);
+          this.emit(E.SCHEDULE_RECEIVED, schedule);
           this.schedule.setSchedule(schedule);
           this._executedCommands.clear();
           this.updateDataConnectors();
@@ -599,7 +590,7 @@ export class PlayerCore extends EventEmitter {
       // Evaluate current schedule
       const layoutFiles = this.schedule.getCurrentLayouts();
       log.info('Current layouts:', layoutFiles);
-      this.emit('layouts-scheduled', layoutFiles);
+      this.emit(E.LAYOUTS_SCHEDULED, layoutFiles);
 
       this._evaluateAndSwitchLayout(layoutFiles, '');
 
@@ -610,14 +601,14 @@ export class PlayerCore extends EventEmitter {
       if (regResult.settings?.statsEnabled === 'On' || regResult.settings?.statsEnabled === '1') {
         if (this.statsCollector) {
           log.info('Stats enabled, submitting proof of play');
-          this.emit('submit-stats-request');
+          this.emit(E.SUBMIT_STATS_REQUEST);
         } else {
           log.warn('Stats enabled but no StatsCollector provided');
         }
       }
 
       // Submit logs to CMS (always, regardless of stats setting)
-      this.emit('submit-logs-request');
+      this.emit(E.SUBMIT_LOGS_REQUEST);
 
       // Submit faults immediately (higher priority than logs)
       this.emit('submit-faults-request');
@@ -636,18 +627,18 @@ export class PlayerCore extends EventEmitter {
       // even if schedule CRC was unchanged — durations or time may have shifted.
       this.logUpcomingTimeline();
 
-      this.emit('collection-complete');
+      this.emit(E.COLLECTION_COMPLETE);
 
     } catch (error) {
       // Offline fallback: if network failed but we have cached data, use it
       if (this.hasCachedData()) {
         log.warn('Collection failed, falling back to cached data:', error?.message || error);
-        this.emit('collection-error', error);
+        this.emit(E.COLLECTION_ERROR, error);
         return this.collectOffline();
       }
 
       log.error('Collection error:', error);
-      this.emit('collection-error', error);
+      this.emit(E.COLLECTION_ERROR, error);
       throw error;
     } finally {
       this.collecting = false;
@@ -661,7 +652,7 @@ export class PlayerCore extends EventEmitter {
     const xmrUrl = regResult.settings?.xmrWebSocketAddress || regResult.settings?.xmrNetworkAddress;
     if (!xmrUrl) {
       log.warn('XMR not configured: no xmrWebSocketAddress or xmrNetworkAddress in CMS settings');
-      this.emit('xmr-misconfigured', {
+      this.emit(E.XMR_MISCONFIGURED, {
         reason: 'missing',
         message: 'XMR address not configured in CMS. Go to CMS Admin → Settings → Configuration → XMR and set the WebSocket address.',
       });
@@ -672,7 +663,7 @@ export class PlayerCore extends EventEmitter {
     if (xmrUrl.startsWith('tcp://')) {
       log.warn(`XMR address uses tcp:// protocol which is not supported by PWA players: ${xmrUrl}`);
       log.warn('Configure XMR_WS_ADDRESS in CMS Admin → Settings → Configuration → XMR (e.g. wss://your-domain/xmr)');
-      this.emit('xmr-misconfigured', {
+      this.emit(E.XMR_MISCONFIGURED, {
         reason: 'wrong-protocol',
         url: xmrUrl,
         message: `XMR uses tcp:// protocol (not supported by PWA). Set XMR WebSocket Address to wss://your-domain/xmr in CMS Settings.`,
@@ -684,7 +675,7 @@ export class PlayerCore extends EventEmitter {
     if (/example\.(org|com|net)/i.test(xmrUrl)) {
       log.warn(`XMR address contains placeholder domain: ${xmrUrl}`);
       log.warn('Configure the real XMR address in CMS Admin → Settings → Configuration → XMR');
-      this.emit('xmr-misconfigured', {
+      this.emit(E.XMR_MISCONFIGURED, {
         reason: 'placeholder',
         url: xmrUrl,
         message: `XMR address is still the default placeholder (${xmrUrl}). Update it in CMS Settings.`,
@@ -699,7 +690,7 @@ export class PlayerCore extends EventEmitter {
       log.info('Initializing XMR WebSocket:', xmrUrl);
       this.xmr = new this.XmrWrapper(this.config, this);
       await this.xmr.start(xmrUrl, xmrCmsKey);
-      this.emit('xmr-connected', xmrUrl);
+      this.emit(E.XMR_CONNECTED, xmrUrl);
     } else if (!this.xmr.isConnected()) {
       log.info('XMR disconnected, attempting to reconnect...');
       await this.xmr.start(xmrUrl, xmrCmsKey);
@@ -757,7 +748,7 @@ export class PlayerCore extends EventEmitter {
       log.debug('Running scheduled collection cycle...');
       this.collect().catch(error => {
         log.error('Collection error:', error);
-        this.emit('collection-error', error);
+        this.emit(E.COLLECTION_ERROR, error);
       });
     }, seconds * 1000);
   }
@@ -921,10 +912,10 @@ export class PlayerCore extends EventEmitter {
         const replayId = this.currentLayoutId;
         this.currentLayoutId = null;
         this._preparingLayoutId = replayId;
-        this.emit('layout-prepare-request', replayId);
+        this.emit(E.LAYOUT_PREPARE_REQUEST, replayId);
       } else {
         log.info('No layouts scheduled during advance');
-        this.emit('no-layouts-scheduled');
+        this.emit(E.NO_LAYOUTS_SCHEDULED);
       }
       return;
     }
@@ -957,7 +948,7 @@ export class PlayerCore extends EventEmitter {
         // Emit layout-prepare-request so the renderer builds it, while
         // requestLayoutChange coordinates the show timing with followers.
         this._preparingLayoutId = layoutId;
-        this.emit('layout-prepare-request', layoutId);
+        this.emit(E.LAYOUT_PREPARE_REQUEST, layoutId);
         this.syncManager.requestLayoutChange(layoutId).catch(err => {
           log.error('[Sync] Layout change failed:', err);
         });
@@ -986,7 +977,7 @@ export class PlayerCore extends EventEmitter {
     // from seeing both currentLayoutId=null and _preparingLayoutId=null
     // and popping another layout from the queue (double-pop race).
     this._preparingLayoutId = layoutId;
-    this.emit('layout-prepare-request', layoutId);
+    this.emit(E.LAYOUT_PREPARE_REQUEST, layoutId);
   }
 
   /**
@@ -1021,7 +1012,7 @@ export class PlayerCore extends EventEmitter {
     }
 
     log.info(`Going back to layout ${layoutId}`);
-    this.emit('layout-prepare-request', layoutId);
+    this.emit(E.LAYOUT_PREPARE_REQUEST, layoutId);
   }
 
   /**
@@ -1041,7 +1032,7 @@ export class PlayerCore extends EventEmitter {
 
       if (isLayoutFile || isRequiredMedia) {
         log.debug(`${fileType} ${fileId} was needed by pending layout ${layoutId}, checking if ready...`);
-        this.emit('check-pending-layout', layoutId, requiredFiles);
+        this.emit(E.CHECK_PENDING_LAYOUT, layoutId, requiredFiles);
       }
     }
   }
@@ -1294,7 +1285,7 @@ export class PlayerCore extends EventEmitter {
    */
   checkSchedule() {
     const layoutFiles = this.schedule.getCurrentLayouts();
-    this.emit('layouts-scheduled', layoutFiles);
+    this.emit(E.LAYOUTS_SCHEDULED, layoutFiles);
     this._evaluateAndSwitchLayout(layoutFiles, '');
   }
 
@@ -1304,7 +1295,7 @@ export class PlayerCore extends EventEmitter {
    */
   async captureScreenshot() {
     log.info('Screenshot requested');
-    this.emit('screenshot-request');
+    this.emit(E.SCREENSHOT_REQUEST);
   }
 
   /**
@@ -1318,7 +1309,7 @@ export class PlayerCore extends EventEmitter {
     const changeMode = options?.changeMode || 'replace';
     this._layoutOverride = { layoutId: id, type: 'change', duration, changeMode };
     this.currentLayoutId = null; // Force re-render
-    this.emit('layout-prepare-request', id);
+    this.emit(E.LAYOUT_PREPARE_REQUEST, id);
     this._scheduleAutoRevert(id, duration, 'Layout override');
   }
 
@@ -1331,7 +1322,7 @@ export class PlayerCore extends EventEmitter {
     const id = parseInt(layoutId, 10);
     const duration = options?.duration || 0;
     this._layoutOverride = { layoutId: id, type: 'overlay', duration };
-    this.emit('overlay-layout-request', id);
+    this.emit(E.OVERLAY_LAYOUT_REQUEST, id);
     this._scheduleAutoRevert(id, duration, 'Overlay');
   }
 
@@ -1342,16 +1333,16 @@ export class PlayerCore extends EventEmitter {
     log.info('Reverting to scheduled content');
     this._layoutOverride = null;
     this.currentLayoutId = null;
-    this.emit('revert-to-schedule');
+    this.emit(E.REVERT_TO_SCHEDULE);
 
     // Re-evaluate schedule to get the right layout
     const layoutFiles = this.schedule.getCurrentLayouts();
     if (layoutFiles.length > 0) {
       const layoutFile = layoutFiles[0];
       const layoutId = parseLayoutFile(layoutFile);
-      this.emit('layout-prepare-request', layoutId);
+      this.emit(E.LAYOUT_PREPARE_REQUEST, layoutId);
     } else {
-      this.emit('no-layouts-scheduled');
+      this.emit(E.NO_LAYOUTS_SCHEDULED);
     }
   }
 
@@ -1362,7 +1353,7 @@ export class PlayerCore extends EventEmitter {
     log.info('Purge all cache requested via XMR');
     this._lastCheckRf = null;
     this._lastCheckSchedule = null;
-    this.emit('purge-all-request');
+    this.emit(E.PURGE_ALL_REQUEST);
     // Trigger immediate re-collection after purge
     return this.collectNow();
   }
@@ -1378,7 +1369,7 @@ export class PlayerCore extends EventEmitter {
     if (!commands || !commands[commandCode]) {
       log.warn('Unknown command code:', commandCode);
       this._lastCommandSuccess = false;
-      this.emit('command-result', { code: commandCode, success: false, reason: 'Unknown command' });
+      this.emit(E.COMMAND_RESULT, { code: commandCode, success: false, reason: 'Unknown command' });
       return;
     }
 
@@ -1400,17 +1391,17 @@ export class PlayerCore extends EventEmitter {
         const success = response.ok;
         this._lastCommandSuccess = success;
         log.info(`HTTP command ${commandCode} result: ${response.status}`);
-        this.emit('command-result', { code: commandCode, success, status: response.status });
+        this.emit(E.COMMAND_RESULT, { code: commandCode, success, status: response.status });
       } catch (error) {
         this._lastCommandSuccess = false;
         log.error(`HTTP command ${commandCode} failed:`, error);
-        this.emit('command-result', { code: commandCode, success: false, reason: error.message });
+        this.emit(E.COMMAND_RESULT, { code: commandCode, success: false, reason: error.message });
       }
     } else {
       // Emit event for platform layer (Electron/Chromium) to handle native commands
       // (shell, RS232, Android intent, etc.)
       log.info('Delegating non-HTTP command to platform layer:', commandCode);
-      this.emit('execute-native-command', { code: commandCode, commandString });
+      this.emit(E.EXECUTE_NATIVE_COMMAND, { code: commandCode, commandString });
     }
   }
 
@@ -1590,7 +1581,7 @@ export class PlayerCore extends EventEmitter {
         break;
       case 'navWidget':
       case 'navigateToWidget':
-        this.emit('navigate-to-widget', action);
+        this.emit(E.NAVIGATE_TO_WIDGET, action);
         break;
       case 'command':
         this.emit('execute-command', action.commandCode);
@@ -1658,7 +1649,7 @@ export class PlayerCore extends EventEmitter {
           setTimeout(() => this.collectNow().catch(e => log.error('collectNow command failed:', e)), 0);
         } else {
           // Emit event for platform layer to handle (reboot, restart, etc.)
-          this.emit('scheduled-command', command);
+          this.emit(E.SCHEDULED_COMMAND, command);
         }
       }
     }
@@ -1756,7 +1747,7 @@ export class PlayerCore extends EventEmitter {
     const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}|${queuePos}|${mediaStatusEntries}|${pendingEntries}`;
 
     if (fingerprint === this._lastTimelineFingerprint && this._lastTimeline) {
-      this.emit('timeline-updated', this._lastTimeline);
+      this.emit(E.TIMELINE_UPDATED, this._lastTimeline);
       return;
     }
 
@@ -1802,7 +1793,7 @@ export class PlayerCore extends EventEmitter {
     }
 
     log.info(`[Timeline] Next ${timeline.length} plays:\n${lines.join('\n')}`);
-    this.emit('timeline-updated', timeline);
+    this.emit(E.TIMELINE_UPDATED, timeline);
   }
 
   /**

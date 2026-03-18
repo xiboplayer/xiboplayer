@@ -9,7 +9,7 @@
 
 import { RendererLite } from '@xiboplayer/renderer';
 import { StoreClient, DownloadManager, BARRIER } from '@xiboplayer/cache';
-import { PlayerCore } from '@xiboplayer/core';
+import { PlayerCore, CORE_EVENTS as E } from '@xiboplayer/core';
 import { parseLayoutDuration, parseLayoutFile } from '@xiboplayer/schedule';
 import { createLogger, registerLogSink, PLAYER_API } from '@xiboplayer/utils';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
@@ -182,7 +182,7 @@ class PwaPlayer {
     this.setupRemoteControls();
 
     // Set display location from CMS settings when registration completes
-    this.core.on('register-complete', (regResult: any) => {
+    this.core.on(E.REGISTER_COMPLETE, (regResult: any) => {
       const lat = parseFloat(regResult?.settings?.latitude);
       const lng = parseFloat(regResult?.settings?.longitude);
       if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
@@ -516,11 +516,11 @@ class PwaPlayer {
    */
   private setupCoreEventHandlers() {
     // Collection events
-    this.core.on('collection-start', () => {
+    this.core.on(E.COLLECTION_START, () => {
       this.updateStatus('Collecting data from CMS...');
     });
 
-    this.core.on('register-complete', (regResult: any) => {
+    this.core.on(E.REGISTER_COMPLETE, (regResult: any) => {
       const displayName = this.displaySettings?.getDisplayName() || regResult.displayName || config.hardwareKey;
       this.updateStatus(`Registered: ${displayName}`);
 
@@ -531,26 +531,26 @@ class PwaPlayer {
     });
 
     // Multi-display sync: local config fallback when CMS doesn't provide syncConfig
-    this.core.on('register-complete', (regResult: any) => {
+    this.core.on(E.REGISTER_COMPLETE, (regResult: any) => {
       if (!regResult.syncConfig && config.data?.sync) {
         log.info('[Sync] Using local sync config (CMS did not provide syncConfig)');
         this.core.syncConfig = config.data.sync;
-        this.core.emit('sync-config', config.data.sync);
+        this.core.emit(E.SYNC_CONFIG, config.data.sync);
       }
     });
 
     // Offline sync: if CMS is unreachable but local config has sync settings,
     // start SyncManager so LAN-only displays can still sync with each other.
-    this.core.on('offline-mode', (isOffline: boolean) => {
+    this.core.on(E.OFFLINE_MODE, (isOffline: boolean) => {
       if (isOffline && !this.syncManager && config.data?.sync) {
         log.info('[Sync] Offline mode with local sync config — starting sync');
         this.core.syncConfig = config.data.sync;
-        this.core.emit('sync-config', config.data.sync);
+        this.core.emit(E.SYNC_CONFIG, config.data.sync);
       }
     });
 
     // Multi-display sync: create SyncManager when CMS provides sync config (or local fallback)
-    this.core.on('sync-config', (syncConfig: any) => {
+    this.core.on(E.SYNC_CONFIG, (syncConfig: any) => {
       if (this.syncManager) {
         this.syncManager.stop();
       }
@@ -687,11 +687,11 @@ class PwaPlayer {
       this.updateConfigDisplay();
     });
 
-    this.core.on('files-received', (files: any[]) => {
+    this.core.on(E.FILES_RECEIVED, (files: any[]) => {
       this.updateStatus(`Downloading ${files.length} files...`);
     });
 
-    this.core.on('offline-mode', (isOffline: boolean) => {
+    this.core.on(E.OFFLINE_MODE, (isOffline: boolean) => {
       if (isOffline) {
         this.updateStatus('Offline mode — using cached content');
         this.showOfflineIndicator();
@@ -701,7 +701,7 @@ class PwaPlayer {
       }
     });
 
-    this.core.on('purge-request', async (purgeFiles: any[]) => {
+    this.core.on(E.PURGE_REQUEST, async (purgeFiles: any[]) => {
       try {
         const result = await store.remove(purgeFiles);
         log.info(`Purge complete: ${result.deleted}/${result.total} files deleted`);
@@ -710,7 +710,7 @@ class PwaPlayer {
       }
     });
 
-    this.core.on('download-request', async (groupedFiles: any) => {
+    this.core.on(E.DOWNLOAD_REQUEST, async (groupedFiles: any) => {
       // Download orchestration runs in main thread — no SW messaging
       this.downloadOverlay?.startUpdating();
       try {
@@ -731,7 +731,7 @@ class PwaPlayer {
       }
     });
 
-    this.core.on('schedule-received', (schedule: any) => {
+    this.core.on(E.SCHEDULE_RECEIVED, (schedule: any) => {
       this.updateStatus('Processing schedule...');
 
       // Extract scheduleId for stats tracking
@@ -774,7 +774,7 @@ class PwaPlayer {
       log.debug('Current scheduleId for stats:', this.currentScheduleId);
     });
 
-    this.core.on('layout-prepare-request', async (layoutId: number) => {
+    this.core.on(E.LAYOUT_PREPARE_REQUEST, async (layoutId: number) => {
       await this.prepareLayout(layoutId);
       // Non-sync or no layout playing yet: show immediately.
       // Sync transitions: onLayoutShow handles showing with stagger.
@@ -783,18 +783,18 @@ class PwaPlayer {
       }
     });
 
-    this.core.on('layout-expire-current', () => {
+    this.core.on(E.LAYOUT_EXPIRE_CURRENT, () => {
       log.info('Schedule changed — expiring current layout');
       this.renderer.stopCurrentLayout();
       // stopCurrentLayout() emits layoutEnd → the layoutEnd handler
       // calls advanceToNextLayout() which picks the next scheduled layout
     });
 
-    this.core.on('no-layouts-scheduled', () => {
+    this.core.on(E.NO_LAYOUTS_SCHEDULED, () => {
       this.updateStatus('No layouts scheduled');
     });
 
-    this.core.on('collection-complete', () => {
+    this.core.on(E.COLLECTION_COMPLETE, () => {
       const layoutId = this.core.getCurrentLayoutId();
       if (layoutId) {
         this.updateStatus(`Playing layout ${layoutId}`);
@@ -806,7 +806,7 @@ class PwaPlayer {
       // file cached) — avoids 404s from probing before downloads complete.
     });
 
-    this.core.on('collection-error', async (error: any) => {
+    this.core.on(E.COLLECTION_ERROR, async (error: any) => {
       this.updateStatus(`Collection error: ${error}`, 'error');
 
       // Display not found / not authorized — show setup screen so user can re-register
@@ -828,21 +828,21 @@ class PwaPlayer {
       this.submitFault('COLLECTION_FAILED', `Collection cycle failed: ${error?.message || error}`);
     });
 
-    this.core.on('xmr-connected', (url: string) => {
+    this.core.on(E.XMR_CONNECTED, (url: string) => {
       log.info('XMR connected:', url);
     });
 
-    this.core.on('xmr-misconfigured', (info: { reason: string; url?: string; message: string }) => {
+    this.core.on(E.XMR_MISCONFIGURED, (info: { reason: string; url?: string; message: string }) => {
       log.warn(`XMR misconfigured (${info.reason}): ${info.message}`);
     });
 
     // Log level changes from CMS (overlays are controlled by config.controls, not log level)
-    this.core.on('log-level-changed', () => {
+    this.core.on(E.LOG_LEVEL_CHANGED, () => {
       log.info(`Log level changed`);
     });
 
     // Overlay layout push from XMR
-    this.core.on('overlay-layout-request', async (layoutId: number) => {
+    this.core.on(E.OVERLAY_LAYOUT_REQUEST, async (layoutId: number) => {
       log.info('Overlay layout requested:', layoutId);
       // Re-use existing overlay rendering (schedule-driven overlays already work)
       // Just need to prepare and render the overlay layout
@@ -851,13 +851,13 @@ class PwaPlayer {
     });
 
     // Revert to schedule (undo XMR layout override)
-    this.core.on('revert-to-schedule', () => {
+    this.core.on(E.REVERT_TO_SCHEDULE, () => {
       log.info('Reverting to scheduled content');
       this.updateStatus('Reverting to schedule...');
     });
 
     // Purge all cache
-    this.core.on('purge-all-request', async () => {
+    this.core.on(E.PURGE_ALL_REQUEST, async () => {
       log.info('Purging all cached content...');
       this.updateStatus('Purging cache...');
       try {
@@ -879,7 +879,7 @@ class PwaPlayer {
     });
 
     // Command execution result
-    this.core.on('command-result', (result: any) => {
+    this.core.on(E.COMMAND_RESULT, (result: any) => {
       log.info('Command result:', result);
       if (!result.success) {
         this.logReporter?.reportFault(
@@ -891,14 +891,14 @@ class PwaPlayer {
     });
 
     // Scheduled commands (#17) — execute commands whose scheduled time has arrived
-    this.core.on('scheduled-command', (command: any) => {
+    this.core.on(E.SCHEDULED_COMMAND, (command: any) => {
       log.info(`Scheduled command: ${command.code}`);
       this.core.executeCommand(command.code);
     });
 
     // Native command execution (#202) — shell commands delegated by PlayerCore
     // Electron: use IPC (in-process, faster). Chromium/other: HTTP to proxy server.
-    this.core.on('execute-native-command', async (data: any) => {
+    this.core.on(E.EXECUTE_NATIVE_COMMAND, async (data: any) => {
       let result;
       if ((window as any).electronAPI?.executeShellCommand) {
         result = await (window as any).electronAPI.executeShellCommand({
@@ -916,7 +916,7 @@ class PwaPlayer {
           result = { success: false, reason: err.message };
         }
       }
-      this.core.emit('command-result', { code: data.code, ...result });
+      this.core.emit(E.COMMAND_RESULT, { code: data.code, ...result });
     });
 
     // Display settings events
@@ -937,28 +937,28 @@ class PwaPlayer {
     }
 
     // Stats submission
-    this.core.on('submit-stats-request', async () => {
+    this.core.on(E.SUBMIT_STATS_REQUEST, async () => {
       await this.submitStats();
     });
 
     // Log submission to CMS
-    this.core.on('submit-logs-request', async () => {
+    this.core.on(E.SUBMIT_LOGS_REQUEST, async () => {
       await this.submitLogs();
     });
 
     // Screenshot capture (triggered by XMR or periodic interval)
-    this.core.on('screenshot-request', async () => {
+    this.core.on(E.SCREENSHOT_REQUEST, async () => {
       await this.captureAndSubmitScreenshot();
     });
 
     // Handle check-pending-layout events — layout was pending download, now ready
-    this.core.on('check-pending-layout', async (layoutId: number) => {
+    this.core.on(E.CHECK_PENDING_LAYOUT, async (layoutId: number) => {
       await this.prepareLayout(layoutId);
       this.renderer.showLayout(layoutId);
     });
 
     // Navigate to widget (navWidget action via triggerCode from schedule-level actions)
-    this.core.on('navigate-to-widget', (action: any) => {
+    this.core.on(E.NAVIGATE_TO_WIDGET, (action: any) => {
       if (action.targetId) {
         this.renderer.navigateToWidget(action.targetId);
       } else {
@@ -967,7 +967,7 @@ class PwaPlayer {
     });
 
     // Timeline overlay — visualize upcoming schedule
-    this.core.on('timeline-updated', (timeline: any[]) => {
+    this.core.on(E.TIMELINE_UPDATED, (timeline: any[]) => {
       const id = this.core.getCurrentLayoutId();
       const dur = id ? this.core.getLayoutDuration(id) : undefined;
       this.timelineOverlay?.update(timeline, id, dur);
