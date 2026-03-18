@@ -229,7 +229,7 @@ export class PlayerCore extends EventEmitter {
       }
 
       this._offlineCache = { schedule, settings, requiredFiles };
-      db.close();
+      this._offlineDb = db; // Keep handle open for _offlineSave (avoids reopen per write)
       log.info('Offline cache loaded from IndexedDB',
         schedule ? '(has schedule)' : '(empty)');
     } catch (e) {
@@ -241,15 +241,19 @@ export class PlayerCore extends EventEmitter {
   async _offlineSave(key, data) {
     this._offlineCache[key] = data;
     try {
-      const db = await openOfflineDb(this._cmsId);
-      const tx = db.transaction(OFFLINE_STORE, 'readwrite');
+      // Reuse persistent handle from _initOfflineCache (avoids 6 open/close per cycle)
+      if (!this._offlineDb) {
+        this._offlineDb = await openOfflineDb(this._cmsId);
+      }
+      const tx = this._offlineDb.transaction(OFFLINE_STORE, 'readwrite');
       tx.objectStore(OFFLINE_STORE).put(data, key);
       await new Promise((resolve, reject) => {
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error);
       });
-      db.close();
     } catch (e) {
+      // Handle closed/invalid DB — reopen on next attempt
+      this._offlineDb = null;
       log.warn('Failed to save offline cache:', key, e);
     }
   }
