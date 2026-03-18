@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2024-2026 Pau Aliagas <linuxnow@gmail.com>
 export const VERSION: string;
+export const CORE_EVENTS: Record<string, string>;
 
 export interface PlayerCoreOptions {
   config: any;

@@ -2055,10 +2055,8 @@ class PwaPlayer {
                 }
                 // Always process: injects <base> tag, rewrites IC hostAddress.
                 // cacheWidgetHtml is idempotent — already-rewritten URLs won't re-match.
-                await cacheWidgetHtml(layoutId, regionId, widgetId, html);
-                // Read back the processed version from ContentStore
-                const processed = await store.get(`${STORE_PREFIX}/widgets`, storeId);
-                if (processed) html = await processed.text();
+                const result = await cacheWidgetHtml(layoutId, regionId, widgetId, html);
+                html = result.html;
 
                 // Update raw content in XLF
                 const rawEl = mediaEl.querySelector('raw');
