@@ -1469,11 +1469,9 @@ class PwaPlayer {
       return true;
     };
 
-    // ── Step 2: Enqueue resources ──
+    // ── Step 2: Enqueue resources (parallel HEAD checks) ──
     const resourceBuilder = new LayoutTaskBuilder(queue);
-    for (const file of resources) {
-      await enqueueFile(resourceBuilder, file);
-    }
+    await Promise.all(resources.map(file => enqueueFile(resourceBuilder, file)));
     const resourceTasks = await resourceBuilder.build();
     if (resourceTasks.length > 0) {
       resourceTasks.push(BARRIER);
@@ -1531,9 +1529,7 @@ class PwaPlayer {
       log.info(`Layout ${layoutId}: ${matched.length} media`);
       matched.sort((a: any, b: any) => (a.size || 0) - (b.size || 0));
       const builder = new LayoutTaskBuilder(queue);
-      for (const file of matched) {
-        await enqueueFile(builder, file);
-      }
+      await Promise.all(matched.map(file => enqueueFile(builder, file)));
       const orderedTasks = await builder.build();
       if (orderedTasks.length > 0) {
         orderedTasks.push(BARRIER);
@@ -1546,10 +1542,10 @@ class PwaPlayer {
     if (unclaimed.length > 0) {
       log.info(`${unclaimed.length} media not in any XLF`);
       const builder = new LayoutTaskBuilder(queue);
-      for (const id of unclaimed) {
+      await Promise.all(unclaimed.map(id => {
         const file = mediaFiles.get(id);
-        if (file) await enqueueFile(builder, file);
-      }
+        return file ? enqueueFile(builder, file) : Promise.resolve(false);
+      }));
       const orderedTasks = await builder.build();
       if (orderedTasks.length > 0) {
         queue.enqueueOrderedTasks(orderedTasks);
