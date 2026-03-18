@@ -6,7 +6,7 @@
  */
 
 import os from 'os';
-import Bonjour from 'bonjour-service';
+import { Bonjour } from 'bonjour-service';
 
 const SERVICE_TYPE = 'xibo-sync';
 
