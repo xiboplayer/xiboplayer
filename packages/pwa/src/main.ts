@@ -8,7 +8,7 @@
  */
 
 import { RendererLite } from '@xiboplayer/renderer';
-import { StoreClient, DownloadManager, LayoutTaskBuilder, BARRIER } from '@xiboplayer/cache';
+import { StoreClient, DownloadManager, BARRIER } from '@xiboplayer/cache';
 import { PlayerCore } from '@xiboplayer/core';
 import { parseLayoutDuration, parseLayoutFile } from '@xiboplayer/schedule';
 import { createLogger, registerLogSink, PLAYER_API } from '@xiboplayer/utils';
@@ -1355,7 +1355,7 @@ class PwaPlayer {
   private async enqueueDownloads(data: any) {
     const { extractMediaIdsFromXlf } = await import('@xiboplayer/sw');
     const { layoutOrder, files, layoutDependants } = data;
-    const queue = downloadManager.queue;
+    // Use DownloadManager facade methods (not direct queue access)
 
     /** Store key = URL path without leading / and query params */
     const storeKeyFrom = (f: any) => (f.path || '').split('?')[0].replace(/^\/+/, '') || `${f.type || 'media'}/${f.id}`;
@@ -1464,21 +1464,21 @@ class PwaPlayer {
         }
 
         this.notifyFileCached(String(file.id), file.type);
-        queue.removeCompleted(storeKey);
+        downloadManager.removeCompleted(storeKey);
       }).catch((err: any) => {
         log.error('Download failed:', file.id, err);
-        queue.removeCompleted(storeKeyFrom(file));
+        downloadManager.removeCompleted(storeKeyFrom(file));
       });
       return true;
     };
 
     // ── Step 2: Enqueue resources (parallel HEAD checks) ──
-    const resourceBuilder = new LayoutTaskBuilder(queue);
+    const resourceBuilder = downloadManager.createTaskBuilder();
     await Promise.all(resources.map(file => enqueueFile(resourceBuilder, file)));
     const resourceTasks = await resourceBuilder.build();
     if (resourceTasks.length > 0) {
       resourceTasks.push(BARRIER);
-      queue.enqueueOrderedTasks(resourceTasks);
+      downloadManager.enqueueOrderedTasks(resourceTasks);
     }
 
     // ── Step 3: For each layout in play order, merge XLF + dependants ──
@@ -1531,12 +1531,12 @@ class PwaPlayer {
 
       log.info(`Layout ${layoutId}: ${matched.length} media`);
       matched.sort((a: any, b: any) => (a.size || 0) - (b.size || 0));
-      const builder = new LayoutTaskBuilder(queue);
+      const builder = downloadManager.createTaskBuilder();
       await Promise.all(matched.map(file => enqueueFile(builder, file)));
       const orderedTasks = await builder.build();
       if (orderedTasks.length > 0) {
         orderedTasks.push(BARRIER);
-        queue.enqueueOrderedTasks(orderedTasks);
+        downloadManager.enqueueOrderedTasks(orderedTasks);
       }
     }
 
@@ -1544,18 +1544,18 @@ class PwaPlayer {
     const unclaimed = [...mediaFiles.keys()].filter((id: string) => !claimed.has(id));
     if (unclaimed.length > 0) {
       log.info(`${unclaimed.length} media not in any XLF`);
-      const builder = new LayoutTaskBuilder(queue);
+      const builder = downloadManager.createTaskBuilder();
       await Promise.all(unclaimed.map(id => {
         const file = mediaFiles.get(id);
         return file ? enqueueFile(builder, file) : Promise.resolve(false);
       }));
       const orderedTasks = await builder.build();
       if (orderedTasks.length > 0) {
-        queue.enqueueOrderedTasks(orderedTasks);
+        downloadManager.enqueueOrderedTasks(orderedTasks);
       }
     }
 
-    log.info('Downloads active:', queue.running, ', queued:', queue.queue.length);
+    log.info('Downloads active:', downloadManager.running, ', queued:', downloadManager.queued);
   }
 
   /**

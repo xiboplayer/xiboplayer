@@ -1005,6 +1005,26 @@ export class DownloadManager {
     return this.queue.urgentChunk(fileType, fileId, chunkIndex);
   }
 
+  createTaskBuilder() {
+    return new LayoutTaskBuilder(this.queue);
+  }
+
+  enqueueOrderedTasks(tasks) {
+    this.queue.enqueueOrderedTasks(tasks);
+  }
+
+  removeCompleted(key) {
+    this.queue.removeCompleted(key);
+  }
+
+  get running() {
+    return this.queue.running;
+  }
+
+  get queued() {
+    return this.queue.queue.length;
+  }
+
   clear() {
     this.queue.clear();
   }

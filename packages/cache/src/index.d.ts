@@ -16,6 +16,11 @@ export class DownloadManager {
   getTask(key: string): any;
   getProgress(): Record<string, any>;
   prioritizeLayoutFiles(mediaIds: string[]): void;
+  createTaskBuilder(): LayoutTaskBuilder;
+  enqueueOrderedTasks(tasks: any[]): void;
+  removeCompleted(key: string): void;
+  readonly running: number;
+  readonly queued: number;
   clear(): void;
   queue: any;
 }
