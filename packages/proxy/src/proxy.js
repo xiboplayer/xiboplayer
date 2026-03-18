@@ -237,6 +237,24 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
   });
 
+  // ─── POST /system/advertise-sync — start mDNS advertisement at runtime ────
+  let currentAdvert = null;
+  app.post('/system/advertise-sync', express.json(), (req, res) => {
+    const { syncGroupId, port, displayId } = req.body || {};
+    if (!syncGroupId) return res.status(400).json({ error: 'syncGroupId is required' });
+
+    // Stop previous advertisement if any
+    if (currentAdvert) {
+      currentAdvert.stop();
+      currentAdvert = null;
+    }
+
+    const advertPort = port || serverPort || 8765;
+    currentAdvert = advertiseSyncService({ port: advertPort, syncGroupId: String(syncGroupId), displayId: displayId || 'unknown' });
+    logServer.info(`mDNS: advertising sync group ${syncGroupId} on port ${advertPort} (runtime)`);
+    res.json({ ok: true, syncGroupId, port: advertPort });
+  });
+
   // ─── XMDS SOAP Proxy ──────────────────────────────────────────────
   app.all('/xmds-proxy', async (req, res) => {
     try {

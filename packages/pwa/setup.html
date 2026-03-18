@@ -655,12 +655,17 @@
         submitBtn.textContent = 'Saving...';
         submitBtn.disabled = true;
 
-        const saveResp = await fetch('/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cmsUrl, cmsKey, displayName }),
-        });
-        if (!saveResp.ok) throw new Error('Failed to save config');
+        const electronAPI = window.electronAPI || window.parent?.electronAPI;
+        if (electronAPI?.setConfig) {
+          await electronAPI.setConfig({ cmsUrl, cmsKey, displayName });
+        } else {
+          const saveResp = await fetch('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cmsUrl, cmsKey, displayName }),
+          });
+          if (!saveResp.ok) throw new Error('Failed to save config');
+        }
 
         // Also update in-memory config for the test connection below
         config.data.cmsUrl = cmsUrl;

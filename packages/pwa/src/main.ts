@@ -564,6 +564,12 @@ class PwaPlayer {
 
         if (syncConfig.isLead) {
           syncConfig.relayUrl = `ws://localhost:${syncConfig.syncPublisherPort}/sync`;
+          // Trigger mDNS advertisement so followers can discover us
+          fetch('/system/advertise-sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ syncGroupId: syncConfig.syncGroupId, port: syncConfig.syncPublisherPort, displayId: config.hardwareKey }),
+          }).catch(() => {});
         } else {
           // Try mDNS discovery first, fall back to CMS-provided IP
           let leadHost = syncConfig.syncGroup;
