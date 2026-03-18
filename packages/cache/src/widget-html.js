@@ -116,5 +116,5 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   putResp.body?.cancel();
   log.info(`Stored widget HTML at ${cacheKey} (${modifiedHtml.length} bytes)`);
 
-  return cacheKey;
+  return { cacheKey, html: modifiedHtml };
 }
