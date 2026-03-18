@@ -585,18 +585,6 @@ class PwaPlayer {
         syncConfig.syncToken = config.cmsKey;
       }
 
-      // Persist resolved sync config to config.json so offline restarts
-      // can sync over LAN without CMS. Strips runtime-only fields.
-      if ((window as any).electronAPI?.setConfig) {
-        const { syncToken, ...persistable } = syncConfig;
-        (window as any).electronAPI.setConfig({ sync: persistable });
-      }
-
-      // Pass CMS server key as sync token for relay auth (shared by all displays on this CMS)
-      if (!syncConfig.syncToken) {
-        syncConfig.syncToken = config.cmsKey;
-      }
-
       this.syncManager = new SyncManager({
         displayId: config.hardwareKey,
         syncConfig,
@@ -1906,8 +1894,11 @@ class PwaPlayer {
 
       const xlfXml = await xlfBlob.text();
 
+      // Parse XLF once — reuse Document for media check and widget HTML fetch
+      const xlfDoc = new DOMParser().parseFromString(xlfXml, 'text/xml');
+
       // Check if all required media is cached
-      const { allMedia: requiredMedia } = this.getMediaIds(xlfXml);
+      const { allMedia: requiredMedia } = this.getMediaIds(xlfDoc);
       const allMediaCached = await this.checkAllMediaCached(requiredMedia);
 
       if (!allMediaCached) {
@@ -1923,7 +1914,7 @@ class PwaPlayer {
 
       // Fetch widget HTML (skip if already preloaded — was fetched during preload)
       if (!this.renderer.hasPreloadedLayout(layoutId)) {
-        await this.fetchWidgetHtml(xlfXml, layoutId);
+        await this.fetchWidgetHtml(xlfDoc, layoutId);
       }
 
       // Preload layout into pool (hidden). Caller decides when to show.
@@ -1967,9 +1958,10 @@ class PwaPlayer {
    * Get all required media saveAs filenames and video-specific ones from layout XLF.
    * Returns saveAs strings (via _fileIdToSaveAs map) for store key matching.
    */
-  private getMediaIds(xlfXml: string): { allMedia: string[]; videoMedia: string[] } {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xlfXml, 'text/xml');
+  private getMediaIds(xlfXmlOrDoc: string | Document): { allMedia: string[]; videoMedia: string[] } {
+    const doc = typeof xlfXmlOrDoc === 'string'
+      ? new DOMParser().parseFromString(xlfXmlOrDoc, 'text/xml')
+      : xlfXmlOrDoc;
     const allMedia: string[] = [];
     const videoMedia: string[] = [];
 
@@ -2007,17 +1999,21 @@ class PwaPlayer {
    * Uses storedAs filenames for store key matching: /media/file/{saveAs}
    */
   private async checkAllMediaCached(mediaSaveAs: string[]): Promise<boolean> {
-    for (const saveAs of mediaSaveAs) {
-      try {
-        const cached = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
-        if (!cached) {
-          log.debug(`Media ${saveAs} not yet cached`);
-          return false;
+    // Parallel HEAD requests instead of sequential — N files in one batch
+    const results = await Promise.all(
+      mediaSaveAs.map(async (saveAs) => {
+        try {
+          return await store.has(STORE_PREFIX, `media/file/${saveAs}`);
+        } catch {
+          log.warn(`Unable to verify media ${saveAs}, assuming cached (offline mode)`);
+          return true;
         }
-        log.debug(`Media ${saveAs} cached`);
-      } catch (error) {
-        log.warn(`Unable to verify media ${saveAs}, assuming cached (offline mode)`);
-      }
+      })
+    );
+    const missing = mediaSaveAs.filter((_, i) => !results[i]);
+    if (missing.length > 0) {
+      log.debug(`Media not yet cached: ${missing.join(', ')}`);
+      return false;
     }
     return true;
   }
@@ -2025,9 +2021,10 @@ class PwaPlayer {
   /**
    * Fetch widget HTML for all widgets in layout (parallel)
    */
-  private async fetchWidgetHtml(xlfXml: string, layoutId: number) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xlfXml, 'text/xml');
+  private async fetchWidgetHtml(xlfXmlOrDoc: string | Document, layoutId: number) {
+    const doc = typeof xlfXmlOrDoc === 'string'
+      ? new DOMParser().parseFromString(xlfXmlOrDoc, 'text/xml')
+      : xlfXmlOrDoc;
 
     const fetchPromises: Promise<void>[] = [];
 

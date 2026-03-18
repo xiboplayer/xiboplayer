@@ -87,7 +87,6 @@ export class SyncManager {
     this._started = false;
 
     // Logger with role prefix for clarity in multi-tab console
-    this._tag = this.isLead ? '[Sync:LEAD]' : '[Sync:FOLLOW]';
     this._log = createLogger(this.isLead ? 'Sync:LEAD' : 'Sync:FOLLOW');
   }
 
@@ -176,8 +175,9 @@ export class SyncManager {
     layoutId = String(layoutId);
     this._pendingLayoutId = layoutId;
 
-    // Mark all followers as not-ready for this layout
+    // Mark active followers as not-ready for this layout (skip stale ones)
     for (const [, follower] of this.followers) {
+      if (Date.now() - follower.lastSeen > FOLLOWER_TIMEOUT) continue;
       follower.ready = false;
       follower.readyLayoutId = null;
     }
