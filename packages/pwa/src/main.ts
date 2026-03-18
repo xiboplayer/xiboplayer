@@ -550,20 +550,34 @@ class PwaPlayer {
     });
 
     // Multi-display sync: create SyncManager when CMS provides sync config (or local fallback)
-    this.core.on(E.SYNC_CONFIG, (syncConfig: any) => {
+    this.core.on(E.SYNC_CONFIG, async (syncConfig: any) => {
       if (this.syncManager) {
         this.syncManager.stop();
       }
 
       // Cross-device sync: build WebSocket relay URL if not explicitly set.
-      // Lead connects to its own relay (localhost), followers connect to lead's IP.
-      // Use syncGroupId as relay group name — CMS gives different syncGroup values
-      // to lead ("lead") vs followers (lead's IP), but syncGroupId is the same for all.
+      // Lead connects to its own relay (localhost), followers discover lead via mDNS.
       if (!syncConfig.relayUrl && syncConfig.syncPublisherPort) {
-        const host = syncConfig.isLead ? 'localhost' : syncConfig.syncGroup;
-        syncConfig.relayUrl = `ws://${host}:${syncConfig.syncPublisherPort}/sync`;
         if (syncConfig.syncGroupId) {
           syncConfig.syncGroup = String(syncConfig.syncGroupId);
+        }
+
+        if (syncConfig.isLead) {
+          syncConfig.relayUrl = `ws://localhost:${syncConfig.syncPublisherPort}/sync`;
+        } else {
+          // Try mDNS discovery first, fall back to CMS-provided IP
+          let leadHost = syncConfig.syncGroup;
+          try {
+            const res = await fetch(`/system/discover-lead?syncGroupId=${syncConfig.syncGroupId}`);
+            if (res.ok) {
+              const { host, port } = await res.json();
+              leadHost = host;
+              log.info(`mDNS discovered lead at ${host}:${port}`);
+            }
+          } catch (_) {
+            log.warn('mDNS discovery failed, using CMS-provided IP');
+          }
+          syncConfig.relayUrl = `ws://${leadHost}:${syncConfig.syncPublisherPort}/sync`;
         }
       }
 
