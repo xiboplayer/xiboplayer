@@ -30,6 +30,16 @@ global.HTMLCanvasElement = class HTMLCanvasElement {
   }
 };
 
+// Stub HTMLMediaElement methods not implemented in jsdom
+// (prevents "Not implemented" errors during renderer cleanup)
+try {
+  window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
+  window.HTMLMediaElement.prototype.pause = vi.fn();
+  window.HTMLMediaElement.prototype.load = vi.fn();
+} catch (_) {
+  // Fallback if HTMLMediaElement not available (non-jsdom environments)
+}
+
 // Mock atob/btoa
 global.atob = (str) => Buffer.from(str, 'base64').toString('binary');
 global.btoa = (str) => Buffer.from(str, 'binary').toString('base64');
