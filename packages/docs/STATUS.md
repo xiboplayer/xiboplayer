@@ -3,7 +3,7 @@
 ## Current Status: PRODUCTION READY
 
 **Feature Parity:** 100% vs upstream Xibo players + advanced sync
-**Last Updated:** 2026-03-17
+**Last Updated:** 2026-03-18
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
 
 ## What's New in v0.7.0
@@ -63,6 +63,18 @@ First Xibo player to implement the complete CMS REST API (`/api/v2/player/*`). S
 - **ETag 304 caching** — unchanged schedule/media responses return 0 bytes
 - **Dependency pipeline** — widget assets (JS, CSS, fonts, images) downloaded via dedicated endpoints
 - **No SOAP dependency** — works on CMS deployments without PHP ext-soap
+
+## Upstream Audit Results (2026-03-18)
+
+Code analysis of upstream Xibo player repositories confirmed:
+
+- **Windows player (xibo-dotnetclient)**: zero multi-display sync code. No sync manager, no relay, no choreography — the CMS sync group feature has no client-side implementation
+- **Windows player**: zero automated tests. No test project, no test runner, no CI test step
+- **XLR (xibo-layout-renderer)**: zero automated tests. The npm package ships with no test suite
+- **Arexibo**: 2 automated tests only (basic XMDS parsing)
+- **XiboPlayer**: 1412 tests across 36 test files, covering core, renderer, cache, schedule, xmds, xmr, stats, settings, sync, and crypto packages
+
+Features present in upstream that we do not implement: RS-232 serial (hardware limitation), PowerPoint rendering (COM automation, Windows-only), AXE/SSP ad integration (stub only), CMS tag-based schedule criteria. See [FEATURE_COMPARISON.md](https://github.com/xibo-players/xibo-players.github.io/blob/main/docs/FEATURE_COMPARISON.md) for full details.
 
 ## What Works
 
