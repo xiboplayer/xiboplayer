@@ -445,10 +445,13 @@ class PwaPlayer {
       await this.logReporter.init();
       log.info(`Log reporter initialized${cmsId ? ` (CMS: ${cmsId})` : ''}`);
 
+      // Serialize log args to string (shared by log reporter and console forwarder)
+      const serializeArgs = (args: any[]) => args.map((a: any) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+
       // Bridge logger output to LogReporter for CMS submission
       registerLogSink(({ level, name, args }: { level: string; name: string; args: any[] }) => {
         if (!this.logReporter) return;
-        const message = args.map((a: any) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+        const message = serializeArgs(args);
         this.logReporter.log(level, `[${name}] ${message}`, 'PLAYER').catch(() => {});
       });
 
@@ -475,7 +478,7 @@ class PwaPlayer {
         };
 
         registerLogSink(({ level, name, args }: { level: string; name: string; args: any[] }) => {
-          const message = args.map((a: any) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+          const message = serializeArgs(args);
           batch.push({ level, name, message, ts: new Date().toISOString() });
           if (!flushTimer) {
             flushTimer = setTimeout(flushLogs, flushIntervalMs);
@@ -712,7 +715,7 @@ class PwaPlayer {
       this.downloadOverlay?.startUpdating();
       try {
         // Push current JWT token to proxy for cache-through CMS requests
-        const token = this.xmds?._token || null;
+        const token = this.xmds?.getToken?.() || null;
         if (token) {
           await fetch('/auth-token', {
             method: 'POST',
@@ -1857,7 +1860,7 @@ class PwaPlayer {
     // re-emits layoutStart, restarts timer and widget cycling.
     if (this.renderer.getCurrentLayoutId() === layoutId) {
       log.debug(`Layout ${layoutId} replay`);
-      this.core._preparingLayoutId = null;
+      this.core.clearPreparingLayout();
       // Renderer's same-layout replay path reuses existing DOM — XLF not re-parsed
       await this.renderer.renderLayout('', layoutId);
       return;
@@ -1929,7 +1932,7 @@ class PwaPlayer {
       });
     } finally {
       this.preparingLayoutId = null;
-      this.core._preparingLayoutId = null;
+      this.core.clearPreparingLayout();
 
       // If another check-pending-layout arrived while we were preparing,
       // retry after a short delay to let the ContentStore settle.

@@ -48,6 +48,7 @@ export class PlayerCore {
   advanceToPreviousLayout(): void;
   setCurrentLayout(layoutId: number): void;
   clearCurrentLayout(): void;
+  clearPreparingLayout(): void;
   getCurrentLayoutId(): number | null;
   getLayoutDuration(layoutId: number | string): number | undefined;
   getPendingLayouts(): number[];

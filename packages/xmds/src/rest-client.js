@@ -110,6 +110,14 @@ export class RestClient {
   }
 
   /**
+   * Get current token synchronously (may be null or expired).
+   * @returns {string|null}
+   */
+  getToken() {
+    return this._token;
+  }
+
+  /**
    * Get a valid JWT token, refreshing if expired or missing.
    */
   async _getToken() {

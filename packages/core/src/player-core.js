@@ -775,6 +775,14 @@ export class PlayerCore extends EventEmitter {
    * Mark layout as ready and current
    * Called by platform after it successfully renders the layout
    */
+  /**
+   * Clear the preparing-layout guard.
+   * Called by platform layer when preparation is cancelled or skipped.
+   */
+  clearPreparingLayout() {
+    this._preparingLayoutId = null;
+  }
+
   setCurrentLayout(layoutId) {
     this.currentLayoutId = layoutId;
     this._preparingLayoutId = null;
@@ -967,7 +975,7 @@ export class PlayerCore extends EventEmitter {
       this._layoutDurations,
       this._queueOptions
     );
-    const pos = this.schedule._queuePosition;
+    const pos = this.schedule.getQueuePosition();
     log.info(`Advancing to layout ${layoutId} (queue pos ${pos}/${queue.length})`);
 
     // Set _preparingLayoutId BEFORE emitting to prevent collect() cycles
@@ -998,10 +1006,8 @@ export class PlayerCore extends EventEmitter {
     }
 
     // Go back 2 positions (current was already popped, so -2 from current pos)
-    this.schedule._queuePosition =
-      (this.schedule._queuePosition - 2 + queue.length) % queue.length;
-    const entry = queue[this.schedule._queuePosition];
-    this.schedule._queuePosition = (this.schedule._queuePosition + 1) % queue.length;
+    const entry = this.schedule.rewindQueue(2, this._layoutDurations, this._queueOptions);
+    if (!entry) return;
 
     const layoutId = parseLayoutFile(entry.layoutId);
 
@@ -1742,7 +1748,7 @@ export class PlayerCore extends EventEmitter {
       .map(([k, v]) => `${k}:${v.ready}:${v.missingKey}`)
       .join('|');
     const pendingEntries = [...this.pendingLayouts.keys()].sort().join(',');
-    const queuePos = this.schedule._queuePosition || 0;
+    const queuePos = this.schedule.getQueuePosition() || 0;
     const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}|${queuePos}|${mediaStatusEntries}|${pendingEntries}`;
 
     if (fingerprint === this._lastTimelineFingerprint && this._lastTimeline) {
@@ -1751,7 +1757,7 @@ export class PlayerCore extends EventEmitter {
     }
 
     const { queue } = this.schedule.getScheduleQueue(this._layoutDurations, this._queueOptions);
-    const timeline = calculateTimeline(queue, this.schedule._queuePosition, {
+    const timeline = calculateTimeline(queue, this.schedule.getQueuePosition(), {
       currentLayoutStartedAt: this._lastLayoutChangeTime ? new Date(this._lastLayoutChangeTime) : null,
       defaultLayout: this.schedule.schedule?.default || null,
       durations: this._layoutDurations,

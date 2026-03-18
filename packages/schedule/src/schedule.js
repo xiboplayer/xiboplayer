@@ -691,6 +691,31 @@ export class ScheduleManager {
    * @param {Object} [options]
    * @returns {{ layoutId: string, duration: number } | null}
    */
+  /**
+   * Get current queue position.
+   * @returns {number}
+   */
+  getQueuePosition() {
+    return this._queuePosition;
+  }
+
+  /**
+   * Rewind the queue by N positions (wraps around).
+   * Used by advanceToPreviousLayout to go back in the schedule.
+   * @param {number} steps - Number of positions to rewind
+   * @param {Map<string, number>} durations
+   * @param {Object} [options]
+   * @returns {{ layoutId: string, duration: number } | null}
+   */
+  rewindQueue(steps, durations, options = {}) {
+    const { queue } = this.getScheduleQueue(durations, options);
+    if (queue.length === 0) return null;
+    this._queuePosition = (this._queuePosition - steps + queue.length * steps) % queue.length;
+    const entry = queue[this._queuePosition];
+    this._queuePosition = (this._queuePosition + 1) % queue.length;
+    return entry;
+  }
+
   peekNextInQueue(durations, options = {}) {
     const { queue } = this.getScheduleQueue(durations, options);
     if (queue.length === 0) return null;

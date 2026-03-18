@@ -87,6 +87,14 @@ describe('PlayerCore', () => {
         return this._defaultQueue[(this._queuePosition + 1) % this._defaultQueue.length];
       }),
       isSyncEvent: vi.fn(() => false),
+      getQueuePosition: vi.fn(function() { return this._queuePosition; }),
+      rewindQueue: vi.fn(function(steps) {
+        if (this._defaultQueue.length === 0) return null;
+        this._queuePosition = (this._queuePosition - steps + this._defaultQueue.length * steps) % this._defaultQueue.length;
+        const entry = this._defaultQueue[this._queuePosition];
+        this._queuePosition = (this._queuePosition + 1) % this._defaultQueue.length;
+        return entry;
+      }),
       schedule: { default: '999' },
     };
 
