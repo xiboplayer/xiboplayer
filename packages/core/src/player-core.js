@@ -55,12 +55,21 @@ const log = createLogger('PlayerCore');
 /**
  * Discover a local/LAN IP address.
  * Electron: os.networkInterfaces() via preload (reliable, skips VPN/Docker).
- * Browser: not supported (WebRTC returns mDNS or wrong interface).
+ * Chromium/browser: proxy endpoint GET /system/lan-ip (Node.js has os.networkInterfaces()).
  */
 async function discoverLanIp() {
   if (typeof window !== 'undefined' && window.electronAPI?.getLanIpAddress) {
     try { return await window.electronAPI.getLanIpAddress(); } catch (_) {}
   }
+  // Fallback: ask the proxy server (works in Chromium kiosk and any browser)
+  try {
+    const fetcher = globalThis.__nativeFetch || globalThis.fetch;
+    const res = await fetcher('/system/lan-ip');
+    if (res.ok) {
+      const { ip } = await res.json();
+      if (ip) return ip;
+    }
+  } catch (_) {}
   return '';
 }
 

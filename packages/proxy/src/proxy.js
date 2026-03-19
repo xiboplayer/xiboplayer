@@ -21,6 +21,7 @@ const execPromise = promisify(exec);
 import { createLogger, registerLogSink, PLAYER_API, setPlayerApi, computeCmsId } from '@xiboplayer/utils';
 import { ContentStore } from './content-store.js';
 import { attachSyncRelay } from './sync-relay.js';
+import { getLanIp, advertiseSyncService, discoverSyncLead } from './discovery.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
 
@@ -211,6 +212,47 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
 
     res.json({ ok: true });
+  });
+
+  // ─── GET /system/lan-ip — return this machine's LAN IPv4 ────
+  app.get('/system/lan-ip', (_req, res) => {
+    const ip = getLanIp();
+    if (ip) {
+      res.json({ ip });
+    } else {
+      res.status(404).json({ error: 'No LAN IP detected' });
+    }
+  });
+
+  // ─── GET /system/discover-lead — mDNS browse for sync lead ────
+  app.get('/system/discover-lead', async (req, res) => {
+    const { syncGroupId } = req.query;
+    if (!syncGroupId) return res.status(400).json({ error: 'syncGroupId is required' });
+
+    const result = await discoverSyncLead({ syncGroupId: String(syncGroupId), timeout: 10000 });
+    if (result) {
+      res.json(result);
+    } else {
+      res.status(404).json({ error: 'Lead not found via mDNS' });
+    }
+  });
+
+  // ─── POST /system/advertise-sync — start mDNS advertisement at runtime ────
+  let currentAdvert = null;
+  app.post('/system/advertise-sync', express.json(), (req, res) => {
+    const { syncGroupId, port, displayId } = req.body || {};
+    if (!syncGroupId) return res.status(400).json({ error: 'syncGroupId is required' });
+
+    // Stop previous advertisement if any
+    if (currentAdvert) {
+      currentAdvert.stop();
+      currentAdvert = null;
+    }
+
+    const advertPort = port || serverPort || 8765;
+    currentAdvert = advertiseSyncService({ port: advertPort, syncGroupId: String(syncGroupId), displayId: displayId || 'unknown' });
+    logServer.info(`mDNS: advertising sync group ${syncGroupId} on port ${advertPort} (runtime)`);
+    res.json({ ok: true, syncGroupId, port: advertPort });
   });
 
   // ─── XMDS SOAP Proxy ──────────────────────────────────────────────
@@ -1106,7 +1148,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false, relaxSslCerts = true, syncSecret } = {}) {
+export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false, relaxSslCerts = true, syncSecret, syncGroupId, isLead, displayId } = {}) {
   if (relaxSslCerts) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   const app = createProxyApp({ pwaPath, appVersion, pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands });
 
@@ -1117,6 +1159,12 @@ export function startServer({ port = 8765, listenAddress = 'localhost', pwaPath,
 
       // Attach WebSocket sync relay (lightweight — no cost when unused)
       attachSyncRelay(server, { secret: syncSecret });
+
+      // Advertise sync relay via mDNS if this is a lead
+      if (isLead && syncGroupId) {
+        advertiseSyncService({ port, syncGroupId: String(syncGroupId), displayId: displayId || 'unknown' });
+        logServer.info(`mDNS: advertising sync group ${syncGroupId} on port ${port}`);
+      }
 
       resolve({ server, port });
     });
