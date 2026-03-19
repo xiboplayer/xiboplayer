@@ -555,9 +555,10 @@ class PwaPlayer {
         this.syncManager.stop();
       }
 
-      // Cross-device sync: build WebSocket relay URL if not explicitly set.
-      // Lead connects to its own relay (localhost), followers discover lead via mDNS.
-      if (!syncConfig.relayUrl && syncConfig.syncPublisherPort) {
+      // Cross-device sync: build WebSocket relay URL.
+      // Always rebuild for followers (mDNS re-discovers lead IP/port each cycle).
+      // Lead connects to its own relay (localhost).
+      if (syncConfig.syncPublisherPort) {
         if (syncConfig.syncGroupId) {
           syncConfig.syncGroup = String(syncConfig.syncGroupId);
         }
