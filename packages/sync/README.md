@@ -1,6 +1,6 @@
 # @xiboplayer/sync
 
-**Multi-display synchronization for Xibo video walls — same-machine and cross-device. New in v0.7.0.**
+**Multi-display synchronization for Xibo video walls — same-machine and cross-device. New in v0.7.0, zero-config mDNS discovery in v0.7.1.**
 
 ## Overview
 
@@ -102,11 +102,23 @@ When `syncGroup` is an IP address (not `"lead"`) and `syncPublisherPort` is set,
 
 The `listenAddress: "0.0.0.0"` makes the proxy reachable from the LAN. The CMS sync settings (`syncGroup`, `syncPublisherPort`) are sent via the RegisterDisplay response.
 
+### Auto-Discovery (v0.7.1)
+
+In v0.7.1+, the `listenAddress: "0.0.0.0"` is no longer needed — the lead automatically binds to `0.0.0.0` when `sync.isLead` is true.
+
+More importantly, followers no longer need the lead's IP address from the CMS. The lead advertises its relay via mDNS (`_xibo-sync._tcp`), and followers discover it automatically by matching `syncGroupId`. This means:
+
+- **Zero IP configuration** — no need to set the lead's LAN IP in CMS display settings
+- **DHCP-friendly** — if the lead's IP changes, followers re-discover on the next collection cycle
+- **Fallback** — if mDNS fails (e.g., different subnets), the CMS-provided IP is used
+
+The mDNS discovery is transparent — it happens automatically in the PWA's sync-config handler.
+
 **CMS Display Settings:**
 
 | Setting | Lead | Follower |
 |---------|------|----------|
-| Sync Group | `lead` | `192.168.1.100` (lead's IP) |
+| Sync Group | `lead` | (auto-discovered via mDNS in v0.7.1+) |
 | Sync Publisher Port | `8765` | `8765` |
 
 The SyncManager detects this configuration and selects the WebSocket transport:

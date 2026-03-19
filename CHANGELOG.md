@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.7.1 (2026-03-19)
+
+### Features
+
+- **mDNS auto-discovery for sync** — sync leads advertise via `_xibo-sync._tcp` (bonjour-service); followers discover the lead's IP and port automatically via mDNS browse. Zero manual IP configuration needed for video walls.
+- **`GET /system/lan-ip`** — proxy endpoint returns the machine's LAN IPv4 address, enabling Chromium kiosk to report its IP to the CMS (previously Electron-only).
+- **`GET /system/discover-lead`** — proxy endpoint runs mDNS browse and returns the lead's host/port for a given sync group.
+- **`POST /system/advertise-sync`** — runtime mDNS advertisement trigger, called by the PWA when sync config arrives from CMS.
+- **CORE_EVENTS constants** — 28 event name constants shared between PlayerCore and platform layers, preventing silent typo bugs at the core/platform boundary.
+- **Shared `openIDB` helper** — consolidated IndexedDB open boilerplate across 5 call sites into a single shared function in `@xiboplayer/utils`.
+
+### Fixes
+
+- **Follower relay URL always re-discovered** — followers no longer reuse stale persisted relay URLs; mDNS re-discovers the lead's IP on each collection cycle.
+- **Bonjour named import** — fixed `TypeError: Bonjour is not a constructor` by using named import `{ Bonjour }`.
+- **setup.html config save in Electron** — setup page now uses `electronAPI.setConfig` (via `window.parent`) instead of `POST /config` which hangs in Electron's session handler.
+
+### Refactoring
+
+- Replaced 86 lines of duplicated IndexedDB open boilerplate with shared `openIDB()` helper
+- Replaced 35+ event string literals in main.ts with `CORE_EVENTS` constants
+
 ## 0.6.12 (2026-03-13)
 
 ### Features

@@ -250,7 +250,7 @@ In the browser (PWA), `localStorage` is the primary source; env vars are not ava
 
 All other defaults (kiosk mode, fullscreen, hidden cursor, WARNING log level) apply automatically.
 
-## Example: Video Wall Lead (v0.7.0)
+## Example: Video Wall Lead (v0.7.1)
 
 ```json
 {
@@ -271,7 +271,7 @@ All other defaults (kiosk mode, fullscreen, hidden cursor, WARNING log level) ap
 
 The lead automatically binds to `0.0.0.0` when `sync.isLead` is true. The CMS provides `syncGroup`, `syncGroupId`, `syncPublisherPort`, `syncSwitchDelay`, and `syncVideoPauseDelay` via the sync group settings. Local config only needs display-specific fields: `topology`, `choreography`, `staggerMs`, and grid dimensions.
 
-## Example: Video Wall Follower (v0.7.0)
+## Example: Video Wall Follower (v0.7.1)
 
 ```json
 {
@@ -289,9 +289,9 @@ The lead automatically binds to `0.0.0.0` when `sync.isLead` is true. The CMS pr
 }
 ```
 
-Followers connect to the lead's relay automatically — the CMS provides the lead's LAN IP as `syncGroup`.
+Followers discover the lead's relay automatically via mDNS (v0.7.1+). The CMS-provided `syncGroup` IP is used as a fallback if mDNS discovery fails.
 
-## Sync Configuration Reference (v0.7.0)
+## Sync Configuration Reference (v0.7.1)
 
 | Key | Type | Source | Description |
 |-----|------|--------|-------------|
@@ -309,7 +309,7 @@ Followers connect to the lead's relay automatically — the CMS provides the lea
 | `sync.gridRows` | number | Local | Grid height for 2D choreography |
 | `sync.layoutMap` | object | CMS | Wall mode: maps lead layout IDs to position-specific layouts |
 
-## Choreography Effects (v0.7.0)
+## Choreography Effects (v0.7.1)
 
 | Effect | Description | Stagger formula |
 |--------|-------------|-----------------|

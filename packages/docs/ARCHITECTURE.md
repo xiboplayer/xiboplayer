@@ -100,7 +100,7 @@ Build a **platform-independent, modular player** that:
 
 **Total source code: ~13,000 lines** (excluding tests)
 
-## Multi-Display Sync Architecture (v0.7.0)
+## Multi-Display Sync Architecture (v0.7.1)
 
 The sync system enables coordinated layout transitions across multiple displays over LAN.
 

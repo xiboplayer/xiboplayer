@@ -1,10 +1,25 @@
-# PWA Player Status - v0.7.0
+# PWA Player Status - v0.7.1
 
 ## Current Status: PRODUCTION READY
 
 **Feature Parity:** 100% vs upstream Xibo players + advanced sync
-**Last Updated:** 2026-03-18
+**Last Updated:** 2026-03-19
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
+
+## What's New in v0.7.1
+
+### mDNS Auto-Discovery for Sync
+- **Zero-config video walls** — leads advertise via mDNS (`_xibo-sync._tcp`), followers discover automatically
+- **`GET /system/lan-ip`** — LAN IP detection for all platforms (not just Electron)
+- **`GET /system/discover-lead`** — mDNS browse endpoint for follower relay URL resolution
+- **Runtime mDNS advertisement** — PWA triggers advertisement after CMS registration
+- **Graceful fallback** — if mDNS fails, CMS-provided IP is used (no regression)
+- **DHCP-friendly** — followers re-discover lead IP on each collection cycle
+
+### Code Quality
+- **CORE_EVENTS constants** — 28 event names shared between core and platform layers
+- **Shared `openIDB` helper** — consolidated IndexedDB boilerplate (-86 lines)
+- **setup.html Electron fix** — config save uses IPC instead of hanging HTTP POST
 
 ## What's New in v0.7.0
 
@@ -72,7 +87,7 @@ Code analysis of upstream Xibo player repositories confirmed:
 - **Windows player**: zero automated tests. No test project, no test runner, no CI test step
 - **XLR (xibo-layout-renderer)**: zero automated tests. The npm package ships with no test suite
 - **Arexibo**: 2 automated tests only (basic XMDS parsing)
-- **XiboPlayer**: 1412 tests across 36 test files, covering core, renderer, cache, schedule, xmds, xmr, stats, settings, sync, and crypto packages
+- **XiboPlayer**: 1614 tests across 49 test files, covering core, renderer, cache, schedule, xmds, xmr, stats, settings, sync, and crypto packages
 
 Features present in upstream that we do not implement: RS-232 serial (hardware limitation), PowerPoint rendering (COM automation, Windows-only), AXE/SSP ad integration (stub only), CMS tag-based schedule criteria. See [FEATURE_COMPARISON.md](https://github.com/xibo-players/xibo-players.github.io/blob/main/docs/FEATURE_COMPARISON.md) for full details.
 
@@ -196,8 +211,8 @@ All 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already
 ## Test Suite
 
 ```
-Tests:  1412 passed | 5 skipped (1417 total)
-Files:  36 test files (all passed)
+Tests:  1614 passed | 5 skipped (1619 total)
+Files:  49 test files (all passed)
 Time:   ~10s
 ```
 

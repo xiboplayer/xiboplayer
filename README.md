@@ -41,11 +41,14 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Download resume** — incomplete chunked downloads resume from last successful chunk
 - **Download window enforcement** — respects CMS-configured time windows to avoid bandwidth during peak hours
 
-### Cross-Device Video Walls
-- **Multi-display sync** — lead/follower synchronization with coordinated layout transitions and video start
+### Zero-Config Video Walls
+- **Multi-display sync** — lead/follower synchronization with <8ms precision, coordinated layout transitions and video start
+- **mDNS auto-discovery** — leads advertise via `_xibo-sync._tcp`, followers discover automatically. No manual IP configuration needed.
+- **12 choreography effects** — diagonal cascade, wave sweep (4 directions), center-out, outside-in, random — configurable stagger delay per display
 - **Same-machine** — BroadcastChannel for multi-tab/multi-window setups
 - **Cross-device** — WebSocket relay on the lead's proxy server for LAN video walls (each screen a separate PC)
 - **Stats delegation** — followers delegate proof-of-play through the lead, avoiding duplicate CMS traffic
+- **DHCP-friendly** — followers re-discover lead IP on each collection cycle; no static IPs required
 
 ### Analytics & Monitoring
 - **Proof of play** — per-layout and per-widget duration tracking with individual or aggregated submission
@@ -57,7 +60,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving. Cache-through accepts `X-Cms-Download-Url` for XMDS-only CMSes
 - **Protocol auto-detection** — probes REST API at startup, auto-selects REST or SOAP transport
 - **Persistent layout durations** — cached in IndexedDB for correct timeline on restart
-- **1402 tests** across 36 test suites
+- **1614 tests** across 49 test suites
 
 ## Packages
 

@@ -65,6 +65,10 @@ Creates the app and starts listening. Returns `Promise<{ server, port }>`.
 | `port` | `number` | `8765` | Port to listen on |
 | `pwaPath` | `string` | (required) | Absolute path to PWA dist directory |
 | `appVersion` | `string` | `'0.0.0'` | Version for User-Agent header |
+| `syncGroupId` | `string` | — | Sync group ID for mDNS advertisement (lead only) |
+| `isLead` | `boolean` | — | Whether to advertise via mDNS on startup |
+| `displayId` | `string` | — | Display hardware key for mDNS TXT record |
+| `syncSecret` | `string` | — | Shared secret for WebSocket relay auth |
 
 ## Proxy Routes
 
@@ -73,6 +77,14 @@ Creates the app and starts listening. Returns `Promise<{ server, port }>`.
 | `/xmds-proxy?cms=URL` | ALL | Proxies XMDS SOAP requests to `URL/xmds.php` |
 | `/api/*` | ALL | Forward proxy to CMS REST API (injects JWT Bearer token) |
 | `/player/` | GET | Serves PWA index.html with config injection |
+
+### System Routes (v0.7.1)
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/system/lan-ip` | GET | Returns `{ ip }` — machine's LAN IPv4 address |
+| `/system/discover-lead` | GET | mDNS browse for sync lead. Query: `syncGroupId`. Returns `{ host, port }` or 404 |
+| `/system/advertise-sync` | POST | Start mDNS advertisement. Body: `{ syncGroupId, port, displayId }` |
 
 ### ContentStore Routes
 
@@ -101,6 +113,8 @@ Creates the app and starts listening. Returns `Promise<{ server, port }>`.
 
 - `express` — HTTP server
 - `cors` — CORS middleware
+- `bonjour-service` — mDNS/DNS-SD for sync discovery
+- `ws` — WebSocket server for sync relay
 
 ---
 
