@@ -25,3 +25,7 @@ Thumbs.db
 # Coverage
 coverage/
 .npmrc
+
+# Playwright
+test-results/
+playwright-report/
