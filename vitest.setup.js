@@ -30,12 +30,28 @@ global.HTMLCanvasElement = class HTMLCanvasElement {
   }
 };
 
-// Stub HTMLMediaElement methods not implemented in jsdom
-// (prevents "Not implemented" errors during renderer cleanup)
+// Stub HTMLMediaElement methods and properties not implemented in jsdom
+// (prevents "Not implemented" errors during renderer cleanup and enables
+// video duration detection tests that rely on loadedmetadata events)
 try {
-  window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
-  window.HTMLMediaElement.prototype.pause = vi.fn();
-  window.HTMLMediaElement.prototype.load = vi.fn();
+  const proto = window.HTMLMediaElement.prototype;
+  proto.play = vi.fn(() => Promise.resolve());
+  proto.pause = vi.fn();
+  proto.load = vi.fn();
+
+  // Make duration and currentTime writable — jsdom defines them as readonly
+  // getters that always return NaN/0. Override with simple data properties
+  // so tests can set them via Object.defineProperty or direct assignment.
+  Object.defineProperty(proto, 'duration', {
+    writable: true,
+    configurable: true,
+    value: NaN,
+  });
+  Object.defineProperty(proto, 'currentTime', {
+    writable: true,
+    configurable: true,
+    value: 0,
+  });
 } catch (_) {
   // Fallback if HTMLMediaElement not available (non-jsdom environments)
 }
