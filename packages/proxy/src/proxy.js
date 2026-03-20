@@ -201,12 +201,16 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       }
     }
 
-    // Write config.json — merge with existing file to preserve non-POSTed keys (e.g. controls)
+    logConfig.info('POST /config merged pwaConfig keys:', Object.keys(currentPwaConfig).join(', '));
+
+    // Write config.json — merge existing file + in-memory pwaConfig + POSTed fields.
+    // Using currentPwaConfig ensures keys that originated from shell defaults
+    // (e.g. controls, logLevel) are persisted even if they were never in the file.
     if (configFilePath) {
       fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
       let existing = {};
       try { existing = JSON.parse(fs.readFileSync(configFilePath, 'utf8')); } catch (_) {}
-      const merged = { ...existing, ...req.body };
+      const merged = { ...existing, ...currentPwaConfig, ...req.body };
       fs.writeFileSync(configFilePath, JSON.stringify(merged, null, 2));
       logConfig.info(`Wrote config.json: ${configFilePath}`);
     }
