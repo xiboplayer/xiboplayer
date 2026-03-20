@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.2 (2026-03-20)
+
+### Features
+
+- **Shared content cache** — all player instances on the same machine share a single ContentStore at `~/.local/share/xiboplayer/shared/cache/{cmsId}/media/`. A 4-display video wall downloads each file once instead of 4 times. Safe: atomic writes via temp+rename.
+- **Cache migration** — on first startup, hardlinks files from old per-instance cache dirs to the shared path, then removes old dirs. Zero-copy, instant. Remove after v0.7.3.
+- **Playwright e2e tests (T1)** — 10 end-to-end tests covering setup screen, config injection, CMS registration, schedule fetch, keyboard controls (D, S), and status bar.
+
+### Fixes
+
+- **Startup layout storm** — layouts no longer cycle at 60s on non-fresh starts. Root cause: `_hasUnprobedVideos()` checked `widget.duration === 0` but XLF always provides `duration="60"` for videos with `useDuration=0`. Fix: check `widget._probed` flag set by `loadedmetadata` event.
+- **POST /config preserves controls** — sync persist no longer strips `controls` and `logLevel` from the injected PWA config. Config.json write-back now includes `currentPwaConfig` in the merge chain.
+
+### Tests
+
+- Video duration tests unskipped (T4) — patched jsdom `HTMLMediaElement` prototype with writable `duration`/`currentTime`. 5 tests unskipped + 1 new test. Total: 1620 tests, 0 skipped.
+
 ## 0.7.1 (2026-03-19)
 
 ### Features

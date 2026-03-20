@@ -1,4 +1,4 @@
-# Multi-Display Sync — Video Wall Guide (v0.7.1)
+# Multi-Display Sync — Video Wall Guide (v0.7.2)
 
 ## Overview
 
@@ -208,6 +208,18 @@ In v0.7.1+, the lead advertises its relay via mDNS (`_xibo-sync._tcp`) and follo
 - Worry about DHCP changing the lead's IP
 
 The CMS-provided IP is used only as a fallback if mDNS discovery fails (e.g., players on different subnets).
+
+### Shared content cache (v0.7.2+)
+
+When running multiple instances on the same machine (e.g. 4-display video wall for testing), all instances share a single content cache at:
+
+```
+~/.local/share/xiboplayer/shared/cache/{cmsId}/media/
+```
+
+A 1GB video is downloaded once and shared across all instances. Browser data (localStorage, IndexedDB, Service Worker) remains instance-specific.
+
+On upgrade from v0.7.1, existing per-instance caches are automatically migrated to the shared path via hardlinks (instant, zero-copy).
 
 ## How config.json gets populated
 

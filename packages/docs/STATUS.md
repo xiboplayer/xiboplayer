@@ -1,10 +1,24 @@
-# PWA Player Status - v0.7.1
+# PWA Player Status - v0.7.2
 
 ## Current Status: PRODUCTION READY
 
 **Feature Parity:** 100% vs upstream Xibo players + advanced sync
-**Last Updated:** 2026-03-19
+**Last Updated:** 2026-03-20
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
+
+## What's New in v0.7.2
+
+### Shared Content Cache
+- **Single cache for all instances** — video wall displays on the same machine share one ContentStore, avoiding duplicate downloads
+- **Hardlink migration** — existing per-instance caches are migrated to the shared path via hardlinks (instant, zero-copy). Remove after v0.7.3.
+
+### Bug Fixes
+- **Startup layout storm** — fixed 60s cycling on non-fresh starts. Videos with `useDuration=0` now properly defer the layout timer until metadata loads.
+- **POST /config preserves controls** — sync persist no longer strips `controls` and `logLevel` from injected config.
+
+### Testing
+- **Playwright e2e tests** — 10 end-to-end tests for setup screen, config injection, CMS registration, keyboard controls
+- **Video duration tests unskipped** — 1620 tests, 0 skipped (was 1614 + 5 skipped)
 
 ## What's New in v0.7.1
 
@@ -211,8 +225,8 @@ All 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already
 ## Test Suite
 
 ```
-Tests:  1614 passed | 5 skipped (1619 total)
-Files:  49 test files (all passed)
+Tests:  1620 passed | 0 skipped (1620 total)
+Files:  49 test files + 10 Playwright e2e tests (all passed)
 Time:   ~10s
 ```
 
