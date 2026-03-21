@@ -181,22 +181,6 @@ class PwaPlayer {
     this.setupDataConnectorNotify();
     this.setupRemoteControls();
 
-    // Set display location from CMS settings when registration completes
-    this.core.on(E.REGISTER_COMPLETE, (regResult: any) => {
-      const lat = parseFloat(regResult?.settings?.latitude);
-      const lng = parseFloat(regResult?.settings?.longitude);
-      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
-        log.info(`Display location from CMS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        if (scheduleManager?.setLocation) {
-          scheduleManager.setLocation(lat, lng);
-        }
-      } else if (this.core.requestGeoLocation) {
-        // No CMS coordinates — try browser Geolocation API as fallback
-        log.info('No CMS coordinates, requesting browser geolocation...');
-        this.core.requestGeoLocation();
-      }
-    });
-
     // Setup UI
     this.updateConfigDisplay();
 
@@ -515,6 +499,11 @@ class PwaPlayer {
    * Setup PlayerCore event handlers (Platform-specific UI updates)
    */
   private setupCoreEventHandlers() {
+    // Delegate to focused handler groups
+    this.setupSyncEventHandlers();
+    this.setupDownloadEventHandlers();
+    this.setupCommandEventHandlers();
+
     // Collection events
     this.core.on(E.COLLECTION_START, () => {
       this.updateStatus('Collecting data from CMS...');
@@ -528,10 +517,22 @@ class PwaPlayer {
       if (this.displaySettings) {
         document.title = `Xibo Player - ${this.displaySettings.getDisplayName()}`;
       }
-    });
 
-    // Multi-display sync: local config fallback when CMS doesn't provide syncConfig
-    this.core.on(E.REGISTER_COMPLETE, (regResult: any) => {
+      // Set display location from CMS settings
+      const lat = parseFloat(regResult?.settings?.latitude);
+      const lng = parseFloat(regResult?.settings?.longitude);
+      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+        log.info(`Display location from CMS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        if (scheduleManager?.setLocation) {
+          scheduleManager.setLocation(lat, lng);
+        }
+      } else if (this.core.requestGeoLocation) {
+        // No CMS coordinates — try browser Geolocation API as fallback
+        log.info('No CMS coordinates, requesting browser geolocation...');
+        this.core.requestGeoLocation();
+      }
+
+      // Multi-display sync: local config fallback when CMS doesn't provide syncConfig
       if (!regResult.syncConfig && config.data?.sync) {
         log.info('[Sync] Using local sync config (CMS did not provide syncConfig)');
         this.core.syncConfig = config.data.sync;
@@ -539,6 +540,201 @@ class PwaPlayer {
       }
     });
 
+    this.core.on(E.OFFLINE_MODE, (isOffline: boolean) => {
+      if (isOffline) {
+        this.updateStatus('Offline mode — using cached content');
+        this.showOfflineIndicator();
+      } else {
+        this.updateStatus('Back online');
+        this.removeOfflineIndicator();
+      }
+    });
+
+    this.core.on(E.SCHEDULE_RECEIVED, (schedule: any) => {
+      this.updateStatus('Processing schedule...');
+
+      // Extract scheduleId for stats tracking
+      // Check layouts or campaigns for scheduleId
+      if (schedule.layouts && schedule.layouts.length > 0) {
+        this.currentScheduleId = parseInt(schedule.layouts[0].scheduleid) || -1;
+      } else if (schedule.campaigns && schedule.campaigns.length > 0) {
+        this.currentScheduleId = parseInt(schedule.campaigns[0].scheduleid) || -1;
+      }
+
+      // Selectively clear preloaded layouts not in the new schedule.
+      // Keep warm entries whose layout ID is still scheduled — their DOM is still valid.
+      // (The CMS schedule CRC changes every collection due to timestamps, even when
+      // the actual layout list hasn't changed. Blindly clearing would destroy preloads.)
+      if (this.renderer?.layoutPool) {
+        const scheduledIds = new Set<number>();
+        if (schedule.layouts) {
+          for (const l of schedule.layouts) {
+            const id = parseLayoutFile(l.file || l.id || l);
+            if (id) scheduledIds.add(id);
+          }
+        }
+        if (schedule.campaigns) {
+          for (const c of schedule.campaigns) {
+            if (c.layouts) {
+              for (const l of c.layouts) {
+                const id = parseLayoutFile(l.file || l.id || l);
+                if (id) scheduledIds.add(id);
+              }
+            }
+          }
+        }
+        const cleared = this.renderer.layoutPool.clearWarmNotIn(scheduledIds);
+        if (cleared > 0) {
+          log.info(`Cleared ${cleared} preloaded layout(s) no longer in schedule`);
+        }
+        this.scheduledLayoutIds = scheduledIds;
+      }
+
+      log.debug('Current scheduleId for stats:', this.currentScheduleId);
+    });
+
+    this.core.on(E.LAYOUT_PREPARE_REQUEST, async (layoutId: number) => {
+      await this.prepareLayout(layoutId);
+      // Non-sync or no layout playing yet: show immediately.
+      // Sync transitions: onLayoutShow handles showing with stagger.
+      if (!this.syncManager || this.renderer.getCurrentLayoutId() === null) {
+        this.renderer.showLayout(layoutId);
+      }
+    });
+
+    this.core.on(E.LAYOUT_EXPIRE_CURRENT, () => {
+      log.info('Schedule changed — expiring current layout');
+      this.renderer.stopCurrentLayout();
+      // stopCurrentLayout() emits layoutEnd → the layoutEnd handler
+      // calls advanceToNextLayout() which picks the next scheduled layout
+    });
+
+    this.core.on(E.NO_LAYOUTS_SCHEDULED, () => {
+      this.updateStatus('No layouts scheduled');
+    });
+
+    this.core.on(E.COLLECTION_COMPLETE, () => {
+      const layoutId = this.core.getCurrentLayoutId();
+      if (layoutId) {
+        this.updateStatus(`Playing layout ${layoutId}`);
+      } else if (this.preparingLayoutId) {
+        this.updateStatus(`Downloading layout ${this.preparingLayoutId}...`);
+      }
+
+      // Duration probing is handled by the debounced re-probe (3s after last
+      // file cached) — avoids 404s from probing before downloads complete.
+    });
+
+    this.core.on(E.COLLECTION_ERROR, async (error: any) => {
+      this.updateStatus(`Collection error: ${error}`, 'error');
+
+      // Display not found / not authorized — show setup screen so user can re-register
+      const msg = error?.message || String(error);
+      if (msg.includes('403') && (msg.includes('Display not found') || msg.includes('not authorized'))) {
+        log.warn('Display not registered or not authorized — showing setup screen');
+        if (!this.setupOverlay) {
+          this.setupOverlay = new SetupOverlay();
+        }
+        this.setupOverlay.show();
+        return;
+      }
+
+      // Report fault to CMS (triggers dashboard alert)
+      this.logReporter?.reportFault(
+        'COLLECTION_FAILED',
+        `Collection cycle failed: ${error?.message || error}`
+      );
+      this.submitFault('COLLECTION_FAILED', `Collection cycle failed: ${error?.message || error}`);
+    });
+
+    this.core.on(E.XMR_CONNECTED, (url: string) => {
+      log.info('XMR connected:', url);
+    });
+
+    this.core.on(E.XMR_MISCONFIGURED, (info: { reason: string; url?: string; message: string }) => {
+      log.warn(`XMR misconfigured (${info.reason}): ${info.message}`);
+    });
+
+    // Log level changes from CMS (overlays are controlled by config.controls, not log level)
+    this.core.on(E.LOG_LEVEL_CHANGED, () => {
+      log.info(`Log level changed`);
+    });
+
+    // Overlay layout push from XMR
+    this.core.on(E.OVERLAY_LAYOUT_REQUEST, async (layoutId: number) => {
+      log.info('Overlay layout requested:', layoutId);
+      // Re-use existing overlay rendering (schedule-driven overlays already work)
+      // Just need to prepare and render the overlay layout
+      await this.prepareLayout(layoutId);
+      this.renderer.showLayout(layoutId);
+    });
+
+    // Revert to schedule (undo XMR layout override)
+    this.core.on(E.REVERT_TO_SCHEDULE, () => {
+      log.info('Reverting to scheduled content');
+      this.updateStatus('Reverting to schedule...');
+    });
+
+    // Display settings events
+    if (this.displaySettings) {
+      this.displaySettings.on('interval-changed', (newInterval: number) => {
+        log.info(`Collection interval changed to ${newInterval}s`);
+      });
+
+      this.displaySettings.on('settings-applied', (_settings: any, changes: string[]) => {
+        if (changes.length > 0) {
+          log.info('Settings updated from CMS:', changes.join(', '));
+        }
+        // Start periodic screenshots once we have settings (only first time)
+        if (!this._screenshotInterval) {
+          this.startScreenshotInterval();
+        }
+      });
+    }
+
+    // Stats submission
+    this.core.on(E.SUBMIT_STATS_REQUEST, async () => {
+      await this.submitStats();
+    });
+
+    // Log submission to CMS
+    this.core.on(E.SUBMIT_LOGS_REQUEST, async () => {
+      await this.submitLogs();
+    });
+
+    // Screenshot capture (triggered by XMR or periodic interval)
+    this.core.on(E.SCREENSHOT_REQUEST, async () => {
+      await this.captureAndSubmitScreenshot();
+    });
+
+    // Handle check-pending-layout events — layout was pending download, now ready
+    this.core.on(E.CHECK_PENDING_LAYOUT, async (layoutId: number) => {
+      await this.prepareLayout(layoutId);
+      this.renderer.showLayout(layoutId);
+    });
+
+    // Navigate to widget (navWidget action via triggerCode from schedule-level actions)
+    this.core.on(E.NAVIGATE_TO_WIDGET, (action: any) => {
+      if (action.targetId) {
+        this.renderer.navigateToWidget(action.targetId);
+      } else {
+        log.warn('navigate-to-widget action has no targetId:', action);
+      }
+    });
+
+    // Timeline overlay — visualize upcoming schedule
+    this.core.on(E.TIMELINE_UPDATED, (timeline: any[]) => {
+      const id = this.core.getCurrentLayoutId();
+      const dur = id ? this.core.getLayoutDuration(id) : undefined;
+      this.timelineOverlay?.update(timeline, id, dur);
+    });
+  }
+
+  /**
+   * Setup multi-display sync event handlers.
+   * Handles SYNC_CONFIG and offline sync fallback via OFFLINE_MODE.
+   */
+  private setupSyncEventHandlers() {
     // Offline sync: if CMS is unreachable but local config has sync settings,
     // start SyncManager so LAN-only displays can still sync with each other.
     this.core.on(E.OFFLINE_MODE, (isOffline: boolean) => {
@@ -707,28 +903,15 @@ class PwaPlayer {
       log.info(`[Sync] SyncManager started as ${syncConfig.isLead ? 'LEAD' : 'FOLLOWER'}`);
       this.updateConfigDisplay();
     });
+  }
 
+  /**
+   * Setup download and cache event handlers.
+   * Handles FILES_RECEIVED, DOWNLOAD_REQUEST, PURGE_REQUEST, PURGE_ALL_REQUEST.
+   */
+  private setupDownloadEventHandlers() {
     this.core.on(E.FILES_RECEIVED, (files: any[]) => {
       this.updateStatus(`Downloading ${files.length} files...`);
-    });
-
-    this.core.on(E.OFFLINE_MODE, (isOffline: boolean) => {
-      if (isOffline) {
-        this.updateStatus('Offline mode — using cached content');
-        this.showOfflineIndicator();
-      } else {
-        this.updateStatus('Back online');
-        this.removeOfflineIndicator();
-      }
-    });
-
-    this.core.on(E.PURGE_REQUEST, async (purgeFiles: any[]) => {
-      try {
-        const result = await store.remove(purgeFiles);
-        log.info(`Purge complete: ${result.deleted}/${result.total} files deleted`);
-      } catch (error) {
-        log.warn('Purge failed:', error);
-      }
     });
 
     this.core.on(E.DOWNLOAD_REQUEST, async (groupedFiles: any) => {
@@ -752,132 +935,15 @@ class PwaPlayer {
       }
     });
 
-    this.core.on(E.SCHEDULE_RECEIVED, (schedule: any) => {
-      this.updateStatus('Processing schedule...');
-
-      // Extract scheduleId for stats tracking
-      // Check layouts or campaigns for scheduleId
-      if (schedule.layouts && schedule.layouts.length > 0) {
-        this.currentScheduleId = parseInt(schedule.layouts[0].scheduleid) || -1;
-      } else if (schedule.campaigns && schedule.campaigns.length > 0) {
-        this.currentScheduleId = parseInt(schedule.campaigns[0].scheduleid) || -1;
-      }
-
-      // Selectively clear preloaded layouts not in the new schedule.
-      // Keep warm entries whose layout ID is still scheduled — their DOM is still valid.
-      // (The CMS schedule CRC changes every collection due to timestamps, even when
-      // the actual layout list hasn't changed. Blindly clearing would destroy preloads.)
-      if (this.renderer?.layoutPool) {
-        const scheduledIds = new Set<number>();
-        if (schedule.layouts) {
-          for (const l of schedule.layouts) {
-            const id = parseLayoutFile(l.file || l.id || l);
-            if (id) scheduledIds.add(id);
-          }
-        }
-        if (schedule.campaigns) {
-          for (const c of schedule.campaigns) {
-            if (c.layouts) {
-              for (const l of c.layouts) {
-                const id = parseLayoutFile(l.file || l.id || l);
-                if (id) scheduledIds.add(id);
-              }
-            }
-          }
-        }
-        const cleared = this.renderer.layoutPool.clearWarmNotIn(scheduledIds);
-        if (cleared > 0) {
-          log.info(`Cleared ${cleared} preloaded layout(s) no longer in schedule`);
-        }
-        this.scheduledLayoutIds = scheduledIds;
-      }
-
-      log.debug('Current scheduleId for stats:', this.currentScheduleId);
-    });
-
-    this.core.on(E.LAYOUT_PREPARE_REQUEST, async (layoutId: number) => {
-      await this.prepareLayout(layoutId);
-      // Non-sync or no layout playing yet: show immediately.
-      // Sync transitions: onLayoutShow handles showing with stagger.
-      if (!this.syncManager || this.renderer.getCurrentLayoutId() === null) {
-        this.renderer.showLayout(layoutId);
+    this.core.on(E.PURGE_REQUEST, async (purgeFiles: any[]) => {
+      try {
+        const result = await store.remove(purgeFiles);
+        log.info(`Purge complete: ${result.deleted}/${result.total} files deleted`);
+      } catch (error) {
+        log.warn('Purge failed:', error);
       }
     });
 
-    this.core.on(E.LAYOUT_EXPIRE_CURRENT, () => {
-      log.info('Schedule changed — expiring current layout');
-      this.renderer.stopCurrentLayout();
-      // stopCurrentLayout() emits layoutEnd → the layoutEnd handler
-      // calls advanceToNextLayout() which picks the next scheduled layout
-    });
-
-    this.core.on(E.NO_LAYOUTS_SCHEDULED, () => {
-      this.updateStatus('No layouts scheduled');
-    });
-
-    this.core.on(E.COLLECTION_COMPLETE, () => {
-      const layoutId = this.core.getCurrentLayoutId();
-      if (layoutId) {
-        this.updateStatus(`Playing layout ${layoutId}`);
-      } else if (this.preparingLayoutId) {
-        this.updateStatus(`Downloading layout ${this.preparingLayoutId}...`);
-      }
-
-      // Duration probing is handled by the debounced re-probe (3s after last
-      // file cached) — avoids 404s from probing before downloads complete.
-    });
-
-    this.core.on(E.COLLECTION_ERROR, async (error: any) => {
-      this.updateStatus(`Collection error: ${error}`, 'error');
-
-      // Display not found / not authorized — show setup screen so user can re-register
-      const msg = error?.message || String(error);
-      if (msg.includes('403') && (msg.includes('Display not found') || msg.includes('not authorized'))) {
-        log.warn('Display not registered or not authorized — showing setup screen');
-        if (!this.setupOverlay) {
-          this.setupOverlay = new SetupOverlay();
-        }
-        this.setupOverlay.show();
-        return;
-      }
-
-      // Report fault to CMS (triggers dashboard alert)
-      this.logReporter?.reportFault(
-        'COLLECTION_FAILED',
-        `Collection cycle failed: ${error?.message || error}`
-      );
-      this.submitFault('COLLECTION_FAILED', `Collection cycle failed: ${error?.message || error}`);
-    });
-
-    this.core.on(E.XMR_CONNECTED, (url: string) => {
-      log.info('XMR connected:', url);
-    });
-
-    this.core.on(E.XMR_MISCONFIGURED, (info: { reason: string; url?: string; message: string }) => {
-      log.warn(`XMR misconfigured (${info.reason}): ${info.message}`);
-    });
-
-    // Log level changes from CMS (overlays are controlled by config.controls, not log level)
-    this.core.on(E.LOG_LEVEL_CHANGED, () => {
-      log.info(`Log level changed`);
-    });
-
-    // Overlay layout push from XMR
-    this.core.on(E.OVERLAY_LAYOUT_REQUEST, async (layoutId: number) => {
-      log.info('Overlay layout requested:', layoutId);
-      // Re-use existing overlay rendering (schedule-driven overlays already work)
-      // Just need to prepare and render the overlay layout
-      await this.prepareLayout(layoutId);
-      this.renderer.showLayout(layoutId);
-    });
-
-    // Revert to schedule (undo XMR layout override)
-    this.core.on(E.REVERT_TO_SCHEDULE, () => {
-      log.info('Reverting to scheduled content');
-      this.updateStatus('Reverting to schedule...');
-    });
-
-    // Purge all cache
     this.core.on(E.PURGE_ALL_REQUEST, async () => {
       log.info('Purging all cached content...');
       this.updateStatus('Purging cache...');
@@ -898,25 +964,13 @@ class PwaPlayer {
         log.error('Cache purge failed:', error);
       }
     });
+  }
 
-    // Command execution result
-    this.core.on(E.COMMAND_RESULT, (result: any) => {
-      log.info('Command result:', result);
-      if (!result.success) {
-        this.logReporter?.reportFault(
-          'COMMAND_FAILED',
-          `Command ${result.code} failed: ${result.reason || 'unknown'}`
-        );
-        this.submitFault('COMMAND_FAILED', `Command ${result.code} failed: ${result.reason || 'unknown'}`);
-      }
-    });
-
-    // Scheduled commands (#17) — execute commands whose scheduled time has arrived
-    this.core.on(E.SCHEDULED_COMMAND, (command: any) => {
-      log.info(`Scheduled command: ${command.code}`);
-      this.core.executeCommand(command.code);
-    });
-
+  /**
+   * Setup command execution event handlers.
+   * Handles EXECUTE_NATIVE_COMMAND, COMMAND_RESULT, SCHEDULED_COMMAND.
+   */
+  private setupCommandEventHandlers() {
     // Native command execution (#202) — shell commands delegated by PlayerCore
     // Electron: use IPC (in-process, faster). Chromium/other: HTTP to proxy server.
     this.core.on(E.EXECUTE_NATIVE_COMMAND, async (data: any) => {
@@ -940,58 +994,22 @@ class PwaPlayer {
       this.core.emit(E.COMMAND_RESULT, { code: data.code, ...result });
     });
 
-    // Display settings events
-    if (this.displaySettings) {
-      this.displaySettings.on('interval-changed', (newInterval: number) => {
-        log.info(`Collection interval changed to ${newInterval}s`);
-      });
-
-      this.displaySettings.on('settings-applied', (_settings: any, changes: string[]) => {
-        if (changes.length > 0) {
-          log.info('Settings updated from CMS:', changes.join(', '));
-        }
-        // Start periodic screenshots once we have settings (only first time)
-        if (!this._screenshotInterval) {
-          this.startScreenshotInterval();
-        }
-      });
-    }
-
-    // Stats submission
-    this.core.on(E.SUBMIT_STATS_REQUEST, async () => {
-      await this.submitStats();
-    });
-
-    // Log submission to CMS
-    this.core.on(E.SUBMIT_LOGS_REQUEST, async () => {
-      await this.submitLogs();
-    });
-
-    // Screenshot capture (triggered by XMR or periodic interval)
-    this.core.on(E.SCREENSHOT_REQUEST, async () => {
-      await this.captureAndSubmitScreenshot();
-    });
-
-    // Handle check-pending-layout events — layout was pending download, now ready
-    this.core.on(E.CHECK_PENDING_LAYOUT, async (layoutId: number) => {
-      await this.prepareLayout(layoutId);
-      this.renderer.showLayout(layoutId);
-    });
-
-    // Navigate to widget (navWidget action via triggerCode from schedule-level actions)
-    this.core.on(E.NAVIGATE_TO_WIDGET, (action: any) => {
-      if (action.targetId) {
-        this.renderer.navigateToWidget(action.targetId);
-      } else {
-        log.warn('navigate-to-widget action has no targetId:', action);
+    // Command execution result
+    this.core.on(E.COMMAND_RESULT, (result: any) => {
+      log.info('Command result:', result);
+      if (!result.success) {
+        this.logReporter?.reportFault(
+          'COMMAND_FAILED',
+          `Command ${result.code} failed: ${result.reason || 'unknown'}`
+        );
+        this.submitFault('COMMAND_FAILED', `Command ${result.code} failed: ${result.reason || 'unknown'}`);
       }
     });
 
-    // Timeline overlay — visualize upcoming schedule
-    this.core.on(E.TIMELINE_UPDATED, (timeline: any[]) => {
-      const id = this.core.getCurrentLayoutId();
-      const dur = id ? this.core.getLayoutDuration(id) : undefined;
-      this.timelineOverlay?.update(timeline, id, dur);
+    // Scheduled commands (#17) — execute commands whose scheduled time has arrived
+    this.core.on(E.SCHEDULED_COMMAND, (command: any) => {
+      log.info(`Scheduled command: ${command.code}`);
+      this.core.executeCommand(command.code);
     });
   }
 
