@@ -88,12 +88,13 @@ function proxyRequest(app, urlPath, { method = 'GET', headers = {} } = {}) {
       realFetch(`http://localhost:${port}${urlPath}`, { method, headers })
         .then(async (res) => {
           const body = Buffer.from(await res.arrayBuffer());
-          server.close();
           resolve({ status: res.status, body, headers: res.headers });
         })
         .catch((err) => {
-          server.close();
           resolve({ status: 0, body: Buffer.alloc(0), error: err.message });
+        })
+        .finally(() => {
+          server.close();
         });
     });
   });

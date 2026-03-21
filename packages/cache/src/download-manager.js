@@ -87,6 +87,7 @@ function getUrlExpiry(url) {
       // X-Amz-Date is ISO-like: 20240101T000000Z
       const dateStr = amzDate.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z');
       const signedAt = new Date(dateStr).getTime() / 1000;
+      if (isNaN(signedAt)) return Infinity;
       return signedAt + parseInt(amzExpires, 10);
     }
     return Infinity;

@@ -82,6 +82,7 @@ export function deleteByIds(db, storeName, ids) {
       if (id) {
         const req = store.delete(id);
         req.onsuccess = () => { deleted++; };
+        req.onerror = () => { /* individual delete failed — tx.onerror handles fatal */ };
       }
     }
 
