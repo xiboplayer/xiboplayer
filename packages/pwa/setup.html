@@ -559,8 +559,8 @@
         if (!authResp.ok) throw new Error(`Authorize failed: ${authResp.status}`);
 
         console.log('[Setup] Display auto-authorized via proxy!');
-        config.apiClientId = clientId;
-        config.apiClientSecret = clientSecret;
+        config.data.apiClientId = clientId;
+        config.data.apiClientSecret = clientSecret;
         return true;
       } catch (error) {
         console.warn('[Setup] Auto-authorize failed:', error.message);
@@ -583,9 +583,9 @@
       document.getElementById('cms-url').value = config.cmsUrl;
       document.getElementById('cms-key').value = config.cmsKey;
       document.getElementById('display-name').value = config.displayName;
-      if (config.apiClientId) {
-        document.getElementById('api-client-id').value = config.apiClientId;
-        document.getElementById('api-client-secret').value = config.apiClientSecret || '';
+      if (config.data.apiClientId) {
+        document.getElementById('api-client-id').value = config.data.apiClientId;
+        document.getElementById('api-client-secret').value = config.data.apiClientSecret || '';
       }
     }
 
@@ -618,9 +618,9 @@
         document.getElementById('cms-url').value = config.cmsUrl;
         document.getElementById('cms-key').value = config.cmsKey;
         document.getElementById('display-name').value = config.displayName;
-        if (config.apiClientId) {
-          document.getElementById('api-client-id').value = config.apiClientId;
-          document.getElementById('api-client-secret').value = config.apiClientSecret || '';
+        if (config.data.apiClientId) {
+          document.getElementById('api-client-id').value = config.data.apiClientId;
+          document.getElementById('api-client-secret').value = config.data.apiClientSecret || '';
         }
         showPhase(phaseSetup);
       } else {
@@ -634,9 +634,9 @@
       document.getElementById('cms-url').value = config.cmsUrl;
       document.getElementById('cms-key').value = config.cmsKey;
       document.getElementById('display-name').value = config.displayName;
-      if (config.apiClientId) {
-        document.getElementById('api-client-id').value = config.apiClientId;
-        document.getElementById('api-client-secret').value = config.apiClientSecret || '';
+      if (config.data.apiClientId) {
+        document.getElementById('api-client-id').value = config.data.apiClientId;
+        document.getElementById('api-client-secret').value = config.data.apiClientSecret || '';
       }
     }
 
@@ -655,16 +655,19 @@
         submitBtn.textContent = 'Saving...';
         submitBtn.disabled = true;
 
+        // Always POST to proxy — updates in-memory config for REST auth,
+        // cache-through, and API forwarding. Works on all players.
+        const saveResp = await fetch('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cmsUrl, cmsKey, displayName }),
+        });
+        if (!saveResp.ok) throw new Error('Failed to save config');
+
+        // Shell persistence (Electron config.json) — optional, on top of proxy
         const electronAPI = window.electronAPI || window.parent?.electronAPI;
         if (electronAPI?.setConfig) {
           await electronAPI.setConfig({ cmsUrl, cmsKey, displayName });
-        } else {
-          const saveResp = await fetch('/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cmsUrl, cmsKey, displayName }),
-          });
-          if (!saveResp.ok) throw new Error('Failed to save config');
         }
 
         // Also update in-memory config for the test connection below
@@ -692,6 +695,17 @@
           const autoAuthed = await tryAutoAuthorize(cmsUrl, hwKey);
 
           if (autoAuthed) {
+            // Persist API client credentials so they survive restarts
+            config.save();
+            await fetch('/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ apiClientId: config.data.apiClientId, apiClientSecret: config.data.apiClientSecret }),
+            });
+            if (electronAPI?.setConfig) {
+              await electronAPI.setConfig({ apiClientId: config.data.apiClientId, apiClientSecret: config.data.apiClientSecret });
+            }
+
             // Verify registration
             const recheck = await client.registerDisplay();
             if (recheck.code === 'READY') {

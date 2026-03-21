@@ -2662,4 +2662,156 @@ describe('PlayerCore', () => {
     });
   });
 
+  // ── Timeline vs playback consistency ─────────────────────────────
+  // Verify that the predicted timeline matches the actual layout sequence
+  // when advancing through layouts. This catches divergence between the
+  // schedule queue walk (calculateTimeline) and the actual queue pop
+  // (advanceToNextLayout → popNextFromQueue).
+
+  describe('Timeline vs playback consistency', () => {
+    function setupMultiLayoutTimeline() {
+      // 3-layout rotation: 100 (30s), 200 (45s), 300 (60s)
+      mockSchedule._defaultQueue = [
+        { layoutId: '100.xlf', duration: 30 },
+        { layoutId: '200.xlf', duration: 45 },
+        { layoutId: '300.xlf', duration: 60 },
+      ];
+      mockSchedule._queuePosition = 0;
+      mockSchedule.getLayoutsAtTime = vi.fn(() => ['100.xlf', '200.xlf', '300.xlf']);
+      mockSchedule.getAllLayoutsAtTime = vi.fn(() => [
+        { file: '100.xlf', priority: 10, maxPlaysPerHour: 0 },
+        { file: '200.xlf', priority: 10, maxPlaysPerHour: 0 },
+        { file: '300.xlf', priority: 10, maxPlaysPerHour: 0 },
+      ]);
+      mockSchedule.playHistory = new Map();
+
+      core._layoutDurations.set('100.xlf', 30);
+      core._layoutDurations.set('200.xlf', 45);
+      core._layoutDurations.set('300.xlf', 60);
+      core._lastCheckSchedule = 'crc-multi';
+      core.currentLayoutId = 100;
+    }
+
+    it('should predict layout sequence that matches actual playback', () => {
+      setupMultiLayoutTimeline();
+
+      // Capture the predicted timeline
+      let timeline = null;
+      core.on('timeline-updated', (t) => { timeline = t; });
+      core.logUpcomingTimeline();
+
+      expect(timeline).not.toBeNull();
+      expect(timeline.length).toBeGreaterThanOrEqual(3);
+
+      // Extract predicted layout sequence (first 3 entries)
+      const predicted = timeline.slice(0, 3).map(e => e.layoutFile);
+
+      // Now advance through layouts and record actual sequence
+      const actual = [];
+      for (let i = 0; i < 3; i++) {
+        const next = core.getNextLayout();
+        if (next) actual.push(next.layoutFile);
+      }
+
+      expect(actual).toEqual(predicted);
+    });
+
+    it('should produce consistent durations between timeline and queue', () => {
+      setupMultiLayoutTimeline();
+
+      let timeline = null;
+      core.on('timeline-updated', (t) => { timeline = t; });
+      core.logUpcomingTimeline();
+
+      // Verify each timeline entry's duration matches the layout's known duration
+      for (const entry of timeline.slice(0, 3)) {
+        const expectedDuration = core._layoutDurations.get(entry.layoutFile);
+        if (expectedDuration) {
+          expect(entry.duration).toBe(expectedDuration);
+        }
+      }
+    });
+
+    it('should have contiguous time slots (no gaps or overlaps)', () => {
+      setupMultiLayoutTimeline();
+
+      let timeline = null;
+      core.on('timeline-updated', (t) => { timeline = t; });
+      core.logUpcomingTimeline();
+
+      // Verify each entry's endTime equals the next entry's startTime
+      for (let i = 0; i < Math.min(timeline.length - 1, 5); i++) {
+        const current = timeline[i];
+        const next = timeline[i + 1];
+        expect(current.endTime.getTime()).toBe(next.startTime.getTime());
+      }
+    });
+
+    it('should annotate missing media without changing layout order', () => {
+      setupMultiLayoutTimeline();
+
+      // Mark layout 200 as having missing media
+      core.setLayoutMediaStatus('200.xlf', false, ['video.mp4']);
+
+      let timeline = null;
+      core.on('timeline-updated', (t) => { timeline = t; });
+      core.logUpcomingTimeline();
+
+      // Layout order should be unchanged
+      const sequence = timeline.slice(0, 3).map(e => e.layoutFile);
+      expect(sequence).toContain('200.xlf');
+
+      // But 200 should have missingMedia annotation
+      const entry200 = timeline.find(e => e.layoutFile === '200.xlf');
+      expect(entry200.missingMedia).toEqual(['video.mp4']);
+
+      // Other layouts should NOT have missingMedia
+      const entry100 = timeline.find(e => e.layoutFile === '100.xlf');
+      expect(entry100.missingMedia).toBeUndefined();
+    });
+
+    it('should update timeline when a duration correction arrives', () => {
+      setupMultiLayoutTimeline();
+
+      let timeline1 = null;
+      let timeline2 = null;
+      let callCount = 0;
+      core.on('timeline-updated', (t) => {
+        callCount++;
+        if (callCount === 1) timeline1 = t;
+        else timeline2 = t;
+      });
+
+      core.logUpcomingTimeline();
+      expect(timeline1).not.toBeNull();
+
+      const oldDur = timeline1.find(e => e.layoutFile === '200.xlf')?.duration;
+
+      // Video metadata corrects layout 200 duration from 45s to 180s
+      core.recordLayoutDuration('200', 180, true);
+      core.logUpcomingTimeline();
+
+      expect(timeline2).not.toBeNull();
+      const newDur = timeline2.find(e => e.layoutFile === '200.xlf')?.duration;
+      expect(newDur).toBe(180);
+      expect(newDur).not.toBe(oldDur);
+    });
+
+    it('should clear missing annotation after media status becomes ready', () => {
+      setupMultiLayoutTimeline();
+
+      // First: mark as missing
+      core.setLayoutMediaStatus('300.xlf', false, ['big.mp4']);
+      let timeline = null;
+      core.on('timeline-updated', (t) => { timeline = t; });
+      core.logUpcomingTimeline();
+      expect(timeline.find(e => e.layoutFile === '300.xlf').missingMedia).toEqual(['big.mp4']);
+
+      // Second: mark as ready (download complete)
+      core.setLayoutMediaStatus('300.xlf', true, []);
+      core.logUpcomingTimeline();
+      expect(timeline.find(e => e.layoutFile === '300.xlf').missingMedia).toBeUndefined();
+    });
+  });
 });
+
