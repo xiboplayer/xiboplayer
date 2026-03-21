@@ -540,6 +540,8 @@ class PwaPlayer {
       }
     });
 
+    // NOTE: Two OFFLINE_MODE listeners are intentional — this one handles UI,
+    // setupSyncEventHandlers() registers a second one for sync bootstrap.
     this.core.on(E.OFFLINE_MODE, (isOffline: boolean) => {
       if (isOffline) {
         this.updateStatus('Offline mode — using cached content');
