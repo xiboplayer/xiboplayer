@@ -1,10 +1,20 @@
-# PWA Player Status - v0.7.2
+# PWA Player Status - v0.7.3
 
 ## Current Status: PRODUCTION READY
 
 **Feature Parity:** 100% vs upstream Xibo players + advanced sync
-**Last Updated:** 2026-03-20
+**Last Updated:** 2026-03-21
 **Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
+
+## What's New in v0.7.3
+
+### Full Code Audit (99 findings addressed)
+- **5 bug fixes** — preload blob routing, overlay XIC, advertise-sync port, API proxy headers, XLF fetch logging
+- **18 dead code items removed** — PlayerState, 5 unused methods, stale types, internal exports (~484 lines)
+- **24 duplications consolidated** — shared IDB/format helpers, merged widget renderers, enrichStatus, region creation
+- **18 complexity reductions** — split collect() (253→180 lines), setupCoreEventHandlers() (479→250 lines), extracted helpers
+- **Net reduction: ~900 lines** with identical functionality
+- **1588 unit tests, 0 skipped**
 
 ## What's New in v0.7.2
 

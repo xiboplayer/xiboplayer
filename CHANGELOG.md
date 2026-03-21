@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.3 (2026-03-21)
+
+### Bug Fixes
+
+- **Preload blob URL routing** — `_preloadingLayoutId` now reset after widget creation loop, preventing blob URLs from being tracked against the wrong layout
+- **Overlay XIC completion** — removed identical ternary branches in `_advanceRegion` that caused overlay interactive control events to spuriously trigger main-layout completion checks
+- **Advertise-sync port** — removed undefined `serverPort` reference in `POST /system/advertise-sync` endpoint (was silently defaulting to 8765)
+- **API proxy headers** — use `SKIP_HEADERS` constant in API forward proxy, preventing stale `content-length` from being forwarded to clients
+- **XLF fetch logging** — log warning on XLF fetch failure in `enqueueDownloads` instead of silently swallowing errors
+
+### Refactoring (Code Audit)
+
+- **Dead code removed** — PlayerState class, 5 dead methods (enqueueForLayout, prioritize, awaitAllPrepared, getMaxActivePriority, processOverlays), widgetTimers field, getCacheKey, _countUnsubmitted. Fixed stale type declarations (makeHot→setHot, remove→evict). Unexported internal fnvHash.
+- **Stats/logs consolidation** — extracted shared `queryByIndex`/`deleteByIds` IDB helpers, `formatDateTime`/`escapeXml` formatters, and `enrichStatus` for notifyStatus
+- **Renderer consolidation** — merged renderTextWidget/renderGenericWidget into `_renderIframeWidget`, extracted `_clearLayoutTimers` and `_createRegionEntry` helpers
+- **Core split** — extracted `_processRegistration` and `_applyNewSchedule` from 253-line `collect()`, replaced `schedule._scheduleQueue` leak with `invalidateQueue()`
+- **PWA split** — extracted `setupSyncEventHandlers`, `setupDownloadEventHandlers`, `setupCommandEventHandlers` from 479-line `setupCoreEventHandlers()`, merged duplicate `REGISTER_COMPLETE` handler
+- **CORE_EVENTS** — added `CACHE_ANALYSIS`, `SUBMIT_FAULTS_REQUEST`, `COLLECTION_INTERVAL_SET` constants
+- **Proxy cleanup** — removed redundant dynamic `import('stream')`
+
+### Stats
+
+- 99 audit findings addressed (5 bugs, 18 dead code, 24 duplications, 18 complexity)
+- Net code reduction: ~900 lines removed
+- 1588 unit tests passing, 0 skipped
+
 ## 0.7.2 (2026-03-20)
 
 ### Features
