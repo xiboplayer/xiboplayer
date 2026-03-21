@@ -24,9 +24,10 @@ different host or `localhost`.
 ## Build
 
 ```bash
-# From the xiboplayer-pwa repo
+git clone https://github.com/xibo-players/xiboplayer.git
+cd xiboplayer
 pnpm install
-pnpm run build    # Production bundle → dist/
+pnpm --filter @xiboplayer/pwa build    # Production bundle → packages/pwa/dist/
 ```
 
 ## Deploy to CMS

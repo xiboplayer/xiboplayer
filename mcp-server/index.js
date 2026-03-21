@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const SDK_ROOT = resolve(__dirname, '..');
 
-const PWA_ROOT = process.env.XIBO_PWA_ROOT || resolve(SDK_ROOT, '../xiboplayer-pwa');
+const PWA_ROOT = process.env.XIBO_PWA_ROOT || resolve(SDK_ROOT, 'packages/pwa');
 const ELECTRON_ROOT = process.env.XIBO_ELECTRON_ROOT || resolve(SDK_ROOT, '../xiboplayer-electron');
 const CHROMIUM_ROOT = process.env.XIBO_CHROMIUM_ROOT || resolve(SDK_ROOT, '../xiboplayer-chromium');
 

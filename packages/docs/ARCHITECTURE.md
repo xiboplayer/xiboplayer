@@ -98,7 +98,7 @@ Build a **platform-independent, modular player** that:
 | `@xiboplayer/proxy` | `sync-relay.js` | 140 | WebSocket relay server with token auth and group isolation |
 | `@xiboplayer/crypto` | `rsa.js` | 75 | RSA key pair generation via Web Crypto API |
 
-**Total source code: ~13,000 lines** (excluding tests)
+**Total source code: ~22,200 lines across 67 source files** (excluding tests; see STATUS.md for current statistics)
 
 ## Multi-Display Sync Architecture (v0.7.1)
 
@@ -314,7 +314,7 @@ Database: xibo-player
 | XMR library | upstream framework (5/14 actions) | built-in | built-in | Native XmrClient (zero deps) |
 | Platform | Desktop | Windows | Linux | Any browser |
 | Core reuse | Electron-coupled | Monolithic | Monolithic | Platform-independent |
-| Total code | ~15,000 lines | ~50,000 lines | ~8,000 lines | ~12,000 lines |
+| Total code | ~15,000 lines | ~50,000 lines | ~8,000 lines | ~22,200 lines |
 
 See `packages/renderer/docs/RENDERER_COMPARISON.md` for detailed renderer comparison.
 
@@ -394,9 +394,6 @@ Load in Cordova WebView. XMR service runs separately as Node.js process (ZeroMQ 
 
 | Category | Lines | Files |
 |----------|-------|-------|
-| Core packages | ~7,500 | 20 source files |
-| Platform (PWA) | ~3,200 | 2 files (main.ts + sw-pwa.js) |
-| Tests | ~3,000+ | 12 test files |
-| **Total source** | **~12,000** | **~22 files** |
+See STATUS.md for current statistics (~22,200 lines across 67 source files, excluding tests).
 
-Compare with v0.1 (870 lines, 6 files). The codebase has grown 14x while maintaining zero framework dependencies.
+Compare with v0.1 (870 lines, 6 files). The codebase has grown significantly while maintaining zero framework dependencies.
