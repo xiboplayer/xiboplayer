@@ -3,7 +3,7 @@
 /**
  * Cache Manager Tests
  *
- * Tests for the slimmed-down CacheManager: dependant tracking, getCacheKey,
+ * Tests for the slimmed-down CacheManager: dependant tracking
  * and clearAll. Storage is handled by ContentStore via proxy REST endpoints.
  */
 
@@ -19,26 +19,6 @@ describe('CacheManager', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('getCacheKey()', () => {
-    it('should generate cache key with type and id', () => {
-      const key = manager.getCacheKey('media', '123');
-
-      expect(key).toBe('/player/pwa/cache/media/123');
-    });
-
-    it('should use filename if provided', () => {
-      const key = manager.getCacheKey('media', '123', 'image.jpg');
-
-      expect(key).toBe('/player/pwa/cache/media/image.jpg');
-    });
-
-    it('should handle layout type', () => {
-      const key = manager.getCacheKey('layout', '100');
-
-      expect(key).toBe('/player/pwa/cache/layout/100');
-    });
   });
 
   describe('Dependant Tracking', () => {

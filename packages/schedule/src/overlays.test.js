@@ -219,23 +219,13 @@ describe('OverlayScheduler', () => {
     });
   });
 
-  // ── clear / processOverlays ───────────────────────────────────
+  // ── clear ───────────────────────────────────
 
   describe('clear', () => {
     it('removes all overlays', () => {
       scheduler.setOverlays([makeOverlay()]);
       scheduler.clear();
       expect(scheduler.overlays).toHaveLength(0);
-    });
-  });
-
-  describe('processOverlays', () => {
-    it('sets overlays and returns layouts unchanged', () => {
-      const layouts = [{ id: 1 }, { id: 2 }];
-      const overlays = [makeOverlay({ file: 10 })];
-      const result = scheduler.processOverlays(layouts, overlays);
-      expect(result).toBe(layouts);
-      expect(scheduler.overlays).toHaveLength(1);
     });
   });
 });

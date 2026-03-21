@@ -159,18 +159,6 @@ export class OverlayScheduler {
     logger.debug('Cleared all overlays');
   }
 
-  /**
-   * Process overlay layouts (compatibility method for interrupt scheduler pattern)
-   * @param {Array} layouts - Base layouts
-   * @param {Array} overlays - Overlay layouts
-   * @returns {Array} Layouts (unchanged, overlays are separate)
-   */
-  processOverlays(layouts, overlays) {
-    // Overlays don't modify the main layout loop
-    // They are rendered separately on top
-    this.setOverlays(overlays);
-    return layouts;
-  }
 }
 
 export const overlayScheduler = new OverlayScheduler();

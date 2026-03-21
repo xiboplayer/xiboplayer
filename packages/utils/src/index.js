@@ -6,7 +6,7 @@ export const VERSION = pkg.version;
 export { createLogger, setLogLevel, getLogLevel, isDebug, applyCmsLogLevel, mapCmsLogLevel, registerLogSink, unregisterLogSink, LOG_LEVELS } from './logger.js';
 export { EventEmitter } from './event-emitter.js';
 import { config as _config } from './config.js';
-export { config, SHELL_ONLY_KEYS, extractPwaConfig, computeCmsId, fnvHash, warnPlatformMismatch } from './config.js';
+export { config, SHELL_ONLY_KEYS, extractPwaConfig, computeCmsId, warnPlatformMismatch } from './config.js';
 export { fetchWithRetry } from './fetch-retry.js';
 export { openIDB } from './idb.js';
 export { CmsApiClient, CmsApiError } from './cms-api.js';

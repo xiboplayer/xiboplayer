@@ -21,8 +21,8 @@ export class LayoutPool {
   get(layoutId: number): any | undefined;
   add(layoutId: number, entry: any): void;
   clearWarmNotIn(keepIds: Set<number>): number;
-  makeHot(layoutId: number): void;
-  remove(layoutId: number): void;
+  setHot(layoutId: number): void;
+  evict(layoutId: number): void;
   clear(): void;
 }
 
@@ -62,7 +62,6 @@ export class RendererLite {
   pause(): void;
   resume(): void;
   isPaused(): boolean;
-  resumeRegionMedia?(regionId: string): void;
   showLayout(layoutId?: number): void;
   getCurrentLayoutId(): number | null;
 

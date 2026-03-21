@@ -681,28 +681,6 @@ export class DownloadQueue {
     this.queue.sort((a, b) => b._priority - a._priority);
   }
 
-  prioritize(fileType, fileId) {
-    const key = `${fileType}/${fileId}`;
-    const file = this.active.get(key);
-
-    if (!file) {
-      log.info('[DownloadQueue] Not found:', key);
-      return false;
-    }
-
-    let boosted = 0;
-    for (const t of this.queue) {
-      if (t._parentFile === file && t._priority < PRIORITY.high) {
-        t._priority = PRIORITY.high;
-        boosted++;
-      }
-    }
-    this._sortQueue();
-
-    log.info('[DownloadQueue] Prioritized:', key, `(${boosted} tasks boosted)`);
-    return true;
-  }
-
   /**
    * Boost priority for files needed by the current/next layout.
    * @param {Array} fileIds - Media IDs needed by the layout
@@ -909,24 +887,6 @@ export class DownloadQueue {
       });
   }
 
-  /**
-   * Wait for all queued prepare (HEAD) operations to finish.
-   * Returns when the prepare queue is drained and all FileDownloads have
-   * either created their tasks or failed.
-   */
-  awaitAllPrepared() {
-    return new Promise((resolve) => {
-      const check = () => {
-        if (this._preparingCount === 0 && this._prepareQueue.length === 0) {
-          resolve();
-        } else {
-          setTimeout(check, 50);
-        }
-      };
-      check();
-    });
-  }
-
   removeCompleted(key) {
     const file = this.active.get(key);
     if (file && (file.state === 'complete' || file.state === 'failed')) {
@@ -975,16 +935,6 @@ export class DownloadManager {
   }
 
   enqueue(fileInfo) {
-    return this.queue.enqueue(fileInfo);
-  }
-
-  /**
-   * Enqueue a file for layout-grouped downloading.
-   * Layout grouping is now handled externally by LayoutTaskBuilder.
-   * @param {Object} fileInfo - File info
-   * @returns {FileDownload}
-   */
-  enqueueForLayout(fileInfo) {
     return this.queue.enqueue(fileInfo);
   }
 

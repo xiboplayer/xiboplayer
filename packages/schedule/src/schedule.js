@@ -589,15 +589,6 @@ export class ScheduleManager {
   }
 
   /**
-   * Get the max priority of any time-active layout (ignoring rate-limit filtering).
-   * Returns 0 if no layouts are active or if getCurrentLayouts() hasn't been called.
-   * @returns {number}
-   */
-  getMaxActivePriority() {
-    return this._maxActivePriority || 0;
-  }
-
-  /**
    * Check if a layout file is a sync event (part of multi-display sync group)
    * @param {string} layoutFile - Layout file identifier (e.g., '123')
    * @returns {boolean}

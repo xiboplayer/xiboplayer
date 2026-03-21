@@ -309,25 +309,6 @@ export class LogReporter {
   }
 
   /**
-   * Count unsubmitted logs in the database.
-   * @returns {Promise<number>}
-   */
-  async _countUnsubmitted() {
-    return new Promise((resolve) => {
-      try {
-        const transaction = this.db.transaction([LOGS_STORE], 'readonly');
-        const store = transaction.objectStore(LOGS_STORE);
-        const index = store.index('submitted');
-        const request = index.count(IDBKeyRange.only(0));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => resolve(0);
-      } catch (_) {
-        resolve(0);
-      }
-    });
-  }
-
-  /**
    * Clear submitted logs from database
    *
    * Deletes logs that were successfully submitted to CMS.

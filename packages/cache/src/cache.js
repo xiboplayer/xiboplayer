@@ -13,24 +13,10 @@ import { createLogger } from '@xiboplayer/utils';
 
 const log = createLogger('Cache');
 
-// Dynamic base path for multi-variant deployment (pwa, pwa-xmds, pwa-xlr)
-const BASE = (typeof window !== 'undefined')
-  ? window.location.pathname.replace(/\/[^/]*$/, '').replace(/\/$/, '') || '/player/pwa'
-  : '/player/pwa';
-
 export class CacheManager {
   constructor() {
     // Dependants: mediaId → Set<layoutId> — tracks which layouts use each media file
     this.dependants = new Map();
-  }
-
-  /**
-   * Get cache key for a file
-   * For media, uses the actual filename; for layouts, uses the ID
-   */
-  getCacheKey(type, id, filename = null) {
-    const key = filename || id;
-    return `${BASE}/cache/${type}/${key}`;
   }
 
   /**
