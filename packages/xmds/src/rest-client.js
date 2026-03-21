@@ -543,9 +543,10 @@ export class RestClient {
         (window.electronAPI?.isElectron || window.location.hostname === 'localhost');
       const base = isProxy ? '' : cmsUrl.replace(/\/+$/, '');
       const url = `${base}${PLAYER_API}/health`;
-      const timeoutMs = retryOptions?.timeoutMs || 3000;
+      const timeoutMs = retryOptions?.timeoutMs || 8000;
       const fetchOptions = { method: 'GET' };
-      // Apply timeout via AbortSignal (short timeout avoids delaying startup)
+      // Apply timeout via AbortSignal (generous on first probe — TLS cold start
+      // from the proxy to the CMS can take 5-6s on first connection)
       if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
         fetchOptions.signal = AbortSignal.timeout(timeoutMs);
       }
