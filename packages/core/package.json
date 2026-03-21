@@ -28,11 +28,11 @@
     "@xiboplayer/xmds": "workspace:*"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/ui": "^2.1.9",
+    "jsdom": "^25.0.1",
     "vite": "^7.3.1",
-    "vitest": "^2.0.0",
-    "jsdom": "^25.0.0",
-    "@vitest/ui": "^2.0.0",
-    "@vitest/coverage-v8": "^2.0.0"
+    "vitest": "^2.1.9"
   },
   "keywords": [
     "xibo",

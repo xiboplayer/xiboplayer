@@ -12,9 +12,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
-  "dependencies": {},
   "devDependencies": {
-    "vitest": "^2.0.0"
+    "vitest": "^2.1.9"
   },
   "keywords": [
     "xibo",

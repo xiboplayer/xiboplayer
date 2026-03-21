@@ -32,10 +32,10 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.19.15",
     "@types/xml2js": "^0.4.14",
-    "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21"
   },
   "author": "Pau Aliagas <linuxnow@gmail.com>",
   "license": "AGPL-3.0-or-later",
