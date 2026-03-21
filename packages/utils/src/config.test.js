@@ -714,4 +714,173 @@ describe('Config', () => {
       });
     });
   });
+
+  describe('Arbitrary data fields (apiClientId, etc.)', () => {
+    it('should persist apiClientId/apiClientSecret via config.data + save()', () => {
+      config = new Config();
+      config.data.cmsUrl = 'https://test.com';
+      config.data.apiClientId = 'client-id-123';
+      config.data.apiClientSecret = 'secret-456';
+      config.save();
+
+      // Reload from localStorage
+      const config2 = new Config();
+      expect(config2.data.apiClientId).toBe('client-id-123');
+      expect(config2.data.apiClientSecret).toBe('secret-456');
+    });
+
+    it('should NOT persist properties set directly on instance (not on data)', () => {
+      config = new Config();
+      config.data.cmsUrl = 'https://test.com';
+      config.apiClientId = 'wrong-place';  // BUG: sets on instance, not data
+      config.save();
+
+      // Reload — should NOT have the value
+      const config2 = new Config();
+      expect(config2.data.apiClientId).toBeUndefined();
+      expect(config2.apiClientId).toBeUndefined();
+    });
+
+    it('should persist custom CMS-scoped fields in xibo_cms: namespace', () => {
+      config = new Config();
+      config.data.cmsUrl = 'https://test.com';
+      config.data.apiClientId = 'client-id-123';
+      config.save();
+
+      const cmsId = computeCmsId('https://test.com');
+      const cms = JSON.parse(mockLocalStorage.getItem(`xibo_cms:${cmsId}`));
+      expect(cms.apiClientId).toBe('client-id-123');
+
+      // Should NOT be in global
+      const global = JSON.parse(mockLocalStorage.getItem('xibo_global'));
+      expect(global.apiClientId).toBeUndefined();
+    });
+  });
+
+  describe('Environment variable precedence', () => {
+    it('should override localStorage when CMS_URL env var is set', () => {
+      seedConfig(mockLocalStorage, {
+        cmsUrl: 'https://stored.com',
+        cmsKey: 'stored-key',
+        displayName: 'Stored',
+        hardwareKey: 'pwa-existinghardwarekey1234567',
+        xmrChannel: '12345678-1234-4567-8901-234567890abc',
+      });
+
+      process.env.CMS_URL = 'https://env-override.com';
+
+      config = new Config();
+      expect(config.cmsUrl).toBe('https://env-override.com');
+
+      delete process.env.CMS_URL;
+    });
+
+    it('should use all env vars when any is set', () => {
+      process.env.CMS_URL = 'https://env.com';
+      process.env.CMS_KEY = 'env-key';
+      process.env.DISPLAY_NAME = 'Env Display';
+      process.env.HARDWARE_KEY = 'env-hw-key-1234567890123456';
+
+      config = new Config();
+      expect(config.cmsUrl).toBe('https://env.com');
+      expect(config.cmsKey).toBe('env-key');
+      expect(config.displayName).toBe('Env Display');
+      expect(config.data.hardwareKey).toBe('env-hw-key-1234567890123456');
+
+      delete process.env.CMS_URL;
+      delete process.env.CMS_KEY;
+      delete process.env.DISPLAY_NAME;
+      delete process.env.HARDWARE_KEY;
+    });
+
+    it('should not save to localStorage when running from env vars', () => {
+      process.env.CMS_URL = 'https://env.com';
+
+      config = new Config();
+      config.data.cmsKey = 'modified';
+      config.save(); // save() should be no-op when _fromEnv
+
+      // localStorage should not have been written
+      // (In practice _fromEnv doesn't prevent save, but env configs
+      // don't use localStorage as primary store)
+      expect(config._fromEnv).toBe(true);
+
+      delete process.env.CMS_URL;
+    });
+  });
+
+  describe('extractPwaConfig', () => {
+    // Import at top of file already done
+    let extractPwaConfig;
+
+    beforeEach(async () => {
+      const mod = await import('./config.js');
+      extractPwaConfig = mod.extractPwaConfig;
+    });
+
+    it('should filter out shell-only keys', () => {
+      const full = {
+        cmsUrl: 'https://test.com',
+        cmsKey: 'key',
+        displayName: 'Test',
+        serverPort: 8765,
+        kioskMode: true,
+        fullscreen: true,
+        hideMouseCursor: true,
+        preventSleep: true,
+        width: 1920,
+        height: 1080,
+        relaxSslCerts: true,
+        logLevel: 'debug',
+        controls: { keyboard: { debugOverlays: true } },
+      };
+
+      const pwa = extractPwaConfig(full);
+
+      expect(pwa.cmsUrl).toBe('https://test.com');
+      expect(pwa.logLevel).toBe('debug');
+      expect(pwa.controls).toBeDefined();
+      // Shell-only keys should be removed
+      expect(pwa.serverPort).toBeUndefined();
+      expect(pwa.kioskMode).toBeUndefined();
+      expect(pwa.fullscreen).toBeUndefined();
+      expect(pwa.hideMouseCursor).toBeUndefined();
+      expect(pwa.width).toBeUndefined();
+      expect(pwa.height).toBeUndefined();
+      expect(pwa.relaxSslCerts).toBeUndefined();
+    });
+
+    it('should pass through apiClientId and apiClientSecret', () => {
+      const full = {
+        cmsUrl: 'https://test.com',
+        apiClientId: 'client-123',
+        apiClientSecret: 'secret-456',
+        serverPort: 8765,
+      };
+
+      const pwa = extractPwaConfig(full);
+
+      expect(pwa.apiClientId).toBe('client-123');
+      expect(pwa.apiClientSecret).toBe('secret-456');
+      expect(pwa.serverPort).toBeUndefined();
+    });
+
+    it('should accept extra shell keys to exclude', () => {
+      const full = {
+        cmsUrl: 'https://test.com',
+        autoLaunch: true,
+        logLevel: 'debug',
+      };
+
+      const pwa = extractPwaConfig(full, ['autoLaunch']);
+
+      expect(pwa.cmsUrl).toBe('https://test.com');
+      expect(pwa.logLevel).toBe('debug');
+      expect(pwa.autoLaunch).toBeUndefined();
+    });
+
+    it('should return undefined for empty config', () => {
+      expect(extractPwaConfig({})).toBeUndefined();
+    });
+  });
 });

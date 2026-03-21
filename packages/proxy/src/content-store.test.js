@@ -114,4 +114,75 @@ describe('ContentStore', () => {
       expect(size).toBeGreaterThanOrEqual(6);
     });
   });
+
+  describe('write locks (concurrent write prevention)', () => {
+    it('should allow first createTempWrite and block second for same chunk', async () => {
+      const key = 'media/file/locked.mp4';
+
+      const handle1 = store.createTempWrite(key, 0);
+      expect(handle1).not.toBeNull();
+      expect(store.isWriteLocked(key, 0)).toBe(true);
+
+      // Second write to same chunk should be blocked
+      const handle2 = store.createTempWrite(key, 0);
+      expect(handle2).toBeNull();
+
+      // Write data and commit to release the lock
+      handle1.writeStream.write(Buffer.from('data'));
+      await new Promise(r => handle1.writeStream.end(r));
+      handle1.commit({ contentType: 'video/mp4', numChunks: 2, chunkSize: 1024 });
+      expect(store.isWriteLocked(key, 0)).toBe(false);
+    });
+
+    it('should allow writes to different chunks concurrently', async () => {
+      const key = 'media/file/multi.mp4';
+
+      const handle0 = store.createTempWrite(key, 0);
+      const handle1 = store.createTempWrite(key, 1);
+
+      expect(handle0).not.toBeNull();
+      expect(handle1).not.toBeNull();
+
+      handle0.writeStream.write(Buffer.from('chunk0'));
+      handle1.writeStream.write(Buffer.from('chunk1'));
+      await Promise.all([
+        new Promise(r => handle0.writeStream.end(r)),
+        new Promise(r => handle1.writeStream.end(r)),
+      ]);
+      handle0.commit({ contentType: 'video/mp4', numChunks: 2, chunkSize: 1024 });
+      handle1.commit({ contentType: 'video/mp4', numChunks: 2, chunkSize: 1024 });
+    });
+
+    it('should release lock on abort', () => {
+      const key = 'media/file/aborted.mp4';
+
+      const handle = store.createTempWrite(key, 0);
+      expect(handle).not.toBeNull();
+      expect(store.isWriteLocked(key, 0)).toBe(true);
+
+      handle.abort();
+      expect(store.isWriteLocked(key, 0)).toBe(false);
+
+      // Should allow a new write after abort
+      const handle2 = store.createTempWrite(key, 0);
+      expect(handle2).not.toBeNull();
+      handle2.abort();
+    });
+
+    it('should allow write to whole file (not chunked)', async () => {
+      const key = 'media/file/whole.png';
+
+      const handle = store.createTempWrite(key, null);
+      expect(handle).not.toBeNull();
+
+      // Second write to same whole file should be blocked
+      const handle2 = store.createTempWrite(key, null);
+      expect(handle2).toBeNull();
+
+      handle.writeStream.write(Buffer.from('image data'));
+      await new Promise(r => handle.writeStream.end(r));
+      handle.commit({ contentType: 'image/png', size: 10 });
+      expect(store.isWriteLocked(key, null)).toBe(false);
+    });
+  });
 });

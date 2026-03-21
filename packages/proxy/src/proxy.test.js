@@ -182,3 +182,97 @@ describe('IC HTTP API routes', () => {
     expect(res.body).not.toContain('hardwareKey');
   });
 });
+
+describe('POST /config — runtime config updates', () => {
+  let configDir;
+
+  beforeAll(() => {
+    configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proxy-config-test-'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(configDir, { recursive: true, force: true });
+  });
+
+  function makeConfigApp(initialConfig = {}) {
+    const configFile = path.join(configDir, `config-${Date.now()}.json`);
+    if (Object.keys(initialConfig).length > 0) {
+      fs.writeFileSync(configFile, JSON.stringify(initialConfig));
+    }
+    return createProxyApp({
+      pwaPath,
+      appVersion: '0.0.0-test',
+      pwaConfig: initialConfig,
+      configFilePath: configFile,
+    });
+  }
+
+  it('POST /config merges cmsUrl into config', async () => {
+    const app = makeConfigApp();
+    const res = await jsonRequest(app, 'POST', '/config', {
+      cmsUrl: 'https://new-cms.example.com',
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('POST /config returns 400 without cmsUrl or sync', async () => {
+    const app = makeConfigApp();
+    const res = await jsonRequest(app, 'POST', '/config', {
+      displayName: 'test',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /config merges apiClientId and apiClientSecret', async () => {
+    const configFile = path.join(configDir, `config-api-${Date.now()}.json`);
+    fs.writeFileSync(configFile, JSON.stringify({
+      cmsUrl: 'https://test.com',
+      cmsKey: 'key',
+    }));
+
+    const app = createProxyApp({
+      pwaPath,
+      appVersion: '0.0.0-test',
+      pwaConfig: { cmsUrl: 'https://test.com', cmsKey: 'key' },
+      configFilePath: configFile,
+    });
+
+    // First POST the CMS URL (required field)
+    await jsonRequest(app, 'POST', '/config', {
+      cmsUrl: 'https://test.com',
+      apiClientId: 'client-abc',
+      apiClientSecret: 'secret-xyz',
+    });
+
+    // Verify config file was written with the API credentials
+    const saved = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    expect(saved.apiClientId).toBe('client-abc');
+    expect(saved.apiClientSecret).toBe('secret-xyz');
+  });
+
+  it('POST /config preserves existing fields when merging new ones', async () => {
+    const configFile = path.join(configDir, `config-merge-${Date.now()}.json`);
+    fs.writeFileSync(configFile, JSON.stringify({
+      cmsUrl: 'https://test.com',
+      cmsKey: 'existing-key',
+      displayName: 'Existing Display',
+    }));
+
+    const app = createProxyApp({
+      pwaPath,
+      appVersion: '0.0.0-test',
+      pwaConfig: { cmsUrl: 'https://test.com', cmsKey: 'existing-key', displayName: 'Existing Display' },
+      configFilePath: configFile,
+    });
+
+    await jsonRequest(app, 'POST', '/config', {
+      cmsUrl: 'https://test.com',
+      apiClientId: 'new-client',
+    });
+
+    const saved = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    expect(saved.cmsKey).toBe('existing-key');     // preserved
+    expect(saved.displayName).toBe('Existing Display');  // preserved
+    expect(saved.apiClientId).toBe('new-client');   // added
+  });
+});

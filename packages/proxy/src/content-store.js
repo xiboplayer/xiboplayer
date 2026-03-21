@@ -37,6 +37,14 @@ export class ContentStore {
    */
   constructor(storeDir) {
     this.storeDir = storeDir;
+    /** @type {Set<string>} Paths currently being written (prevents concurrent writes to same chunk) */
+    this._writeLocks = new Set();
+  }
+
+  /** Check if a chunk write is currently in progress */
+  isWriteLocked(key, chunkIndex) {
+    const lockKey = chunkIndex != null ? this._chunkPath(key, chunkIndex) : this._filePath(key);
+    return this._writeLocks.has(lockKey);
   }
 
   /** Ensure the store directory exists */
@@ -275,19 +283,38 @@ export class ContentStore {
    * @param {number|null} chunkIndex — null for whole file, number for chunk
    * @returns {{ writeStream: fs.WriteStream, commit: (metadata: object) => void }}
    */
+  /**
+   * Create a temp-write handle for atomically writing a file or chunk.
+   * Returns null if a write is already in progress for this path (prevents
+   * concurrent writes to the same chunk — race condition #1).
+   *
+   * @returns {{ writeStream, commit, abort } | null}
+   */
   createTempWrite(key, chunkIndex) {
-    let finalPath, tmpPath;
+    let finalPath;
     if (chunkIndex != null) {
       finalPath = this._chunkPath(key, chunkIndex);
     } else {
       finalPath = this._filePath(key);
     }
-    tmpPath = finalPath + '.tmp';
+
+    // Acquire write lock — reject concurrent writes to same path
+    if (this._writeLocks.has(finalPath)) {
+      return null;
+    }
+    this._writeLocks.add(finalPath);
+
+    const tmpPath = finalPath + '.tmp';
     fs.mkdirSync(path.dirname(finalPath), { recursive: true });
     const writeStream = fs.createWriteStream(tmpPath);
+    // Prevent unhandled error crashes (caller attaches its own error handler)
+    writeStream.on('error', () => {});
+
+    const releaseLock = () => { this._writeLocks.delete(finalPath); };
 
     const commit = (metadata) => {
       fs.renameSync(tmpPath, finalPath);
+      releaseLock();
       if (chunkIndex != null) {
         // Write/update chunk metadata
         const metaPath = this._chunkMetaPath(key);
@@ -309,6 +336,7 @@ export class ContentStore {
     };
 
     const abort = () => {
+      releaseLock();
       try { fs.unlinkSync(tmpPath); } catch {}
     };
 

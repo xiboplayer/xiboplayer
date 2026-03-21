@@ -59,6 +59,7 @@ export class RendererLite {
   nextWidget(regionId?: string): void;
   previousWidget(regionId?: string): void;
 
+  resumeRegionMedia(regionId: string): void;
   pause(): void;
   resume(): void;
   isPaused(): boolean;
