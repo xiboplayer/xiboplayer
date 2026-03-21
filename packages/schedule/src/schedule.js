@@ -6,7 +6,7 @@
 
 import { createLogger } from '@xiboplayer/utils';
 import { evaluateCriteria } from './criteria.js';
-import { buildScheduleQueue, parseLayoutFile } from './timeline.js';
+import { buildScheduleQueue, canSimulatedPlay, parseLayoutFile } from './timeline.js';
 
 const log = createLogger('Schedule');
 
@@ -531,41 +531,8 @@ export class ScheduleManager {
    * @returns {boolean} True if layout can play, false if exceeded limit
    */
   canPlayLayout(layoutId, maxPlaysPerHour) {
-    // If maxPlaysPerHour is 0 or undefined, unlimited plays
-    if (!maxPlaysPerHour || maxPlaysPerHour === 0) {
-      return true;
-    }
-
-    const now = Date.now();
-    const oneHourAgo = now - (60 * 60 * 1000);
-
-    // Get play history for this layout
     const history = this.playHistory.get(layoutId) || [];
-
-    // Filter to plays within the last hour
-    const playsInLastHour = history.filter(timestamp => timestamp > oneHourAgo);
-
-    // Check 1: Total plays in last hour must be under limit
-    if (playsInLastHour.length >= maxPlaysPerHour) {
-      log.info(`Layout ${layoutId} has reached max plays per hour (${playsInLastHour.length}/${maxPlaysPerHour})`);
-      return false;
-    }
-
-    // Check 2: Minimum gap between plays for even distribution
-    // e.g., 3/hour → 1 every 20 min, 6/hour → 1 every 10 min
-    if (playsInLastHour.length > 0) {
-      const minGapMs = (60 * 60 * 1000) / maxPlaysPerHour;
-      const lastPlayTime = Math.max(...playsInLastHour);
-      const elapsed = now - lastPlayTime;
-
-      if (elapsed < minGapMs) {
-        const remainingMin = ((minGapMs - elapsed) / 60000).toFixed(1);
-        log.info(`Layout ${layoutId} spacing: next play in ${remainingMin} min (${playsInLastHour.length}/${maxPlaysPerHour} plays, ${Math.round(minGapMs/60000)} min gap)`);
-        return false;
-      }
-    }
-
-    return true;
+    return canSimulatedPlay(history, maxPlaysPerHour, Date.now());
   }
 
   /**

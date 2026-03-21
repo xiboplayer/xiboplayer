@@ -162,6 +162,13 @@ describe('OverlayScheduler', () => {
     it('filters by geo-fence when isGeoAware', () => {
       const mockScheduleManager = {
         isWithinGeoFence: () => false,
+        isTimeActive: (item, now) => {
+          const from = item.fromdt ? new Date(item.fromdt) : null;
+          const to = item.todt ? new Date(item.todt) : null;
+          if (from && now < from) return false;
+          if (to && now > to) return false;
+          return true;
+        },
       };
       scheduler.setScheduleManager(mockScheduleManager);
 

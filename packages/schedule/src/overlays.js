@@ -111,23 +111,29 @@ export class OverlayScheduler {
   }
 
   /**
-   * Check if overlay is within its time window
+   * Check if overlay is within its time window.
+   * Delegates to ScheduleManager.isTimeActive() which handles both
+   * simple date ranges and recurring schedule dayparting.
+   * Falls back to basic date-range check if no scheduleManager is set.
+   *
    * @param {Object} overlay - Overlay object
    * @param {Date} now - Current time
    * @returns {boolean}
    */
   isTimeActive(overlay, now) {
+    if (this.scheduleManager) {
+      // Normalize fromDt → fromdt for ScheduleManager compatibility
+      const normalized = { ...overlay };
+      if (!normalized.fromdt && normalized.fromDt) normalized.fromdt = normalized.fromDt;
+      if (!normalized.todt && normalized.toDt) normalized.todt = normalized.toDt;
+      return this.scheduleManager.isTimeActive(normalized, now);
+    }
+
+    // Fallback: basic date-range check (no scheduleManager available)
     const from = (overlay.fromdt || overlay.fromDt) ? new Date(overlay.fromdt || overlay.fromDt) : null;
     const to = (overlay.todt || overlay.toDt) ? new Date(overlay.todt || overlay.toDt) : null;
-
-    // Check time bounds
-    if (from && now < from) {
-      return false;
-    }
-    if (to && now > to) {
-      return false;
-    }
-
+    if (from && now < from) return false;
+    if (to && now > to) return false;
     return true;
   }
 

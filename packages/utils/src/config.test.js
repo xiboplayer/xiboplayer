@@ -499,16 +499,18 @@ describe('Config', () => {
       warnPlatformMismatch({ browser: 'chrome', cmsUrl: 'https://test.com' }, 'electron');
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
-      expect(warnSpy.mock.calls[0][0]).toContain('browser');
-      expect(warnSpy.mock.calls[0][0]).toContain('chromium');
+      // Logger outputs: console.warn(timestamp_prefix, message) — message is in args[1]
+      expect(warnSpy.mock.calls[0][1]).toContain('browser');
+      expect(warnSpy.mock.calls[0][1]).toContain('chromium');
     });
 
     it('should warn when Electron-only key is used in Chromium', () => {
       warnPlatformMismatch({ autoLaunch: true }, 'chromium');
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
-      expect(warnSpy.mock.calls[0][0]).toContain('autoLaunch');
-      expect(warnSpy.mock.calls[0][0]).toContain('electron');
+      // Logger outputs: console.warn(timestamp_prefix, message) — message is in args[1]
+      expect(warnSpy.mock.calls[0][1]).toContain('autoLaunch');
+      expect(warnSpy.mock.calls[0][1]).toContain('electron');
     });
 
     it('should not warn for shared keys', () => {

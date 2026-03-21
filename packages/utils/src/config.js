@@ -14,6 +14,9 @@
  */
 import { generateRsaKeyPair, isValidPemKey } from '@xiboplayer/crypto';
 import { openIDB } from './idb.js';
+import { createLogger } from './logger.js';
+
+const log = createLogger('Config');
 
 const GLOBAL_KEY = 'xibo_global';         // Device identity (all CMSes)
 const CMS_PREFIX = 'xibo_cms:';           // Per-CMS config prefix
@@ -135,7 +138,7 @@ export class Config {
     try {
       global = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
     } catch (e) {
-      console.error('[Config] Failed to parse xibo_global:', e);
+      log.error('Failed to parse xibo_global:', e);
     }
 
     // Determine active CMS
@@ -148,7 +151,7 @@ export class Config {
         const cmsJson = localStorage.getItem(CMS_PREFIX + activeCmsId);
         if (cmsJson) cmsConfig = JSON.parse(cmsJson);
       } catch (e) {
-        console.error('[Config] Failed to parse CMS config:', e);
+        log.error('Failed to parse CMS config:', e);
       }
     }
 
@@ -175,16 +178,16 @@ export class Config {
     let changed = false;
 
     if (!config.hardwareKey || config.hardwareKey.length < 10) {
-      console.warn('[Config] Missing/invalid hardwareKey — generating');
+      log.warn('Missing/invalid hardwareKey — generating');
       config.hardwareKey = this.generateStableHardwareKey();
       this._backupHardwareKey(config.hardwareKey);
       changed = true;
     } else {
-      console.log('[Config] ✓ Loaded existing hardwareKey:', config.hardwareKey);
+      log.info('✓ Loaded existing hardwareKey:', config.hardwareKey);
     }
 
     if (!config.xmrChannel) {
-      console.warn('[Config] Missing xmrChannel — generating');
+      log.warn('Missing xmrChannel — generating');
       config.xmrChannel = this.generateXmrChannel();
       changed = true;
     }
@@ -265,12 +268,12 @@ export class Config {
       try {
         cmsConfig = JSON.parse(existingJson);
         isNew = false;
-        console.log(`[Config] Switching to existing CMS profile: ${newCmsId}`);
+        log.info(`Switching to existing CMS profile: ${newCmsId}`);
       } catch (e) {
-        console.error('[Config] Failed to parse target CMS config:', e);
+        log.error('Failed to parse target CMS config:', e);
       }
     } else {
-      console.log(`[Config] Creating new CMS profile: ${newCmsId}`);
+      log.info(`Creating new CMS profile: ${newCmsId}`);
       cmsConfig = {
         cmsUrl,
         cmsKey: '',
@@ -361,7 +364,7 @@ export class Config {
         store.put(v, k);
       }
       tx.oncomplete = () => {
-        console.log('[Config] Keys backed up to IndexedDB:', Object.keys(keys).join(', '));
+        log.info('Keys backed up to IndexedDB:', Object.keys(keys).join(', '));
         db.close();
       };
     } catch (e) {
@@ -395,8 +398,8 @@ export class Config {
       db.close();
 
       if (backedUpKey && backedUpKey !== this.data.hardwareKey) {
-        console.log('[Config] Restoring hardware key from IndexedDB backup:', backedUpKey);
-        console.log('[Config] (was:', this.data.hardwareKey, ')');
+        log.info('Restoring hardware key from IndexedDB backup:', backedUpKey);
+        log.info('(was:', this.data.hardwareKey, ')');
         this.data.hardwareKey = backedUpKey;
         this.save();
       } else if (!backedUpKey && this.data.hardwareKey) {
@@ -417,7 +420,7 @@ export class Config {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       const uuid = crypto.randomUUID().replace(/-/g, ''); // Remove dashes
       const hardwareKey = 'pwa-' + uuid.substring(0, 28);
-      console.log('[Config] Generated new UUID-based hardware key:', hardwareKey);
+      log.info('Generated new UUID-based hardware key:', hardwareKey);
       return hardwareKey;
     }
 
@@ -427,7 +430,7 @@ export class Config {
     ).join('');
 
     const hardwareKey = 'pwa-' + randomHex;
-    console.log('[Config] Generated new random hardware key:', hardwareKey);
+    log.info('Generated new random hardware key:', hardwareKey);
     return hardwareKey;
   }
 
@@ -450,7 +453,7 @@ export class Config {
       return;
     }
 
-    console.log('[Config] Generating RSA key pair for XMR registration...');
+    log.info('Generating RSA key pair for XMR registration...');
     const { publicKeyPem, privateKeyPem } = await generateRsaKeyPair();
 
     this.data.xmrPubKey = publicKeyPem;
@@ -462,7 +465,7 @@ export class Config {
       this._backupKeys({ xmrPubKey: publicKeyPem, xmrPrivKey: privateKeyPem });
     }
 
-    console.log('[Config] RSA key pair generated and saved');
+    log.info('RSA key pair generated and saved');
   }
 
   get cmsUrl() { return this.data.cmsUrl; }
@@ -477,7 +480,7 @@ export class Config {
   get hardwareKey() {
     // CRITICAL: Ensure hardware key never becomes undefined
     if (!this.data.hardwareKey) {
-      console.error('[Config] CRITICAL: hardwareKey missing! Generating emergency key.');
+      log.error('CRITICAL: hardwareKey missing! Generating emergency key.');
       this.data.hardwareKey = this.generateStableHardwareKey();
       this.save();
     }
@@ -485,7 +488,7 @@ export class Config {
   }
   get xmrChannel() {
     if (!this.data.xmrChannel) {
-      console.warn('[Config] xmrChannel missing at access time — generating');
+      log.warn('xmrChannel missing at access time — generating');
       this.data.xmrChannel = this.generateXmrChannel();
       this.save();
     }
@@ -538,8 +541,8 @@ export function warnPlatformMismatch(configObj, platform) {
   const p = platform.toLowerCase();
   for (const [key, platforms] of Object.entries(PLATFORM_KEYS)) {
     if (key in configObj && !platforms.includes(p)) {
-      console.warn(
-        `[Config] Key "${key}" is only supported on ${platforms.join('/')}, ` +
+      log.warn(
+        `Key "${key}" is only supported on ${platforms.join('/')}, ` +
         `but current platform is ${p} — this key will be ignored`
       );
     }

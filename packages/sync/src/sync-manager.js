@@ -90,10 +90,6 @@ export class SyncManager {
     this._log = createLogger(this.isLead ? 'Sync:LEAD' : 'Sync:FOLLOW');
   }
 
-  /** Backward-compatible alias for transport */
-  get channel() { return this.transport; }
-  set channel(v) { this.transport = v; }
-
   /**
    * Start the sync manager — selects transport, begins heartbeats.
    */

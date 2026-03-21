@@ -22,6 +22,9 @@
 
 import fs from 'fs';
 import path from 'path';
+import { createLogger } from '@xiboplayer/utils';
+
+const log = createLogger('ContentStore');
 
 /**
  * Sanitize a store key into a safe relative path.
@@ -50,7 +53,7 @@ export class ContentStore {
   /** Ensure the store directory exists */
   init() {
     fs.mkdirSync(this.storeDir, { recursive: true });
-    console.log(`[ContentStore] Initialized: ${this.storeDir}`);
+    log.info(`Initialized: ${this.storeDir}`);
   }
 
   // ── Path helpers ──────────────────────────────────────────────────

@@ -112,8 +112,6 @@ export class SyncManager {
   syncConfig: SyncConfig;
   isLead: boolean;
   transport: SyncTransport | null;
-  /** Backward-compatible alias for transport */
-  channel: SyncTransport | null;
   followers: Map<string, any>;
 
   start(): void;

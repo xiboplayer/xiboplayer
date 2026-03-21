@@ -112,7 +112,7 @@ function arraysEqual(a, b) {
  * @param {number} timeMs - Current simulated time in ms
  * @returns {boolean}
  */
-function canSimulatedPlay(history, maxPlaysPerHour, timeMs) {
+export function canSimulatedPlay(history, maxPlaysPerHour, timeMs) {
   if (!maxPlaysPerHour || maxPlaysPerHour === 0) return true;
 
   const oneHourAgo = timeMs - 3600000;
