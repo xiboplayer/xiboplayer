@@ -640,11 +640,7 @@ class PwaPlayer {
       }
 
       // Report fault to CMS (triggers dashboard alert)
-      this.logReporter?.reportFault(
-        'COLLECTION_FAILED',
-        `Collection cycle failed: ${error?.message || error}`
-      );
-      this.submitFault('COLLECTION_FAILED', `Collection cycle failed: ${error?.message || error}`);
+      this.reportFault('COLLECTION_FAILED', `Collection cycle failed: ${error?.message || error}`);
     });
 
     this.core.on(E.XMR_CONNECTED, (url: string) => {
@@ -998,11 +994,7 @@ class PwaPlayer {
     this.core.on(E.COMMAND_RESULT, (result: any) => {
       log.info('Command result:', result);
       if (!result.success) {
-        this.logReporter?.reportFault(
-          'COMMAND_FAILED',
-          `Command ${result.code} failed: ${result.reason || 'unknown'}`
-        );
-        this.submitFault('COMMAND_FAILED', `Command ${result.code} failed: ${result.reason || 'unknown'}`);
+        this.reportFault('COMMAND_FAILED', `Command ${result.code} failed: ${result.reason || 'unknown'}`);
       }
     });
 
@@ -1302,11 +1294,7 @@ class PwaPlayer {
 
       case '/fault': {
         const data = this.parseBody(body);
-        this.logReporter?.reportFault(
-          data.code || 'WIDGET_FAULT',
-          data.reason || 'Widget reported fault'
-        );
-        this.submitFault(data.code || 'WIDGET_FAULT', data.reason || 'Widget reported fault', {
+        this.reportFault(data.code || 'WIDGET_FAULT', data.reason || 'Widget reported fault', {
           layoutId: data.layoutId,
           regionId: data.regionId,
           widgetId: data.widgetId
@@ -1706,11 +1694,7 @@ class PwaPlayer {
       this.updateStatus(`Error: ${error.type}`, 'error');
 
       // Report fault to CMS (triggers dashboard alert)
-      this.logReporter?.reportFault(
-        error.type || 'RENDERER_ERROR',
-        `Renderer error: ${error.message || error.type} (layout ${error.layoutId || 'unknown'})`
-      );
-      this.submitFault(error.type || 'RENDERER_ERROR', `Renderer error: ${error.message || error.type}`, {
+      this.reportFault(error.type || 'RENDERER_ERROR', `Renderer error: ${error.message || error.type}`, {
         layoutId: error.layoutId,
         regionId: error.regionId,
         widgetId: error.widgetId
@@ -1962,11 +1946,7 @@ class PwaPlayer {
       this.updateStatus(`Failed to load layout ${layoutId}`, 'error');
 
       // Report fault to CMS (triggers dashboard alert)
-      this.logReporter?.reportFault(
-        'LAYOUT_LOAD_FAILED',
-        `Failed to prepare layout ${layoutId}: ${error?.message || error}`
-      );
-      this.submitFault('LAYOUT_LOAD_FAILED', `Failed to prepare layout ${layoutId}: ${error?.message || error}`, {
+      this.reportFault('LAYOUT_LOAD_FAILED', `Failed to prepare layout ${layoutId}: ${error?.message || error}`, {
         layoutId
       });
     } finally {
@@ -2280,120 +2260,116 @@ class PwaPlayer {
   }
 
   /**
+   * Generic submission pipeline for stats and logs.
+   * Handles in-flight guard, sync delegation, CMS submission, and cleanup.
+   */
+  private async submitCollectedData(options: {
+    name: string;
+    pendingFlag: '_pendingFollowerStats' | '_pendingFollowerLogs';
+    getItems: () => Promise<any[]>;
+    formatFn: (items: any[]) => string;
+    delegateFn: (xml: string) => void;
+    submitFn: (xml: string) => Promise<any>;
+    clearFn: (items: any[]) => Promise<void>;
+  }): Promise<void> {
+    const { name, pendingFlag, getItems, formatFn, delegateFn, submitFn, clearFn } = options;
+
+    // Guard: don't start a new delegation while one is in-flight
+    if (this[pendingFlag] !== null) {
+      log.debug(`${name} delegation in-flight, skipping`);
+      return;
+    }
+
+    try {
+      const items = await getItems();
+
+      if (items.length === 0) {
+        log.debug(`No ${name} to submit`);
+        return;
+      }
+
+      const xml = formatFn(items);
+
+      // Follower with live lead: delegate via BroadcastChannel
+      if (this.syncManager && !this.syncManager.isLead && this._syncLeadAlive()) {
+        log.info(`[Sync] Delegating ${items.length} ${name} to lead`);
+        this[pendingFlag] = items;
+        delegateFn(xml);
+        return;
+      }
+
+      // Lead, standalone, or lead-dead follower: submit directly
+      if (this.syncManager && !this.syncManager.isLead) {
+        log.warn(`[Sync] Lead not alive, submitting ${name} directly`);
+      }
+
+      log.info(`Submitting ${items.length} ${name} to CMS...`);
+
+      const success = await submitFn(xml);
+
+      if (success) {
+        log.info(`${name} submitted successfully`);
+        await clearFn(items);
+      } else {
+        log.warn(`${name} submission failed (CMS returned false)`);
+      }
+    } catch (error) {
+      log.error(`Failed to submit ${name}:`, error);
+    }
+  }
+
+  /**
    * Submit proof of play stats to CMS
    */
-  private async submitStats() {
+  private async submitStats(): Promise<void> {
     if (!this.statsCollector) {
       log.warn('Stats collector not initialized');
       return;
     }
 
-    // Guard: don't start a new delegation while one is in-flight
-    if (this._pendingFollowerStats !== null) {
-      log.debug('Stats delegation in-flight, skipping');
-      return;
-    }
+    const aggregationLevel = this.displaySettings?.getSetting('aggregationLevel') || 'Individual';
 
-    try {
-      // Get stats ready for submission (up to 50 at a time)
-      // Use aggregation level from CMS settings if available
-      const aggregationLevel = this.displaySettings?.getSetting('aggregationLevel') || 'Individual';
-      const stats = aggregationLevel === 'Aggregate'
-        ? await this.statsCollector.getAggregatedStatsForSubmission(50)
-        : await this.statsCollector.getStatsForSubmission(50);
-
-      if (stats.length === 0) {
-        log.debug('No stats to submit');
-        return;
-      }
-
-      // Format stats as XML
-      const statsXml = formatStats(stats);
-
-      // Follower with live lead: delegate stats via BroadcastChannel
-      if (this.syncManager && !this.syncManager.isLead && this._syncLeadAlive()) {
-        log.info(`[Sync] Delegating ${stats.length} stats to lead`);
-        this._pendingFollowerStats = stats;
-        this.syncManager.reportStats(statsXml);
-        return;
-      }
-
-      // Lead, standalone, or lead-dead follower: submit directly
-      if (this.syncManager && !this.syncManager.isLead) {
-        log.warn('[Sync] Lead not alive, submitting stats directly');
-      }
-
-      log.info(`Submitting ${stats.length} proof of play stats...`);
-
-      // Submit to CMS via XMDS
-      const success = await this.xmds.submitStats(statsXml);
-
-      if (success) {
-        log.info('Stats submitted successfully');
-        // Clear submitted stats from database
-        await this.statsCollector.clearSubmittedStats(stats);
-        log.debug(`Cleared ${stats.length} submitted stats from database`);
-      } else {
-        log.warn('Stats submission failed (CMS returned false)');
-      }
-    } catch (error) {
-      log.error('Failed to submit stats:', error);
-    }
+    await this.submitCollectedData({
+      name: 'stats',
+      pendingFlag: '_pendingFollowerStats',
+      getItems: async () => aggregationLevel === 'Aggregate'
+        ? this.statsCollector.getAggregatedStatsForSubmission(50)
+        : this.statsCollector.getStatsForSubmission(50),
+      formatFn: formatStats,
+      delegateFn: (xml) => this.syncManager.reportStats(xml),
+      submitFn: (xml) => this.xmds.submitStats(xml),
+      clearFn: (items) => this.statsCollector.clearSubmittedStats(items),
+    });
   }
 
   /**
    * Submit player logs to CMS for remote debugging
    */
-  private async submitLogs() {
+  private async submitLogs(): Promise<void> {
     if (!this.logReporter) return;
 
-    // Guard: don't start a new delegation while one is in-flight
-    if (this._pendingFollowerLogs !== null) {
-      log.debug('Logs delegation in-flight, skipping');
-      return;
-    }
+    await this.submitCollectedData({
+      name: 'logs',
+      pendingFlag: '_pendingFollowerLogs',
+      getItems: () => this.logReporter.getLogsForSubmission(),
+      formatFn: formatLogs,
+      delegateFn: (xml) => this.syncManager.reportLogs(xml),
+      submitFn: (xml) => this.xmds.submitLog(xml),
+      clearFn: (items) => this.logReporter.clearSubmittedLogs(items),
+    });
+  }
 
-    try {
-      const logs = await this.logReporter.getLogsForSubmission();
-
-      if (logs.length === 0) {
-        log.debug('No logs to submit');
-        return;
-      }
-
-      const logXml = formatLogs(logs);
-
-      // Follower with live lead: delegate logs via BroadcastChannel
-      if (this.syncManager && !this.syncManager.isLead && this._syncLeadAlive()) {
-        log.info(`[Sync] Delegating ${logs.length} logs to lead`);
-        this._pendingFollowerLogs = logs;
-        this.syncManager.reportLogs(logXml);
-        return;
-      }
-
-      // Lead, standalone, or lead-dead follower: submit directly
-      if (this.syncManager && !this.syncManager.isLead) {
-        log.warn('[Sync] Lead not alive, submitting logs directly');
-      }
-
-      log.info(`Submitting ${logs.length} logs to CMS...`);
-
-      const success = await this.xmds.submitLog(logXml);
-
-      if (success) {
-        log.info('Logs submitted successfully');
-        await this.logReporter.clearSubmittedLogs(logs);
-      } else {
-        log.warn('Log submission failed (CMS returned false)');
-      }
-    } catch (error) {
-      log.error('Failed to submit logs:', error);
-    }
+  /**
+   * Report a fault to both the log dashboard and the player_faults dashboard.
+   * Combines logReporter.reportFault() (log dashboard) with submitFault() (faults dashboard).
+   */
+  private reportFault(code: string, reason: string, details?: { layoutId?: number; regionId?: string; widgetId?: string }): void {
+    this.logReporter?.reportFault(code, reason);
+    this.submitFault(code, reason, details);
   }
 
   /**
    * Submit a fault report to CMS for the player_faults dashboard.
-   * Runs alongside logReporter.reportFault() which feeds the log dashboard.
    */
   private submitFault(code: string, reason: string, details?: { layoutId?: number; regionId?: string; widgetId?: string }) {
     if (!this.xmds) return;
