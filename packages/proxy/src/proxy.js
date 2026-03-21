@@ -25,14 +25,18 @@ import { getLanIp, advertiseSyncService, discoverSyncLead } from './discovery.js
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
 
+/** Parse a Range header into { start, end } byte offsets. */
+function parseRange(rangeHeader, totalSize) {
+  const parts = rangeHeader.replace(/bytes=/, '').split('-');
+  const start = parseInt(parts[0], 10);
+  const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+  return { start, end };
+}
+
 /** Redact sensitive query params (serverKey, hardwareKey, X-Amz-*) from URLs for logging */
 function redactUrl(url) {
   return url.replace(/(?<=[?&])(serverKey|hardwareKey|X-Amz-[^=]*)=[^&]*/gi, '$1=***');
 }
-
-// Server-side JWT token for v2 API requests.
-// Set once via POST /auth-token, injected into cache-through CMS requests.
-let _bearerToken = null;
 
 // Module-level loggers — one per subsystem, following @xiboplayer/utils conventions.
 // In Node (no window/localStorage), default level is WARNING. Pass 'INFO' explicitly
@@ -62,9 +66,7 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
   let isRange = false;
 
   if (rangeHeader) {
-    const parts = rangeHeader.replace(/bytes=/, '').split('-');
-    start = parseInt(parts[0], 10);
-    end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+    ({ start, end } = parseRange(rangeHeader, totalSize));
     isRange = true;
   }
 
@@ -157,6 +159,11 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
  */
 export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, configFilePath, dataDir, onLog, icHandler, allowShellCommands = false } = {}) {
   const app = express();
+
+  // Server-side JWT token for v2 API requests.
+  // Set once via POST /auth-token, injected into cache-through CMS requests.
+  // Scoped per app instance so each proxy has its own token.
+  let _bearerToken = null;
 
   // Override Player API base path if configured (before registering routes)
   if (pwaConfig?.playerApiBase) {
@@ -389,6 +396,20 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   if (icHandler) {
     const logIc = createLogger('XIC', 'INFO');
 
+    /** Create an IC POST route handler with uniform try/catch + respond pattern. */
+    function makeIcRoute(handlerKey, extractArgs, logFn) {
+      return async (req, res) => {
+        try {
+          const args = extractArgs(req.body || {});
+          logFn(...args);
+          if (icHandler[handlerKey]) await icHandler[handlerKey](...args);
+          res.json({ ok: true });
+        } catch (e) {
+          res.status(500).json({ error: e.message });
+        }
+      };
+    }
+
     app.get('/info', async (_req, res) => {
       try {
         const info = icHandler.getInfo ? await icHandler.getInfo() : { playerType: 'proxy' };
@@ -398,60 +419,35 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       }
     });
 
-    app.post('/trigger', async (req, res) => {
-      const { id, trigger } = req.body || {};
-      logIc.info(`/trigger: widget=${id} trigger=${trigger}`);
-      try {
-        if (icHandler.handleTrigger) await icHandler.handleTrigger(id, trigger);
-        res.json({ ok: true });
-      } catch (e) {
-        res.status(500).json({ error: e.message });
-      }
-    });
+    app.post('/trigger', makeIcRoute(
+      'handleTrigger',
+      ({ id, trigger }) => [id, trigger],
+      (id, trigger) => logIc.info(`/trigger: widget=${id} trigger=${trigger}`),
+    ));
 
-    app.post('/duration/expire', async (req, res) => {
-      const { id } = req.body || {};
-      logIc.info(`/duration/expire: widget=${id}`);
-      try {
-        if (icHandler.handleExpire) await icHandler.handleExpire(id);
-        res.json({ ok: true });
-      } catch (e) {
-        res.status(500).json({ error: e.message });
-      }
-    });
+    app.post('/duration/expire', makeIcRoute(
+      'handleExpire',
+      ({ id }) => [id],
+      (id) => logIc.info(`/duration/expire: widget=${id}`),
+    ));
 
-    app.post('/duration/extend', async (req, res) => {
-      const { id, duration } = req.body || {};
-      logIc.info(`/duration/extend: widget=${id} +${duration}s`);
-      try {
-        if (icHandler.handleExtend) await icHandler.handleExtend(id, parseInt(duration));
-        res.json({ ok: true });
-      } catch (e) {
-        res.status(500).json({ error: e.message });
-      }
-    });
+    app.post('/duration/extend', makeIcRoute(
+      'handleExtend',
+      ({ id, duration }) => [id, parseInt(duration)],
+      (id, duration) => logIc.info(`/duration/extend: widget=${id} +${duration}s`),
+    ));
 
-    app.post('/duration/set', async (req, res) => {
-      const { id, duration } = req.body || {};
-      logIc.info(`/duration/set: widget=${id} duration=${duration}s`);
-      try {
-        if (icHandler.handleSetDuration) await icHandler.handleSetDuration(id, parseInt(duration));
-        res.json({ ok: true });
-      } catch (e) {
-        res.status(500).json({ error: e.message });
-      }
-    });
+    app.post('/duration/set', makeIcRoute(
+      'handleSetDuration',
+      ({ id, duration }) => [id, parseInt(duration)],
+      (id, duration) => logIc.info(`/duration/set: widget=${id} duration=${duration}s`),
+    ));
 
-    app.post('/fault', async (req, res) => {
-      const { code, reason, key, ttl } = req.body || {};
-      logIc.warn(`/fault: code=${code} reason=${reason}`);
-      try {
-        if (icHandler.handleFault) await icHandler.handleFault(code, reason, key, ttl);
-        res.json({ ok: true });
-      } catch (e) {
-        res.status(500).json({ error: e.message });
-      }
-    });
+    app.post('/fault', makeIcRoute(
+      'handleFault',
+      ({ code, reason, key, ttl }) => [code, reason, key, ttl],
+      (code, reason) => logIc.warn(`/fault: code=${code} reason=${reason}`),
+    ));
 
     app.get('/realtime', async (req, res) => {
       const dataKey = req.query.dataKey;
@@ -719,9 +715,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     const rangeHeader = req.headers.range;
 
     if (rangeHeader) {
-      const parts = rangeHeader.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const { start, end } = parseRange(rangeHeader, fileSize);
       const chunkLen = end - start + 1;
 
       res.status(206);
@@ -1121,23 +1115,26 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
 
   /**
    * Send index.html, optionally injecting the CMS config script.
-   * The script is inserted right before the first <script> tag so it runs
-   * before the PWA's own config check.  Rebuilt on every request so that
+   * The raw HTML is cached after the first read (index.html never changes
+   * at runtime). The config script is rebuilt on every request so that
    * POST /config changes are picked up without restarting the server.
    */
+  let _cachedIndexHtml = null;
   function sendIndexHtml(res) {
-    const indexPath = path.join(pwaPath, 'index.html');
+    if (!_cachedIndexHtml) {
+      const indexPath = path.join(pwaPath, 'index.html');
+      _cachedIndexHtml = fs.readFileSync(indexPath, 'utf8');
+    }
     const cmsConfigScript = buildConfigScript();
     if (!cmsConfigScript) {
-      return res.sendFile(indexPath);
+      return res.type('html').send(_cachedIndexHtml);
     }
-    const html = fs.readFileSync(indexPath, 'utf8');
     // Insert before the first <script> tag, or before </head> if no scripts
     let injected;
-    if (html.includes('<script')) {
-      injected = html.replace('<script', cmsConfigScript + '<script');
+    if (_cachedIndexHtml.includes('<script')) {
+      injected = _cachedIndexHtml.replace('<script', cmsConfigScript + '<script');
     } else {
-      injected = html.replace('</head>', cmsConfigScript + '</head>');
+      injected = _cachedIndexHtml.replace('</head>', cmsConfigScript + '</head>');
     }
     res.type('html').send(injected);
   }
