@@ -219,7 +219,6 @@ export class RendererLite {
     this._paused = false;
     this._layoutTimerStartedAt = null;  // Date.now() when layout timer started
     this._layoutTimerDurationMs = null; // Total layout duration in ms
-    this.widgetTimers = new Map(); // widgetId => timer
     this.layoutBlobUrls = new Map(); // layoutId => Set<blobUrl> (for lifecycle tracking)
     this.audioOverlays = new Map(); // widgetId => [HTMLAudioElement] (audio overlays for widgets)
 
