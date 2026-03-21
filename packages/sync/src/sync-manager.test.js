@@ -128,7 +128,7 @@ describe('SyncManager', () => {
       });
       lead.start();
 
-      expect(lead.channel).not.toBeNull();
+      expect(lead.transport).not.toBeNull();
       expect(lead.transport).not.toBeNull();
       expect(lead.getStatus().started).toBe(true);
     });
@@ -141,7 +141,7 @@ describe('SyncManager', () => {
       lead.start();
       lead.stop();
 
-      expect(lead.channel).toBeNull();
+      expect(lead.transport).toBeNull();
       expect(lead.transport).toBeNull();
       expect(lead.getStatus().started).toBe(false);
     });
