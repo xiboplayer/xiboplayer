@@ -8,7 +8,7 @@ export { EventEmitter } from './event-emitter.js';
 import { config as _config } from './config.js';
 export { config, SHELL_ONLY_KEYS, extractPwaConfig, computeCmsId, warnPlatformMismatch } from './config.js';
 export { fetchWithRetry } from './fetch-retry.js';
-export { openIDB } from './idb.js';
+export { openIDB, queryByIndex, deleteByIds } from './idb.js';
 export { CmsApiClient, CmsApiError } from './cms-api.js';
 
 /**

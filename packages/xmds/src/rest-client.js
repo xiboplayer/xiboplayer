@@ -15,6 +15,7 @@
  * Same public API as XmdsClient — drop-in replacement.
  */
 import { createLogger, fetchWithRetry, PLAYER_API } from '@xiboplayer/utils';
+import { enrichStatus } from './status-enrichment.js';
 
 const log = createLogger('REST');
 
@@ -441,21 +442,7 @@ export class RestClient {
    * PUT /displays/{id}/status → JSON acknowledgement
    */
   async notifyStatus(status) {
-    if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
-      try {
-        const estimate = await navigator.storage.estimate();
-        status.availableSpace = estimate.quota - estimate.usage;
-        status.totalSpace = estimate.quota;
-      } catch (_) { /* storage estimate not supported */ }
-    }
-
-    if (!status.timeZone && typeof Intl !== 'undefined') {
-      status.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    }
-
-    if (!status.statusDialog) {
-      status.statusDialog = `Current Layout: ${status.currentLayoutId || 'None'}`;
-    }
+    await enrichStatus(status);
 
     return this.restSend('PUT', `/displays/${this._displayId}/status`, {
       statusData: status,

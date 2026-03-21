@@ -35,3 +35,57 @@ export function openIDB(dbName, version, storeName, options = {}) {
     req.onerror = () => reject(req.error);
   });
 }
+
+/**
+ * Query records from an IndexedDB index with a cursor, up to a limit.
+ * @param {IDBDatabase} db - IndexedDB database instance
+ * @param {string} storeName - Object store name
+ * @param {string} indexName - Index name
+ * @param {any} value - Key to query (passed to openCursor)
+ * @param {number} limit - Maximum records to return
+ * @returns {Promise<Array>}
+ */
+export function queryByIndex(db, storeName, indexName, value, limit) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([storeName], 'readonly');
+    const index = tx.objectStore(storeName).index(indexName);
+    const request = index.openCursor(value);
+    const results = [];
+
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor && results.length < limit) {
+        results.push(cursor.value);
+        cursor.continue();
+      } else {
+        resolve(results);
+      }
+    };
+    request.onerror = () => reject(new Error(`Index query failed: ${request.error}`));
+  });
+}
+
+/**
+ * Delete records by ID from an IndexedDB object store.
+ * @param {IDBDatabase} db - IndexedDB database instance
+ * @param {string} storeName - Object store name
+ * @param {Array} ids - Array of record IDs to delete
+ * @returns {Promise<number>} Number of deleted records
+ */
+export function deleteByIds(db, storeName, ids) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([storeName], 'readwrite');
+    const store = tx.objectStore(storeName);
+    let deleted = 0;
+
+    for (const id of ids) {
+      if (id) {
+        const req = store.delete(id);
+        req.onsuccess = () => { deleted++; };
+      }
+    }
+
+    tx.oncomplete = () => resolve(deleted);
+    tx.onerror = () => reject(new Error(`Delete failed: ${tx.error}`));
+  });
+}

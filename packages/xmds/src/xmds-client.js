@@ -9,6 +9,7 @@
  * Protocol: https://github.com/linuxnow/xibo_players_docs
  */
 import { createLogger, fetchWithRetry, PLAYER_API } from '@xiboplayer/utils';
+import { enrichStatus } from './status-enrichment.js';
 import { parseScheduleResponse } from './schedule-parser.js';
 
 const log = createLogger('XMDS');
@@ -335,24 +336,7 @@ export class XmdsClient {
    * @param {Object} status - Status object with currentLayoutId, deviceName, etc.
    */
   async notifyStatus(status) {
-    // Enrich with storage estimate if available
-    if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
-      try {
-        const estimate = await navigator.storage.estimate();
-        status.availableSpace = estimate.quota - estimate.usage;
-        status.totalSpace = estimate.quota;
-      } catch (_) { /* storage estimate not supported */ }
-    }
-
-    // Add timezone if not already provided
-    if (!status.timeZone && typeof Intl !== 'undefined') {
-      status.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    }
-
-    // Add statusDialog (summary for CMS display status page) if not provided
-    if (!status.statusDialog) {
-      status.statusDialog = `Current Layout: ${status.currentLayoutId || 'None'}`;
-    }
+    await enrichStatus(status);
 
     return await this.call('NotifyStatus', {
       serverKey: this.config.cmsKey,

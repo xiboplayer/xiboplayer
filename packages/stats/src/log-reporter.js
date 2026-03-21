@@ -9,7 +9,8 @@
  * @module @xiboplayer/stats/logger
  */
 
-import { createLogger, openIDB } from '@xiboplayer/utils';
+import { createLogger, openIDB, queryByIndex, deleteByIds } from '@xiboplayer/utils';
+import { formatDateTime, escapeXml } from './format-helpers.js';
 
 const log = createLogger('@xiboplayer/stats');
 
@@ -248,45 +249,14 @@ export class LogReporter {
     return this.log('debug', message, category);
   }
 
-  /** Query records from an IndexedDB index with a cursor, up to a limit. */
+  /** @see queryByIndex in @xiboplayer/utils/idb */
   _queryByIndex(storeName, indexName, keyValue, limit) {
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction([storeName], 'readonly');
-      const index = tx.objectStore(storeName).index(indexName);
-      const request = index.openCursor(keyValue);
-      const results = [];
-
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          resolve(results);
-        }
-      };
-      request.onerror = () => reject(new Error(`Index query failed: ${request.error}`));
-    });
+    return queryByIndex(this.db, storeName, indexName, keyValue, limit);
   }
 
-  /** Delete records by ID from an IndexedDB object store. */
+  /** @see deleteByIds in @xiboplayer/utils/idb */
   _deleteByIds(storeName, records) {
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction([storeName], 'readwrite');
-      const store = tx.objectStore(storeName);
-      let deleted = 0;
-
-      for (const record of records) {
-        if (record.id) {
-          const req = store.delete(record.id);
-          req.onsuccess = () => { deleted++; };
-          req.onerror = () => { log.error(`Failed to delete ${record.id}:`, req.error); };
-        }
-      }
-
-      tx.oncomplete = () => resolve(deleted);
-      tx.onerror = () => reject(new Error(`Delete failed: ${tx.error}`));
-    });
+    return deleteByIds(this.db, storeName, records.map(r => r.id));
   }
 
   /**
@@ -543,38 +513,3 @@ export function formatFaults(faults) {
   })));
 }
 
-/**
- * Format Date object as "YYYY-MM-DD HH:MM:SS"
- * @private
- */
-function formatDateTime(date) {
-  if (!(date instanceof Date)) {
-    date = new Date(date);
-  }
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
-
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
-/**
- * Escape XML special characters
- * @private
- */
-function escapeXml(str) {
-  if (typeof str !== 'string') {
-    return str;
-  }
-
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
