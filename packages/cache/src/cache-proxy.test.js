@@ -33,9 +33,9 @@ describe('StoreClient', () => {
     it('should perform HEAD request to /store/:type/:id', async () => {
       global.fetch = vi.fn((url, options) => {
         if (url === '/store/media/123' && options?.method === 'HEAD') {
-          return Promise.resolve({ ok: true, status: 200 });
+          return Promise.resolve({ ok: true, status: 200, headers: new Headers() });
         }
-        return Promise.resolve({ ok: false, status: 404 });
+        return Promise.resolve({ ok: false, status: 404, headers: new Headers() });
       });
 
       const exists = await store.has('media', '123');

@@ -759,15 +759,13 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     try {
       const info = store.has(storeKey);
       if (!info.exists) return res.status(404).end();
-      // Incomplete chunked files → 404 so download pipeline re-fetches them
-      if (info.chunked && store.missingChunks(storeKey).length > 0) {
-        return res.status(404).end();
-      }
       const meta = info.metadata || {};
+      const incomplete = info.chunked && store.missingChunks(storeKey).length > 0;
       res.setHeader('Content-Length', meta.size || 0);
       res.setHeader('Content-Type', meta.contentType || defaultContentType);
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Access-Control-Allow-Origin', '*');
+      if (incomplete) res.setHeader('X-Store-Complete', 'false');
       res.status(200).end();
     } catch (err) {
       logStore.error(`HEAD error for ${storeKey}:`, err.message);
@@ -989,16 +987,17 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
       const info = store.has(key);
       if (!info.exists) return res.status(404).end();
-      // Incomplete chunked files → 404 so download pipeline re-fetches them
-      if (info.chunked && store.missingChunks(key).length > 0) {
-        return res.status(404).end();
-      }
 
       const meta = info.metadata || {};
+      const incomplete = info.chunked && store.missingChunks(key).length > 0;
       res.setHeader('Content-Length', meta.size || 0);
       res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Access-Control-Allow-Origin', '*');
+      // Return 200 for both complete and incomplete — use X-Store-Complete header
+      // to distinguish. Avoids Chromium logging ERR_ABORTED 404 for every HEAD
+      // check during download, which floods the console with false errors.
+      if (incomplete) res.setHeader('X-Store-Complete', 'false');
       res.status(200).end();
     } catch (err) {
       logStore.error(`HEAD error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);

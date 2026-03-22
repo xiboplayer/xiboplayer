@@ -29,7 +29,10 @@ export class StoreClient {
   async has(type, id) {
     try {
       const response = await fetch(`/store/${type}/${id}`, { method: 'HEAD' });
-      if (response.ok) return true;
+      if (response.ok) {
+        // Incomplete chunked files return 200 with X-Store-Complete: false
+        return response.headers.get('X-Store-Complete') !== 'false';
+      }
       if (response.status === 404) return false;
       // Non-404 HTTP errors (500, 502, etc.) indicate proxy/store problems
       const err = new Error(`Store error: ${response.status}`);
