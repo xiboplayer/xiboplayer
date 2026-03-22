@@ -1,6 +1,6 @@
 # Xibo Player Comparison: xiboplayer SDK vs Upstream
 
-> Generated 2026-03-13. Based on analysis of: xiboplayer SDK (16 packages), PlayerRestApi
+> Updated 2026-03-22. Based on analysis of: xiboplayer SDK (16 packages), PlayerRestApi
 > (CMS custom module), upstream xibo-linux (C++), xibo-dotnetclient (C#/.NET),
 > xibo-layout-renderer (XLR), xibo-interactive-control (XIC), and CMS source
 > (XMDS Soap3→Soap7, Widget/Render, Entity layer). XMR client is native (replaced upstream
@@ -13,7 +13,7 @@
 ### xiboplayer (ours) — Modular SDK
 
 ```
-16 npm packages, ~1387 tests, platform-independent core
+16 npm packages, ~1629 tests, platform-independent core
 
 Platform (PWA / Electron / Chromium)
   ↓ events
