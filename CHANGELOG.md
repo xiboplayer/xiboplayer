@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.4 (2026-03-22)
+
+### Bug Fixes
+
+- **Preloaded video autoplay** — `_restartMediaElement` now always calls `play()` for preloaded-then-paused videos. Previously gated on `seeked` event or `readyState>=2`, neither of which fires for videos paused at `currentTime=0`. Latent since v0.2.0. (#291)
+- **Preloaded video duration** — `createdForLayoutId` now uses `_preloadingLayoutId` during preload instead of `currentLayoutId`. Duration updates were rejected for preloaded layouts, causing 10s fallback instead of actual video duration. Latent since v0.5.10. (#291)
+- **Collecting lock race** — fixed re-entrant collection cycles when XMR `collectNow` arrives during an in-flight collection
+- **S3 URL expiry** — download tasks now detect and skip expired signed URLs, waiting for next collection cycle to get fresh ones
+- **Double XML parse** — `getMediaIds` and `fetchWidgetHtml` now share a single `DOMParser` pass
+- **Playwright e2e exclusion** — e2e tests excluded from vitest runner (run separately via Playwright)
+
+### Refactoring
+
+- **Proxy** — cached index.html serving, IC handler factory, shared `parseRange` helper
+- **Stats/logs** — merged `submitStats`/`submitLogs` into unified submit, extracted `reportFault` helper
+- **Schedule** — consolidated logger conventions, sync cleanup
+
+### Stats
+
+- 1629 unit tests passing, 0 skipped
+
 ## 0.7.3 (2026-03-21)
 
 ### Bug Fixes
@@ -11,14 +32,20 @@
 - **Setup config flow** — setup.html always POSTs to proxy `/config` first (was exclusively using `electronAPI.setConfig` in Electron, which only writes config.json without updating proxy's in-memory config). REST auth now works immediately after configuration on all players.
 - **Electron IPC allowlist** — added `apiClientId`/`apiClientSecret` to the `set-config` IPC handler allowlist (xiboplayer-electron#28).
 - **RendererLite type declaration** — added missing `resumeRegionMedia()` to `index.d.ts`.
-
-### Tests (38 new, 1625 total)
-
 - **Preload blob URL routing** — `_preloadingLayoutId` now reset after widget creation loop, preventing blob URLs from being tracked against the wrong layout
 - **Overlay XIC completion** — removed identical ternary branches in `_advanceRegion` that caused overlay interactive control events to spuriously trigger main-layout completion checks
 - **Advertise-sync port** — removed undefined `serverPort` reference in `POST /system/advertise-sync` endpoint (was silently defaulting to 8765)
 - **API proxy headers** — use `SKIP_HEADERS` constant in API forward proxy, preventing stale `content-length` from being forwarded to clients
 - **XLF fetch logging** — log warning on XLF fetch failure in `enqueueDownloads` instead of silently swallowing errors
+
+### Tests (42 new)
+
+- cacheThrough integration: chunk routing, timeout scaling, HEAD store checks (13)
+- ContentStore write lock concurrency (4)
+- POST /config credential merging (4)
+- Config data persistence, env vars, extractPwaConfig (11)
+- Timeline vs playback consistency (6)
+- Renderer preload layout ID tracking (4)
 
 ### Refactoring (Code Audit)
 
@@ -34,7 +61,7 @@
 
 - 99 audit findings addressed (5 bugs, 18 dead code, 24 duplications, 18 complexity)
 - Net code reduction: ~900 lines removed
-- 1625 unit tests passing, 0 skipped
+- 1629 unit tests passing, 0 skipped
 
 ## 0.7.2 (2026-03-20)
 
