@@ -77,6 +77,7 @@ class PwaPlayer {
   private _swIcHandler: any = null; // SW Interactive Control message handler
   private _chunkConfig: any = null; // Device-adaptive chunk configuration
   private _fileIdToSaveAs: Map<string, string> = new Map(); // Numeric file ID → storedAs filename
+  private _cachedMediaKeys: Set<string> = new Set(); // saveAs keys confirmed cached (avoids HEAD 404s)
   private protocolDetector: any = null; // CMS protocol auto-detector
 
   async init() {
@@ -1359,7 +1360,11 @@ class PwaPlayer {
     } else if (fileType === 'media') {
       // Pass saveAs string for media files (matches pendingLayouts entries)
       const saveAs = this._fileIdToSaveAs.get(fileId) || fileId;
+      this._cachedMediaKeys.add(saveAs);
       this.core.notifyMediaReady(saveAs, fileType);
+    } else {
+      // Dependencies, widgets, datasets — track by storeKey
+      this._cachedMediaKeys.add(fileId);
     }
 
     // Debounced duration probe — run after downloads settle
@@ -2014,18 +2019,24 @@ class PwaPlayer {
    * Uses storedAs filenames for store key matching: /media/file/{saveAs}
    */
   private async checkAllMediaCached(mediaSaveAs: string[]): Promise<boolean> {
-    // Parallel HEAD requests instead of sequential — N files in one batch
+    // Check in-memory set first (avoids HEAD 404s for files not yet downloaded)
+    const unknown = mediaSaveAs.filter(s => !this._cachedMediaKeys.has(s));
+    if (unknown.length === 0) return true;
+
+    // Only HEAD-check files not in our in-memory cache
     const results = await Promise.all(
-      mediaSaveAs.map(async (saveAs) => {
+      unknown.map(async (saveAs) => {
         try {
-          return await store.has(STORE_PREFIX, `media/file/${saveAs}`);
+          const cached = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
+          if (cached) this._cachedMediaKeys.add(saveAs);
+          return cached;
         } catch {
           log.warn(`Unable to verify media ${saveAs}, assuming cached (offline mode)`);
           return true;
         }
       })
     );
-    const missing = mediaSaveAs.filter((_, i) => !results[i]);
+    const missing = unknown.filter((_, i) => !results[i]);
     if (missing.length > 0) {
       log.debug(`Media not yet cached: ${missing.join(', ')}`);
       return false;
@@ -2125,9 +2136,12 @@ class PwaPlayer {
 
         const missing: string[] = [];
         for (const saveAs of allMedia) {
+          // Skip HEAD check if already known cached
+          if (this._cachedMediaKeys.has(saveAs)) continue;
           try {
             const cached = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
-            if (!cached) missing.push(saveAs);
+            if (cached) this._cachedMediaKeys.add(saveAs);
+            else missing.push(saveAs);
           } catch {
             // Assume cached on error (offline mode)
           }
