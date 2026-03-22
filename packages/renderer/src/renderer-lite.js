@@ -1517,11 +1517,10 @@ export class RendererLite {
       el.play().catch(() => {});
     };
     el.addEventListener('seeked', playAfterSeek);
-    // Fallback: if seeked doesn't fire (already at 0), try play directly
-    if (el.currentTime === 0 && el.readyState >= 2) {
-      el.removeEventListener('seeked', playAfterSeek);
-      el.play().catch(() => {});
-    }
+    // Always call play() — for preloaded-then-paused videos, seeked may not
+    // fire (currentTime already 0) and readyState may be < 2 (not buffered yet).
+    // play() handles both cases: if not ready, it queues; if ready, it plays.
+    el.play().catch(() => {});
   }
 
   /**
@@ -2300,10 +2299,9 @@ export class RendererLite {
     }
 
     // Detect video duration for dynamic layout timing (when useDuration=0)
-    // Capture the layout ID at creation time — if the layout changes before
-    // loadedmetadata fires (e.g. video was preloaded for next layout), we must
-    // NOT update the current layout's duration with a different layout's video.
-    const createdForLayoutId = this.currentLayoutId;
+    // Capture the layout ID at creation time — during preload, _preloadingLayoutId
+    // is the target layout (currentLayoutId is still the playing layout).
+    const createdForLayoutId = this._preloadingLayoutId || this.currentLayoutId;
     const onLoadedMetadata = () => {
       const videoDuration = video.duration;
       this.log.info(`Video ${storedAs} duration detected: ${videoDuration}s`);
@@ -2464,7 +2462,7 @@ export class RendererLite {
     audio.addEventListener('ended', onAudioEnded);
 
     // Detect audio duration for dynamic layout timing (when useDuration=0)
-    const audioCreatedForLayoutId = this.currentLayoutId;
+    const audioCreatedForLayoutId = this._preloadingLayoutId || this.currentLayoutId;
     const onAudioLoadedMetadata = () => {
       const audioDuration = Math.floor(audio.duration);
       this.log.info(`Audio ${storedAs} duration detected: ${audioDuration}s`);

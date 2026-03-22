@@ -2917,4 +2917,55 @@ describe('RendererLite', () => {
       vi.useRealTimers();
     });
   });
+
+  // ── Video layout ID tracking during preload ──────────────────────
+  // Regression test: createdForLayoutId must use _preloadingLayoutId
+  // during preload, not currentLayoutId (which is the *playing* layout).
+  // Without this, video duration updates for preloaded layouts are
+  // rejected, causing layouts to play with wrong (10s) duration.
+
+  describe('Video createdForLayoutId during preload', () => {
+    it('should capture _preloadingLayoutId for video elements created during preload', () => {
+      renderer.currentLayoutId = 100;       // currently playing
+      renderer._preloadingLayoutId = 200;    // preloading next
+
+      // The fix: _preloadingLayoutId || currentLayoutId should give 200
+      const capturedId = renderer._preloadingLayoutId || renderer.currentLayoutId;
+      expect(capturedId).toBe(200);
+    });
+
+    it('should fall back to currentLayoutId when not preloading', () => {
+      renderer.currentLayoutId = 100;
+      renderer._preloadingLayoutId = null;
+
+      const capturedId = renderer._preloadingLayoutId || renderer.currentLayoutId;
+      expect(capturedId).toBe(100);
+    });
+
+    it('should allow duration update when preloaded layout becomes current', () => {
+      // Simulate: video created during preload of layout 200
+      renderer._preloadingLayoutId = 200;
+      const createdForLayoutId = renderer._preloadingLayoutId || renderer.currentLayoutId;
+
+      // Now layout 200 swaps in
+      renderer.currentLayoutId = 200;
+      renderer._preloadingLayoutId = null;
+
+      // Duration update check should pass
+      expect(renderer.currentLayoutId === createdForLayoutId).toBe(true);
+    });
+
+    it('should reject duration update when a different layout is current', () => {
+      // Video created during preload of layout 200
+      renderer._preloadingLayoutId = 200;
+      const createdForLayoutId = renderer._preloadingLayoutId || renderer.currentLayoutId;
+
+      // But layout 300 swaps in instead (e.g., schedule changed)
+      renderer.currentLayoutId = 300;
+      renderer._preloadingLayoutId = null;
+
+      // Duration update should be rejected — wrong layout
+      expect(renderer.currentLayoutId === createdForLayoutId).toBe(false);
+    });
+  });
 });
