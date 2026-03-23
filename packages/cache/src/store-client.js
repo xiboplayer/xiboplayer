@@ -29,7 +29,8 @@ export class StoreClient {
   async has(type, id) {
     try {
       const response = await fetch(`/store/${type}/${id}`, { method: 'HEAD' });
-      if (response.ok) {
+      if (response.status === 204) return false; // Not in store (no console error)
+      if (response.status === 200) {
         // Incomplete chunked files return 200 with X-Store-Complete: false
         return response.headers.get('X-Store-Complete') !== 'false';
       }
@@ -61,9 +62,12 @@ export class StoreClient {
   async get(type, id) {
     try {
       const response = await fetch(`/store/${type}/${id}`);
+      if (response.status === 204 || response.status === 404) {
+        response.body?.cancel();
+        return null;
+      }
       if (!response.ok) {
         response.body?.cancel();
-        if (response.status === 404) return null;
         throw new Error(`Failed to get file: ${response.status}`);
       }
       return await response.blob();
