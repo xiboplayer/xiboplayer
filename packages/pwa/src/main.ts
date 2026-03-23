@@ -1455,10 +1455,10 @@ class PwaPlayer {
 
       const storeKey = storeKeyFrom(file);
 
-      // Check if already stored on disk
+      // Check if already stored on disk (200 = cached, 204 = not in store)
       try {
         const headResp = await fetch(`/store/${storeKey}`, { method: 'HEAD' });
-        if (headResp.ok) return false;
+        if (headResp.status === 200) return false;
       } catch (_) {}
 
       // Check if already downloading
