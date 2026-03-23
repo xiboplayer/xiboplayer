@@ -2019,13 +2019,31 @@ class PwaPlayer {
    * Uses storedAs filenames for store key matching: /media/file/{saveAs}
    */
   private async checkAllMediaCached(mediaSaveAs: string[]): Promise<boolean> {
-    // Check in-memory set first (avoids HEAD 404s for files not yet downloaded)
+    // Check in-memory set first — avoids all HEAD requests for known-cached files
     const unknown = mediaSaveAs.filter(s => !this._cachedMediaKeys.has(s));
     if (unknown.length === 0) return true;
 
-    // Only HEAD-check files not in our in-memory cache
+    // If ANY file is still in the download queue, it's not cached — skip HEAD entirely.
+    // This eliminates HEAD 404s during the initial download phase.
+    const stillDownloading = unknown.filter(saveAs => {
+      const storeKey = `${STORE_PREFIX}/media/file/${saveAs}`;
+      return downloadManager.getTask(storeKey);
+    });
+    if (stillDownloading.length > 0) {
+      log.debug(`Media not yet cached: ${stillDownloading.join(', ')}`);
+      return false;
+    }
+
+    // Only HEAD-check files that are not known-cached AND not in download queue
+    // (e.g. files from a previous session that may already be on disk)
+    const toCheck = unknown.filter(saveAs => {
+      const storeKey = `${STORE_PREFIX}/media/file/${saveAs}`;
+      return !downloadManager.getTask(storeKey);
+    });
+    if (toCheck.length === 0) return true;
+
     const results = await Promise.all(
-      unknown.map(async (saveAs) => {
+      toCheck.map(async (saveAs) => {
         try {
           const cached = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
           if (cached) this._cachedMediaKeys.add(saveAs);
@@ -2036,7 +2054,7 @@ class PwaPlayer {
         }
       })
     );
-    const missing = unknown.filter((_, i) => !results[i]);
+    const missing = toCheck.filter((_, i) => !results[i]);
     if (missing.length > 0) {
       log.debug(`Media not yet cached: ${missing.join(', ')}`);
       return false;
@@ -2136,8 +2154,10 @@ class PwaPlayer {
 
         const missing: string[] = [];
         for (const saveAs of allMedia) {
-          // Skip HEAD check if already known cached
           if (this._cachedMediaKeys.has(saveAs)) continue;
+          // If in download queue, it's not cached — skip HEAD
+          const storeKey = `${STORE_PREFIX}/media/file/${saveAs}`;
+          if (downloadManager.getTask(storeKey)) { missing.push(saveAs); continue; }
           try {
             const cached = await store.has(STORE_PREFIX, `media/file/${saveAs}`);
             if (cached) this._cachedMediaKeys.add(saveAs);
