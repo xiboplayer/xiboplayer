@@ -132,11 +132,21 @@ if (typeof window !== 'undefined') {
   const urlLevel = urlParams.get('logLevel');
   const storageLevel = localStorage.getItem('xibo_log_level');
 
+  // Also check config-injected logLevel (proxy writes xibo_config to localStorage)
+  let configLevel = null;
+  try {
+    const cfg = JSON.parse(localStorage.getItem('xibo_config') || '{}');
+    configLevel = cfg.logLevel || null;
+  } catch (_) {}
+
   if (urlLevel) {
     globalConfig.setGlobalLevel(urlLevel);
     hasLocalOverride = true;
   } else if (storageLevel) {
     globalConfig.setGlobalLevel(storageLevel);
+    hasLocalOverride = true;
+  } else if (configLevel) {
+    globalConfig.setGlobalLevel(configLevel);
     hasLocalOverride = true;
   } else {
     globalConfig.setGlobalLevel('WARNING');
