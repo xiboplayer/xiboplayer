@@ -1947,6 +1947,12 @@ class PwaPlayer {
 
       // Preload layout into pool (hidden). Caller decides when to show.
       await this.renderer.preloadLayout(xlfXml, layoutId);
+
+      // Clear pending status — layout prepared successfully, all media cached.
+      // Without this, pendingLayouts keeps the layout marked as ⚠ missing
+      // until it actually plays (which may be minutes later in the rotation).
+      this.core.pendingLayouts.delete(layoutId);
+
       log.info(`Layout ${layoutId} ready`);
 
     } catch (error: any) {

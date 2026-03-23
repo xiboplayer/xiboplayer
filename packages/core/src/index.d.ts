@@ -53,6 +53,7 @@ export class PlayerCore {
   getCurrentLayoutId(): number | null;
   getLayoutDuration(layoutId: number | string): number | undefined;
   getPendingLayouts(): number[];
+  pendingLayouts: Map<number, string[]>;
   setPendingLayout(layoutId: number, requiredMediaIds: string[]): void;
   isLayoutOverridden(): boolean;
   changeLayout(layoutId: number | string, options?: { duration?: number; changeMode?: string }): Promise<void>;
