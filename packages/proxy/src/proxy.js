@@ -758,13 +758,13 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     if (!store) return res.status(501).end();
     try {
       const info = store.has(storeKey);
-      if (!info.exists) return res.status(404).end();
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (!info.exists) return res.status(204).end();
       const meta = info.metadata || {};
       const incomplete = info.chunked && store.missingChunks(storeKey).length > 0;
       res.setHeader('Content-Length', meta.size || 0);
       res.setHeader('Content-Type', meta.contentType || defaultContentType);
       res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Access-Control-Allow-Origin', '*');
       if (incomplete) res.setHeader('X-Store-Complete', 'false');
       res.status(200).end();
     } catch (err) {
@@ -986,17 +986,18 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     try {
       const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
       const info = store.has(key);
-      if (!info.exists) return res.status(404).end();
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (!info.exists) {
+        // 204 No Content — file not in store. Chromium doesn't log 204 as an
+        // error (unlike 404), eliminating console noise during fresh downloads.
+        return res.status(204).end();
+      }
 
       const meta = info.metadata || {};
       const incomplete = info.chunked && store.missingChunks(key).length > 0;
       res.setHeader('Content-Length', meta.size || 0);
       res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
       res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      // Return 200 for both complete and incomplete — use X-Store-Complete header
-      // to distinguish. Avoids Chromium logging ERR_ABORTED 404 for every HEAD
-      // check during download, which floods the console with false errors.
       if (incomplete) res.setHeader('X-Store-Complete', 'false');
       res.status(200).end();
     } catch (err) {
@@ -1006,8 +1007,14 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   });
 
   // GET /store/:type/* — serve stored file with Range support
+  // Returns 204 (not 404) for missing files to avoid Chromium console noise.
   app.get('/store/:type/{*splat}', (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
     const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
+    try {
+      const info = store.has(key);
+      if (!info.exists) return res.status(204).end();
+    } catch (_) {}
     serveFromStore(req, res, key);
   });
 

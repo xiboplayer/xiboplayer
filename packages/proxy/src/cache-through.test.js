@@ -379,12 +379,12 @@ describe('cacheThrough: timeout scaling for large chunks', () => {
 
 
 describe('cacheThrough: HEAD requests on store', () => {
-  it('HEAD returns 404 for non-existent file', async () => {
+  it('HEAD returns 204 for non-existent file (not 404, avoids Chromium console noise)', async () => {
     const app = makeApp();
     const res = await proxyRequest(app, '/store/player/api/v2/media/file/nope.mp4', {
       method: 'HEAD',
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(204);
   });
 
   it('HEAD returns 200 after file is fully cached', async () => {
