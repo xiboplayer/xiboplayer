@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.5 (2026-03-23)
+
+### Bug Fixes
+
+- **Store protocol: zero console errors** — `/store/*` HEAD and GET routes return 204 No Content (not 404) for non-existent files. Chromium logs 404 as "Failed to load resource" but silently ignores 204. Incomplete chunked files return 200 with `X-Store-Complete: false` header. StoreClient checks status 200 (not `ok`) to distinguish cached from missing.
+- **In-memory cache tracking** — `_cachedMediaKeys` Set tracks confirmed-cached files, skipping HEAD requests entirely for known files. `checkAllMediaCached` and `checkTimelineMediaStatus` also check `downloadManager.getTask()` to skip files actively downloading. Reduces 82 console errors to 0 on fresh start.
+- **Enqueue HEAD check regression** — `enqueueFile` checked `headResp.ok` which is true for 204, causing files to be skipped for download. Fixed to check `headResp.status === 200`.
+- **Logger logLevel override** — Logger now reads `xibo_config.logLevel` from localStorage as a local override source. CMS `registerDisplay` can no longer downgrade debug→error when config explicitly sets debug.
+- **Setup redirect preserves URL params** — Polling success redirect now carries `?logLevel=DEBUG` query string to index.html.
+- **Stale timeline ⚠ badges** — `pendingLayouts` cleared on successful `prepareLayout`, not only when layout plays. Eliminates stale missing-media badges for layouts that are cached but haven't played yet.
+
+### Stats
+
+- 1629 unit tests passing, 0 skipped
+- Zero console errors on fresh start (was 82 in v0.7.4)
+- Verified: 5 complete rotations on Electron, 9+ layout plays on Chromium, both stable over 1h 40min+
+
 ## 0.7.4 (2026-03-22)
 
 ### Bug Fixes
