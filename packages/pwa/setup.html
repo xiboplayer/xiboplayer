@@ -765,7 +765,7 @@
           const client = await getTransport();
           const result = await client.registerDisplay();
           if (result.code === 'READY') {
-            window.location.href = '/player/index.html';
+            window.location.href = '/player/index.html' + window.location.search;
           } else {
             // Not authorized — go straight to polling
             startPolling(config.displayName);
