@@ -1682,13 +1682,13 @@ export class RendererLite {
     // is already based on real metadata — no need to defer further.
     for (const [, region] of this.regions) {
       for (const widget of region.widgets) {
-        if (widget.useDuration === 0 && widget._probed) return false;
+        if (widget.type === 'video' && widget.useDuration === 0 && widget._probed) return false;
       }
     }
     // No videos probed at all — check if there are any that need probing
     for (const [, region] of this.regions) {
       for (const widget of region.widgets) {
-        if (widget.useDuration === 0) return true;
+        if (widget.type === 'video' && widget.useDuration === 0) return true;
       }
     }
     return false;
