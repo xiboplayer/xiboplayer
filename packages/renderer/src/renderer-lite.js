@@ -714,6 +714,7 @@ export class RendererLite {
     if (maxRegionDuration > 0 && maxRegionDuration !== this.currentLayout.duration) {
       const oldDuration = this.currentLayout.duration;
       this.currentLayout.duration = maxRegionDuration;
+      this.currentLayout._durationFromMetadata = true;
 
       this.log.info(`Layout duration updated: ${oldDuration}s → ${maxRegionDuration}s (based on video metadata)`);
       const final_ = !this._hasUnprobedVideos();
@@ -1639,7 +1640,9 @@ export class RendererLite {
     // Dynamic layouts (useDuration=0 videos): defer timer until video metadata
     // provides real durations. Safety timeout ensures corrupt/missing videos
     // don't freeze the display forever.
-    if (layout.isDynamic && this._hasUnprobedVideos()) {
+    // Skip deferral if updateLayoutDuration() already set the duration from
+    // video metadata (e.g. during preload or a previous play of this layout).
+    if (layout.isDynamic && !layout._durationFromMetadata && this._hasUnprobedVideos()) {
       this._deferredTimerLayoutId = layoutId;
       this._layoutTimerStartedAt = Date.now();
       this.log.info(`Layout ${layoutId} has unprobed videos — deferring timer until metadata loads`);
