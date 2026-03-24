@@ -1438,6 +1438,8 @@ class PwaPlayer {
         if (resp.ok) {
           xlfText = await resp.text();
           log.info(`Fetched XLF ${layoutId} (${xlfText.length} bytes)`);
+          // Store XLF in content store so prepareLayout() can find it via store.get()
+          await store.put(`${STORE_PREFIX}/layouts`, String(layoutId), new Blob([xlfText], { type: 'text/xml' }));
           this.notifyFileCached(String(layoutId), 'layout');
         }
       } catch (_) {}
@@ -1461,8 +1463,9 @@ class PwaPlayer {
         if (headResp.status === 200) return false;
       } catch (_) {}
 
-      // Check if already downloading
-      if (downloadManager.getTask(storeKey)) return false;
+      // Check if already downloading (download manager keys are type/id, not URL paths)
+      const dmKey = `${file.type}/${file.id}`;
+      if (downloadManager.getTask(dmKey)) return false;
 
       // Check for existing chunks — skip already-downloaded ones
       try {
@@ -1498,10 +1501,10 @@ class PwaPlayer {
         }
 
         this.notifyFileCached(String(file.id), file.type);
-        downloadManager.removeCompleted(storeKey);
+        downloadManager.removeCompleted(dmKey);
       }).catch((err: any) => {
         log.error('Download failed:', file.id, err);
-        downloadManager.removeCompleted(storeKeyFrom(file));
+        downloadManager.removeCompleted(dmKey);
       });
       return true;
     };
@@ -2029,28 +2032,11 @@ class PwaPlayer {
     const unknown = mediaSaveAs.filter(s => !this._cachedMediaKeys.has(s));
     if (unknown.length === 0) return true;
 
-    // If files are in the download queue AND the CMS is reachable, they're not
-    // cached yet — skip HEAD checks. But when offline, downloads will never
-    // complete, so fall through to check the content store on disk. Files from
-    // previous sessions may already be cached even though the queue says pending.
-    if (navigator.onLine) {
-      const stillDownloading = unknown.filter(saveAs => {
-        const storeKey = `${STORE_PREFIX}/media/file/${saveAs}`;
-        return downloadManager.getTask(storeKey);
-      });
-      if (stillDownloading.length > 0) {
-        log.debug(`Media not yet cached: ${stillDownloading.join(', ')}`);
-        return false;
-      }
-    }
-
-    // Only HEAD-check files that are not known-cached AND not in download queue
-    // (e.g. files from a previous session that may already be on disk)
-    const toCheck = unknown.filter(saveAs => {
-      const storeKey = `${STORE_PREFIX}/media/file/${saveAs}`;
-      return !downloadManager.getTask(storeKey);
-    });
-    if (toCheck.length === 0) return true;
+    // HEAD-check all unknown files against the content store.
+    // Always check the store directly — the download queue may have stale tasks
+    // for files that are already cached (race between download completion and
+    // task cleanup). The HEAD check is fast (<1ms for local store) and authoritative.
+    const toCheck = unknown;
 
     const results = await Promise.all(
       toCheck.map(async (saveAs) => {

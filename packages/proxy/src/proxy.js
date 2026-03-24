@@ -636,9 +636,11 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
               } catch (err) {
                 logStore.error('Commit error (non-fatal):', err.message);
               }
+              // Send HTTP response AFTER commit — ensures store.has() HEAD
+              // checks see the file immediately after the download completes.
+              res.end();
+              logFile.info(`${response.status} (${bytesWritten} bytes)`);
             });
-            res.end();
-            logFile.info(`${response.status} (${bytesWritten} bytes)`);
           });
 
           fetchStream.on('error', (err) => {
