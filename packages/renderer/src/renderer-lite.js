@@ -1662,14 +1662,30 @@ export class RendererLite {
   }
 
   /**
-   * Check if any video widget has useDuration=0 ("play to end") and hasn't
-   * been corrected by video metadata yet. The XLF always provides a non-zero
-   * duration attribute (typically 60s), so we check the _probed flag instead.
+   * Check if any region's longest-running video widget (useDuration=0) hasn't
+   * been probed yet. Used to decide whether to defer the layout timer.
+   *
+   * Only checks widgets that have had <video> elements created (during preload
+   * or show). Widgets that haven't been displayed yet can never be probed —
+   * checking them would always force a 30s timeout on layouts with multiple
+   * video widgets per region.
+   *
+   * Returns false if the layout duration has already been updated from video
+   * metadata (meaning at least one probe succeeded and updateLayoutDuration
+   * computed a real duration), since the timer can start with that value.
    */
   _hasUnprobedVideos() {
+    // If any video was probed and updateLayoutDuration ran, the layout duration
+    // is already based on real metadata — no need to defer further.
     for (const [, region] of this.regions) {
       for (const widget of region.widgets) {
-        if (widget.useDuration === 0 && !widget._probed) return true;
+        if (widget.useDuration === 0 && widget._probed) return false;
+      }
+    }
+    // No videos probed at all — check if there are any that need probing
+    for (const [, region] of this.regions) {
+      for (const widget of region.widgets) {
+        if (widget.useDuration === 0) return true;
       }
     }
     return false;
