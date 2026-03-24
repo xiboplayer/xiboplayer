@@ -2029,15 +2029,19 @@ class PwaPlayer {
     const unknown = mediaSaveAs.filter(s => !this._cachedMediaKeys.has(s));
     if (unknown.length === 0) return true;
 
-    // If ANY file is still in the download queue, it's not cached — skip HEAD entirely.
-    // This eliminates HEAD 404s during the initial download phase.
-    const stillDownloading = unknown.filter(saveAs => {
-      const storeKey = `${STORE_PREFIX}/media/file/${saveAs}`;
-      return downloadManager.getTask(storeKey);
-    });
-    if (stillDownloading.length > 0) {
-      log.debug(`Media not yet cached: ${stillDownloading.join(', ')}`);
-      return false;
+    // If files are in the download queue AND the CMS is reachable, they're not
+    // cached yet — skip HEAD checks. But when offline, downloads will never
+    // complete, so fall through to check the content store on disk. Files from
+    // previous sessions may already be cached even though the queue says pending.
+    if (navigator.onLine) {
+      const stillDownloading = unknown.filter(saveAs => {
+        const storeKey = `${STORE_PREFIX}/media/file/${saveAs}`;
+        return downloadManager.getTask(storeKey);
+      });
+      if (stillDownloading.length > 0) {
+        log.debug(`Media not yet cached: ${stillDownloading.join(', ')}`);
+        return false;
+      }
     }
 
     // Only HEAD-check files that are not known-cached AND not in download queue
