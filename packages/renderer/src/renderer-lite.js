@@ -1860,27 +1860,36 @@ export class RendererLite {
     }
 
     const videoEl = widgetElement.querySelector('video');
-    if (videoEl && widget.options.loop !== '1') videoEl.pause();
+    if (videoEl) {
+      videoEl.pause();
 
-    // Stop MediaStream tracks (webcam/mic) to release the device
-    if (videoEl?._mediaStream) {
-      videoEl._mediaStream.getTracks().forEach(t => t.stop());
-      videoEl._mediaStream = null;
-      videoEl.srcObject = null;
-    }
-
-    // Destroy HLS.js instance to free worker + buffers
-    if (videoEl?._hlsInstance) {
-      videoEl._hlsInstance.destroy();
-      videoEl._hlsInstance = null;
-    }
-
-    // Remove event listeners to prevent accumulation across widget cycles
-    if (videoEl?._eventCleanup) {
-      for (const [event, handler] of videoEl._eventCleanup) {
-        videoEl.removeEventListener(event, handler);
+      // Stop MediaStream tracks (webcam/mic) to release the device
+      if (videoEl._mediaStream) {
+        videoEl._mediaStream.getTracks().forEach(t => t.stop());
+        videoEl._mediaStream = null;
+        videoEl.srcObject = null;
       }
-      videoEl._eventCleanup = null;
+
+      // Destroy HLS.js instance to free worker + buffers
+      if (videoEl._hlsInstance) {
+        videoEl._hlsInstance.destroy();
+        videoEl._hlsInstance = null;
+      }
+
+      // Release decoded video buffers (GPU dmabufs) — without this, paused
+      // videos hold texture memory until the layout is evicted from the pool.
+      // removeAttribute('src') + load() forces the browser to drop the decoded
+      // frame, releasing GPU dmabufs immediately instead of at pool eviction.
+      videoEl.removeAttribute('src');
+      videoEl.load();
+
+      // Remove event listeners to prevent accumulation across widget cycles
+      if (videoEl._eventCleanup) {
+        for (const [event, handler] of videoEl._eventCleanup) {
+          videoEl.removeEventListener(event, handler);
+        }
+        videoEl._eventCleanup = null;
+      }
     }
 
     const audioEl = widgetElement.querySelector('audio');
@@ -2863,6 +2872,13 @@ export class RendererLite {
       return true;
     }
 
+    // Don't preload if already in-flight (prevents triple preload when
+    // 75% and 90% timers both fire before the async preload completes)
+    if (this._preloadingLayoutId === layoutId) {
+      this.log.info(`Layout ${layoutId} preload already in-flight, skipping`);
+      return true;
+    }
+
     try {
       this.log.info(`Preloading layout ${layoutId} into pool...`);
 
@@ -3095,6 +3111,50 @@ export class RendererLite {
     }
 
     this.log.info(`Swapped to preloaded layout ${layoutId} (instant transition)`);
+    this._logResourceStats(layoutId);
+  }
+
+  /**
+   * Log resource allocation stats for debugging memory/GPU leaks.
+   * Called after every layout swap to track DOM node accumulation,
+   * video element lifecycle, and pool state.
+   */
+  _logResourceStats(layoutId) {
+    const domNodes = document.querySelectorAll('*').length;
+    const videos = document.querySelectorAll('video').length;
+    const videosSrc = document.querySelectorAll('video[src]').length;
+    const canvases = document.querySelectorAll('canvas').length;
+    const iframes = document.querySelectorAll('iframe').length;
+    const images = document.querySelectorAll('img').length;
+    const poolSize = this.layoutPool ? this.layoutPool.size : 0;
+    const regionCount = this.regions ? this.regions.size : 0;
+    const widgetElements = [...(this.regions?.values() || [])].reduce(
+      (sum, r) => sum + (r.widgetElements?.size || 0), 0
+    );
+    const jsHeap = performance?.memory ? {
+      used: Math.round(performance.memory.usedJSHeapSize / 1048576),
+      total: Math.round(performance.memory.totalJSHeapSize / 1048576),
+      limit: Math.round(performance.memory.jsHeapSizeLimit / 1048576),
+    } : null;
+
+    // Count blob URLs still tracked (potential leak indicator)
+    const blobUrls = this._blobUrls ? [...this._blobUrls.values()].reduce((s, set) => s + set.size, 0) : 0;
+    const blobLayouts = this._blobUrls ? this._blobUrls.size : 0;
+
+    // Preload wrapper divs in DOM (should be 0-1 in normal operation)
+    const preloadWrappers = document.querySelectorAll('.renderer-lite-preload-wrapper').length;
+
+    // Audio overlay elements
+    const audioEls = document.querySelectorAll('audio').length;
+
+    const heapStr = jsHeap ? `heap=${jsHeap.used}/${jsHeap.total}MB (limit ${jsHeap.limit}MB)` : 'heap=N/A';
+    this.log.info(
+      `[Resources] layout=${layoutId} dom=${domNodes} videos=${videos}(src=${videosSrc}) ` +
+      `canvas=${canvases} iframe=${iframes} img=${images} audio=${audioEls} ` +
+      `pool=${poolSize} preloadWrappers=${preloadWrappers} ` +
+      `regions=${regionCount} widgets=${widgetElements} ` +
+      `blobs=${blobUrls}(${blobLayouts} layouts) ${heapStr}`
+    );
   }
 
   /**
