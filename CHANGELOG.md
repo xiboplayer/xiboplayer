@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.7 (2026-03-26)
+
+### Bug Fixes
+
+- **Triple preload prevention** — `preloadLayout()` guards against in-flight preloads. The 75%/90% preload timers could both fire before the async preload completed, tripling DOM nodes (77→141) and heap (37→76 MB) for complex layouts like Layout 520 (6 regions + webpage). Guarded at both renderer and platform layer.
+- **Video GPU buffer release** — `_hideWidget()` now calls `removeAttribute('src') + load()` on video elements to force immediate release of decoded GPU texture buffers (dmabufs). Paused videos no longer hold texture memory until layout pool eviction.
+
+### Shell Updates
+
+- **Chromium kiosk: stripped Chrome services** — Disabled 11 unnecessary background services (`--disable-background-networking`, `--disable-client-side-phishing-detection`, `--disable-sync`, `--disable-domain-reliability`, `--no-pings`, `--disable-breakpad`, etc.). This eliminated the renderer memory leak, FD growth, and crash triggers that affected all previous Chromium runs.
+
+### Performance (3h overnight profiling, v0.7.7 stripped vs v0.7.6)
+
+- Chromium renderer: sawtooth 200–770 MB (was monotonic 272→1,900+ MB)
+- Chromium GPU PSS: stable 53 MB (was 200–400 MB growing)
+- Chromium FDs: stable 700–975 (was growing to 3,967)
+- Chromium crashes: zero (was SIGABRT at 7h or 500% CPU at 4h)
+- Layout 520 DOM: 77 nodes (was 141 from triple preload)
+- SharedImage errors: reduced to ~14/hour (was hundreds)
+
+### Diagnostics
+
+- Enhanced `[Resources]` per layout swap: DOM nodes, video elements (with/without src), canvases, iframes, images, audio, preload wrappers, blob URLs, V8 heap
+
 ## 0.7.6 (2026-03-25)
 
 ### Bug Fixes
