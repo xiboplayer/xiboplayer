@@ -1801,9 +1801,13 @@ class PwaPlayer {
 
         const nextLayoutId = next.layoutId;
 
-        // Skip if already preloaded
+        // Skip if already preloaded or preload in-flight
         if (this.renderer.layoutPool.has(nextLayoutId)) {
           log.debug(`Layout ${nextLayoutId} already in preload pool`);
+          return;
+        }
+        if ((this.renderer as any)._preloadingLayoutId === nextLayoutId) {
+          log.debug(`Layout ${nextLayoutId} preload already in-flight`);
           return;
         }
 
