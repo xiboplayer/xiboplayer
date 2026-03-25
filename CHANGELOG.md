@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.6 (2026-03-25)
+
+### Bug Fixes
+
+- **Layout timer: no more 30s deferral** — `_hasUnprobedVideos()` now only checks video widgets (was triggering on rss-ticker with `useDuration=0`). Uses `_durationFromMetadata` flag to skip deferral when layout duration was already updated from video metadata during preload. Layouts start on time instead of 30s late.
+- **Offline playback** — Players keep cycling cached layouts when CMS is offline. Removed download queue short-circuit in `checkAllMediaCached()` — always HEAD-check the content store directly since the queue state can be stale after completed downloads.
+- **XLF storage in content store** — Layout XLFs were fetched but never written to the content store. `prepareLayout()` used `store.get()` which always returned null on fresh installs. Now `store.put()` writes XLF immediately after fetch, unifying storage for XMDS and REST transports.
+- **Download/cache race condition** — Proxy `res.end()` fired before `commit()` renamed `.tmp` to `.bin`. Browser HEAD checks raced the file commit, getting 204 (not found). Fixed: `res.end()` now waits inside `writeStream.end()` callback, after `commit()`.
+- **Download manager key mismatch** — `enqueueFile` used URL path format (`player/api/v2/media/file/42.jpg`) but DownloadQueue uses `type/id` format (`media/42`). `getTask()` always returned null, `removeCompleted()` was a no-op, completed tasks leaked in the active queue. Fixed: use `type/id` format for all download manager calls.
+
+### Shell Updates
+
+- **Electron 40.8.3 to 41.0.3** (Chrome 144 to 146) — `--no-zygote` flag fixes Wayland GPU process spawning. GPU process now receives proper `--ozone-platform=wayland`, `--render-node-override`, and `WaylandLinuxDrmSyncobj` flags. GPU CPU: 66% to 8%. GPU memory leak: eliminated. ([electron#50455](https://github.com/electron/electron/issues/50455))
+- **Chromium kiosk optimization** — `--disable-extensions` and `--disable-features=SpareRendererForSitePerProcess` for single-origin signage.
+
+### Performance
+
+- Electron GPU PSS: 1,711 MB (leaking) to 150 MB (stable) with `--no-zygote` fix
+- Electron total CPU: 48% to 7% (hardware GPU compositing vs software fallback)
+- Layout transitions: immediate (was 30s delay for layouts with `useDuration=0` non-video widgets)
+- Fresh installs: layouts play immediately instead of stuck on "Downloading layout"
+- Offline: cached content plays through CMS outages
+- 1629 unit tests passing
+
 ## 0.7.5 (2026-03-23)
 
 ### Bug Fixes
