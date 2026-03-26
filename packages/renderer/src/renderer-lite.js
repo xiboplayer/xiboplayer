@@ -1911,6 +1911,21 @@ export class RendererLite {
       widgetElement._pdfCleanup();
     }
 
+    // Stop embedded widget iframes (HLS live streams, webcams, etc.)
+    // Setting src=about:blank kills all network activity (HLS segment fetches,
+    // WebSocket connections, SSE streams) and releases video decode buffers.
+    const iframes = widgetElement.querySelectorAll('iframe');
+    for (const iframe of iframes) {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc) {
+          doc.querySelectorAll('video').forEach(v => { v.pause(); v.removeAttribute('src'); v.load(); });
+          doc.querySelectorAll('audio').forEach(a => { a.pause(); a.removeAttribute('src'); a.load(); });
+        }
+      } catch (_) {}
+      iframe.src = 'about:blank';
+    }
+
     return { widget, animPromise };
   }
 

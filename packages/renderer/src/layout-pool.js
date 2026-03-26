@@ -195,13 +195,43 @@ export class LayoutPool {
       a.load();
     });
 
+    // Release media inside iframes (embedded widgets with HLS streams, webcams, etc.)
+    // We can't querySelectorAll('video') across iframe boundaries, but we can:
+    // 1. Try to access same-origin iframe contentDocument
+    // 2. Force-remove the iframe src to stop all network activity
+    let iframeCount = 0;
+    container.querySelectorAll('iframe').forEach(iframe => {
+      try {
+        // Same-origin iframes: reach inside and release videos
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc) {
+          doc.querySelectorAll('video').forEach(v => {
+            v.pause();
+            v.removeAttribute('src');
+            v.load();
+            videoCount++;
+          });
+          doc.querySelectorAll('audio').forEach(a => {
+            a.pause();
+            a.removeAttribute('src');
+            a.load();
+          });
+        }
+      } catch (_) {
+        // Cross-origin: can't access contentDocument
+      }
+      // Force stop all iframe network activity (HLS segments, SSE, WebSocket, etc.)
+      iframe.src = 'about:blank';
+      iframeCount++;
+    });
+
     // Destroy PDF documents and release GPU canvas backing stores
     container.querySelectorAll('.pdf-widget').forEach(el => {
       if (el._pdfDestroy) el._pdfDestroy();
     });
 
-    if (videoCount > 0) {
-      log.info(`Released ${videoCount} video(s)${hlsCount ? ` (${hlsCount} HLS)` : ''}`);
+    if (videoCount > 0 || iframeCount > 0) {
+      log.info(`Released ${videoCount} video(s)${hlsCount ? ` (${hlsCount} HLS)` : ''}${iframeCount ? `, ${iframeCount} iframe(s)` : ''}`);
     }
   }
 
