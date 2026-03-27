@@ -211,6 +211,7 @@ export class RendererLite {
     this.currentLayout = null;
     this.currentLayoutId = null;
     this._preloadingLayoutId = null; // Set during preload for blob URL tracking
+    this._preloadingPromise = null;  // Promise for in-flight preload (await instead of skip)
     this.regions = new Map(); // regionId => { element, widgets, currentIndex, timer }
     this.layoutTimer = null;
     this.layoutEndEmitted = false; // Prevents double layoutEnd on stop after timer
@@ -2887,13 +2888,20 @@ export class RendererLite {
       return true;
     }
 
-    // Don't preload if already in-flight (prevents triple preload when
-    // 75% and 90% timers both fire before the async preload completes)
-    if (this._preloadingLayoutId === layoutId) {
-      this.log.info(`Layout ${layoutId} preload already in-flight, skipping`);
-      return true;
+    // If already in-flight, wait for it instead of skipping (prevents the race
+    // where showLayout is called before the background preload finishes adding
+    // the layout to the pool).
+    if (this._preloadingLayoutId === layoutId && this._preloadingPromise) {
+      this.log.info(`Layout ${layoutId} preload in-flight, waiting for it...`);
+      return this._preloadingPromise;
     }
 
+    // Store the preload promise so concurrent callers can await it
+    this._preloadingPromise = this._doPreloadLayout(xlfXml, layoutId);
+    return this._preloadingPromise;
+  }
+
+  async _doPreloadLayout(xlfXml, layoutId) {
     try {
       this.log.info(`Preloading layout ${layoutId} into pool...`);
 
@@ -2996,6 +3004,11 @@ export class RendererLite {
     } catch (error) {
       this.log.error(`Preload failed for layout ${layoutId}:`, error);
       return false;
+    } finally {
+      if (this._preloadingLayoutId === layoutId) {
+        this._preloadingLayoutId = null;
+        this._preloadingPromise = null;
+      }
     }
   }
 
