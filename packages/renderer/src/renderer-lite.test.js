@@ -817,12 +817,9 @@ describe('RendererLite', () => {
       const region = { id: 'r1', widgets: [widget1, widget2], isDrawer: false };
       renderer.regions = new Map([['r1', region]]);
 
-      // One still unprobed
-      expect(renderer._hasUnprobedVideos()).toBe(true);
-
-      // Probe the second
-      widget2.duration = 30;
-      widget2._probed = true;
+      // Once any video is probed, updateLayoutDuration has already run with
+      // real metadata, so _hasUnprobedVideos() returns false — no further
+      // deferral needed.
       expect(renderer._hasUnprobedVideos()).toBe(false);
     });
   });
