@@ -167,6 +167,15 @@ export class LayoutPool {
    * @param {HTMLElement} container
    */
   static releaseMediaElements(container) {
+    // Defer the actual release by one animation frame to give the GPU compositor
+    // time to stop referencing textures from the old layout. Without this delay,
+    // the compositor may still hold stale mailbox references when we destroy the
+    // video backing, causing SharedImageManager::ProduceSkia "non-existent mailbox"
+    // errors (Chrome bug: race in shared_image_manager.cc acknowledged in a TODO).
+    requestAnimationFrame(() => LayoutPool._releaseMediaElementsSync(container));
+  }
+
+  static _releaseMediaElementsSync(container) {
     let videoCount = 0;
     let hlsCount = 0;
 
