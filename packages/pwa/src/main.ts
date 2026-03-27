@@ -605,6 +605,17 @@ class PwaPlayer {
       }
     });
 
+    this.core.on(E.LAYOUT_ALREADY_PLAYING, (layoutId: number) => {
+      // The schedule says this layout should still be playing. Verify the renderer
+      // actually has an active timer — if not, the renderer stalled (e.g. after a
+      // GPU crash/recovery or restart) and we need to force a re-show.
+      if (!this.renderer.hasActiveLayoutTimer()) {
+        log.warn(`Layout ${layoutId} has no active timer — restarting layout`);
+        this.renderer.stopCurrentLayout();
+        // stopCurrentLayout → layoutEnd → advanceToNextLayout → re-prepares + shows
+      }
+    });
+
     this.core.on(E.LAYOUT_EXPIRE_CURRENT, () => {
       log.info('Schedule changed — expiring current layout');
       this.renderer.stopCurrentLayout();

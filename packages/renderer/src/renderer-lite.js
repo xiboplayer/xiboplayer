@@ -3208,6 +3208,15 @@ export class RendererLite {
   }
 
   /**
+   * Check if the layout timer is active (running or deferred waiting for metadata).
+   * Used to detect stalled layouts that need timer restart.
+   * @returns {boolean}
+   */
+  hasActiveLayoutTimer() {
+    return this.layoutTimer !== null || this._deferredTimerLayoutId !== null;
+  }
+
+  /**
    * Check if all regions have completed one full cycle
    * This is informational only - layout timer is authoritative
    */
