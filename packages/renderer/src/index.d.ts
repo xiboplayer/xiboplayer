@@ -74,6 +74,7 @@ export class RendererLite {
 
   updateLayoutDuration(): void;
   checkLayoutComplete(): void;
+  hasActiveLayoutTimer(): boolean;
 
   cleanup(): void;
 }
