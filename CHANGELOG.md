@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.9 (2026-03-29)
+
+### Bug Fixes
+
+- **Preload race fix** — When a background preload (75%/90% timer) was in-flight, `prepareLayout()` returned immediately and `showLayout()` failed with "not in preload pool". Now stores the preload promise and awaits it instead of skipping, ensuring the layout is in the pool before showing.
+
+### Shell Updates (Chromium)
+
+- **GPU rasterization** — Added `--ignore-gpu-blocklist`, `--enable-gpu-rasterization`, `--enable-zero-copy`, `CanvasOopRasterization`, `--renderer-process-limit=1`, `--disable-gpu-process-crash-limit`. Moves raster/composite work from renderer CPU to GPU process. **Chromium CPU dropped from 91% to 5% in production.**
+- **512x512 tile size** — `--default-tile-width=512 --default-tile-height=512` reduces raster jobs for fullscreen signage content.
+
+### Performance (9h production run, kiosk fullscreen, v0.7.9)
+
+| Metric | Electron | Chromium |
+|--------|----------|----------|
+| CPU avg | 5% | 4-5% |
+| PSS avg | 81 MB | 355 MB |
+| Crashes | 0 | 0 |
+| Stalls | 0 | 0 |
+| SharedImage errors | 10 | 6 |
+
+Both players now achieve **CPU parity at 4-5%** in production fullscreen mode. The GPU rasterization flags were the key — Chromium's renderer CPU dropped from 52% to 2% by offloading raster work to the GPU process (Skia software rasterization, not DRM hardware).
+
 ## 0.7.8 (2026-03-27)
 
 ### Bug Fixes
