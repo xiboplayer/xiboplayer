@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.10 (2026-03-30)
+
+### Bug Fixes
+
+- **ContentStore deferred on first boot** — The proxy no longer creates an empty `shared/media/` directory before CMS is configured. ContentStore initialization is deferred until the user submits CMS credentials via the setup page.
+
+### Shell Updates (Chromium)
+
+- **unclutter** added as `Recommends` dependency — hides the mouse cursor in kiosk mode.
+
+### Infrastructure
+
+- **New Ed25519 GPG signing key** (`Xibo Players <packages@xiboplayer.org>`) for both RPM and DEB packages. The old RSA subkey was incompatible with Debian Trixie's `sqv` signature verifier.
+- **`xiboplayer-release-43-7`** ships the new key. Users upgrading from older releases need one-time `--nogpgcheck` install.
+
 ## 0.7.9 (2026-03-29)
 
 ### Bug Fixes
