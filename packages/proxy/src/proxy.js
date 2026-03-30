@@ -315,9 +315,11 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   let store = null;
   function initContentStore(cmsId) {
     if (!dataDir) return null;
-    const storeDir = cmsId
-      ? path.join(dataDir, 'cache', cmsId, 'media')
-      : path.join(dataDir, 'media');
+    if (!cmsId) {
+      logProxy.debug('ContentStore deferred: no CMS configured yet');
+      return null;
+    }
+    const storeDir = path.join(dataDir, 'cache', cmsId, 'media');
     const s = new ContentStore(storeDir);
     s.init();
     logProxy.info(`ContentStore enabled: ${storeDir}`);
