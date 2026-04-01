@@ -13,7 +13,7 @@ importers:
         version: 2.4.10
       '@vitest/coverage-v8':
         specifier: ^4.1.2
-        version: 4.1.2(vitest@4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15)))
+        version: 4.1.2(vitest@4.1.2)
       fake-indexeddb:
         specifier: ^6.2.5
         version: 6.2.5
@@ -22,7 +22,7 @@ importers:
         version: 28.1.0
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/cache:
     dependencies:
@@ -38,7 +38,7 @@ importers:
         version: 25.0.1
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@2.1.9)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
 
   packages/cms-testing:
     dependencies:
@@ -57,7 +57,7 @@ importers:
         version: 1.59.0
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/core:
     dependencies:
@@ -81,8 +81,8 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(vitest@4.1.2)
       '@vitest/ui':
-        specifier: ^2.1.9
-        version: 2.1.9(vitest@4.1.2)
+        specifier: ^4.1.2
+        version: 4.1.2(vitest@4.1.2)
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
@@ -91,13 +91,13 @@ importers:
         version: 7.3.1(@types/node@22.19.15)
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@2.1.9)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
 
   packages/crypto:
     devDependencies:
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/player:
     dependencies:
@@ -146,7 +146,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/pwa:
     dependencies:
@@ -232,7 +232,7 @@ importers:
         version: 25.0.1
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@2.1.9)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
 
   packages/schedule:
     dependencies:
@@ -242,7 +242,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/settings:
     dependencies:
@@ -255,7 +255,7 @@ importers:
         version: 25.0.1
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@2.1.9)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
 
   packages/stats:
     dependencies:
@@ -268,7 +268,7 @@ importers:
         version: 5.0.2
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/sw:
     dependencies:
@@ -281,7 +281,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/sync:
     dependencies:
@@ -291,7 +291,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/utils:
     dependencies:
@@ -301,7 +301,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/xmds:
     dependencies:
@@ -311,7 +311,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   packages/xmr:
     dependencies:
@@ -321,7 +321,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+        version: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
 packages:
 
@@ -1074,9 +1074,6 @@ packages:
       vite:
         optional: true
 
-  '@vitest/pretty-format@2.1.9':
-    resolution: {integrity: sha512-KhRIdGV2U9HOUzxfiHmY8IFHTdqtOhIzCpd8WRdJiE7D/HUcZVD0EgQCVjm+Q9gkUXWgBvMmTtZgIG48wq7sOQ==}
-
   '@vitest/pretty-format@4.1.2':
     resolution: {integrity: sha512-dwQga8aejqeuB+TvXCMzSQemvV9hNEtDDpgUKDzOmNQayl2OG241PSWeJwKRH3CiC+sESrmoFd49rfnq7T4RnA==}
 
@@ -1089,13 +1086,10 @@ packages:
   '@vitest/spy@4.1.2':
     resolution: {integrity: sha512-DU4fBnbVCJGNBwVA6xSToNXrkZNSiw59H8tcuUspVMsBDBST4nfvsPsEHDHGtWRRnqBERBQu7TrTKskmjqTXKA==}
 
-  '@vitest/ui@2.1.9':
-    resolution: {integrity: sha512-izzd2zmnk8Nl5ECYkW27328RbQ1nKvkm6Bb5DAaz1Gk59EbLkiCMa6OLT0NoaAYTjOFS6N+SMYW1nh4/9ljPiw==}
+  '@vitest/ui@4.1.2':
+    resolution: {integrity: sha512-/irhyeAcKS2u6Zokagf9tqZJ0t8S6kMZq4ZG9BHZv7I+fkRrYfQX4w7geYeC2r6obThz39PDxvXQzZX+qXqGeg==}
     peerDependencies:
-      vitest: 2.1.9
-
-  '@vitest/utils@2.1.9':
-    resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
+      vitest: 4.1.2
 
   '@vitest/utils@4.1.2':
     resolution: {integrity: sha512-xw2/TiX82lQHA06cgbqRKFb5lCAy3axQ4H4SoUFhUsg+wztiet+co86IAMDtF6Vm1hc7J6j09oh/rgDn+JdKIQ==}
@@ -1537,9 +1531,6 @@ packages:
       canvas:
         optional: true
 
-  loupe@3.2.1:
-    resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
-
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
 
@@ -1680,9 +1671,6 @@ packages:
 
   path-to-regexp@8.4.1:
     resolution: {integrity: sha512-fvU78fIjZ+SBM9YwCknCvKOUKkLVqtWDVctl0s7xIqfmfb38t2TT4ZU2gHm+Z8xGwgW+QWEU3oQSAzIbo89Ggw==}
-
-  pathe@1.1.2:
-    resolution: {integrity: sha512-whLdWMYL2TwI08hn8/ZqAbrVemu0LNaNNJZX73O6qaIdCTfXutsLhMkjdENX0qhsQ9uIimo4/aQOmXkoon2nDQ==}
 
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
@@ -2617,11 +2605,11 @@ snapshots:
       std-env: 3.10.0
       test-exclude: 7.0.2
       tinyrainbow: 1.2.0
-      vitest: 4.1.2(@types/node@22.19.15)(@vitest/ui@2.1.9)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
+      vitest: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@4.1.2(vitest@4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15)))':
+  '@vitest/coverage-v8@4.1.2(vitest@4.1.2)':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
       '@vitest/utils': 4.1.2
@@ -2633,7 +2621,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.0.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
+      vitest: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
 
   '@vitest/expect@4.1.2':
     dependencies:
@@ -2651,10 +2639,6 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       vite: 7.3.1(@types/node@22.19.15)
-
-  '@vitest/pretty-format@2.1.9':
-    dependencies:
-      tinyrainbow: 1.2.0
 
   '@vitest/pretty-format@4.1.2':
     dependencies:
@@ -2674,22 +2658,16 @@ snapshots:
 
   '@vitest/spy@4.1.2': {}
 
-  '@vitest/ui@2.1.9(vitest@4.1.2)':
+  '@vitest/ui@4.1.2(vitest@4.1.2)':
     dependencies:
-      '@vitest/utils': 2.1.9
+      '@vitest/utils': 4.1.2
       fflate: 0.8.2
       flatted: 3.4.2
-      pathe: 1.1.2
+      pathe: 2.0.3
       sirv: 3.0.2
       tinyglobby: 0.2.15
-      tinyrainbow: 1.2.0
-      vitest: 4.1.2(@types/node@22.19.15)(@vitest/ui@2.1.9)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
-
-  '@vitest/utils@2.1.9':
-    dependencies:
-      '@vitest/pretty-format': 2.1.9
-      loupe: 3.2.1
-      tinyrainbow: 1.2.0
+      tinyrainbow: 3.1.0
+      vitest: 4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15))
 
   '@vitest/utils@4.1.2':
     dependencies:
@@ -3233,8 +3211,6 @@ snapshots:
       - '@noble/hashes'
       - supports-color
 
-  loupe@3.2.1: {}
-
   lru-cache@10.4.3: {}
 
   lru-cache@11.2.7: {}
@@ -3348,8 +3324,6 @@ snapshots:
       minipass: 7.1.3
 
   path-to-regexp@8.4.1: {}
-
-  pathe@1.1.2: {}
 
   pathe@2.0.3: {}
 
@@ -3659,7 +3633,7 @@ snapshots:
       '@types/node': 22.19.15
       fsevents: 2.3.3
 
-  vitest@4.1.2(@types/node@22.19.15)(@vitest/ui@2.1.9)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15)):
+  vitest@4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@25.0.1)(vite@7.3.1(@types/node@22.19.15)):
     dependencies:
       '@vitest/expect': 4.1.2
       '@vitest/mocker': 4.1.2(vite@7.3.1(@types/node@22.19.15))
@@ -3683,12 +3657,12 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.19.15
-      '@vitest/ui': 2.1.9(vitest@4.1.2)
+      '@vitest/ui': 4.1.2(vitest@4.1.2)
       jsdom: 25.0.1
     transitivePeerDependencies:
       - msw
 
-  vitest@4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15)):
+  vitest@4.1.2(@types/node@22.19.15)(@vitest/ui@4.1.2)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15)):
     dependencies:
       '@vitest/expect': 4.1.2
       '@vitest/mocker': 4.1.2(vite@7.3.1(@types/node@22.19.15))
@@ -3712,6 +3686,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.19.15
+      '@vitest/ui': 4.1.2(vitest@4.1.2)
       jsdom: 28.1.0
     transitivePeerDependencies:
       - msw
