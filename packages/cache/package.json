@@ -9,7 +9,6 @@
     ".": "./src/index.js",
     "./cache": "./src/cache.js",
     "./store-client": "./src/store-client.js",
-    "./download-client": "./src/download-client.js",
     "./download-manager": "./src/download-manager.js",
     "./cache-analyzer": "./src/cache-analyzer.js",
     "./widget-html": "./src/widget-html.js"
@@ -25,7 +24,7 @@
   },
   "devDependencies": {
     "jsdom": "^25.0.1",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.2"
   },
   "keywords": [
     "xibo",
