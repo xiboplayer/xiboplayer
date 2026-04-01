@@ -264,8 +264,8 @@ importers:
         version: link:../utils
     devDependencies:
       fake-indexeddb:
-        specifier: ^5.0.2
-        version: 5.0.2
+        specifier: ^6.2.5
+        version: 6.2.5
       vitest:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@22.19.15)(jsdom@28.1.0)(vite@7.3.1(@types/node@22.19.15))
@@ -1341,10 +1341,6 @@ packages:
   express@5.2.1:
     resolution: {integrity: sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==}
     engines: {node: '>= 18'}
-
-  fake-indexeddb@5.0.2:
-    resolution: {integrity: sha512-cB507r5T3D55DfclY01GLkninZLfU7HXV/mhVRTnTRm5k2u+fY7Fof2dBkr80p5t7G7dlA/G5dI87QiMdPpMCQ==}
-    engines: {node: '>=18'}
 
   fake-indexeddb@6.2.5:
     resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
@@ -2989,8 +2985,6 @@ snapshots:
       vary: 1.1.2
     transitivePeerDependencies:
       - supports-color
-
-  fake-indexeddb@5.0.2: {}
 
   fake-indexeddb@6.2.5: {}
 
