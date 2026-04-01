@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+### Code Quality
+
+- **Biome linter** — Added `@biomejs/biome` with project-tuned config. `pnpm lint` for lint-only checking; auto-fixed `isNaN()` → `Number.isNaN()` and optional chaining across 11 files.
+- **Coverage thresholds** — Workspace-wide minimums: 50% lines/functions/statements, 40% branches (current: 62%/57%/64%).
+- **Vitest v4** — Aligned all 14 packages from `^2.1.9` to `^4.1.2`. All tests pass.
+
+### Refactoring
+
+- **LayoutBlacklist extracted from PlayerCore** — Self-contained class with 14 dedicated tests. PlayerCore delegates instead of managing the Map directly. Public API unchanged.
+- **Removed orphaned core dev harness** — `packages/core/vite.config.js` and `index.html` were from when core was independently runnable.
+- **Removed broken cache export** — `./download-client` pointed to a non-existent file.
+- **Removed duplicate vitest setup** — `stats/vitest.setup.js` double-installed fake-indexeddb.
+
+### Features
+
+- **Shared hardware module** (`@xiboplayer/proxy/hardware`) — GPU detection via `/sys/class/drm` and adaptive memory tuning, shared between Electron and Chromium. Includes CLI bridge (`bin/detect-hardware.js`) for bash callers.
+- **MCP server expanded** — Now indexes kiosk scripts, AI service, and Ansible playbooks. New CI/CD tools: `list_workflow_runs`, `list_releases`, `check_version_drift`, `list_open_prs`.
+- **MCP server path fix** — Updated stale `xiboplayer-pwa` path to `packages/pwa` after monorepo migration.
+
+### Bug Fixes
+
+- **EventEmitter error boundary** — `emit()` now wraps each listener in try/catch, preventing a throwing listener from breaking the delivery chain.
+
+### Testing
+
+- **27 PWA unit tests** — `parseBody`, `containedRect`, `getMediaIds`, Interactive Control routing.
+- **14 LayoutBlacklist tests** — threshold behavior, success recovery, independent tracking, custom thresholds.
+- **1670 total tests** (up from 1614).
+
+### Infrastructure
+
+- **Dependabot** added for npm + GitHub Actions.
+- **Updated all npm dependencies**.
+- **README** updated with test count and lint command.
+
+## 0.7.11 (2026-03-31)
+
+### Bug Fixes
+
+- **setup.html redirect** — Use relative path for PWA index redirect.
+
 ## 0.7.10 (2026-03-30)
 
 ### Bug Fixes
