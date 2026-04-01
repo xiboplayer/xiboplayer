@@ -372,15 +372,12 @@ describe('EventEmitter', () => {
       emitter.on('test', callback2);
       emitter.on('test', callback3);
 
-      // Error in callback2 should propagate
-      expect(() => {
-        emitter.emit('test');
-      }).toThrow('Callback error');
+      // Error in callback2 is caught — does not stop other listeners
+      emitter.emit('test');
 
-      // callback1 was called (before error)
+      // All callbacks were called despite callback2 throwing
       expect(callback1).toHaveBeenCalledTimes(1);
-      // callback3 NOT called (error stopped iteration)
-      expect(callback3).not.toHaveBeenCalled();
+      expect(callback3).toHaveBeenCalledTimes(1);
     });
 
     it('should handle multiple events independently', () => {

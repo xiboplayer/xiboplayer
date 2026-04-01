@@ -61,7 +61,11 @@ export class EventEmitter {
     // Make a copy to handle listeners that remove themselves during emission
     const listeners = this.events.get(event).slice();
     for (const listener of listeners) {
-      listener(...args);
+      try {
+        listener(...args);
+      } catch (err) {
+        console.error(`[EventEmitter] Listener error on '${event}':`, err);
+      }
     }
   }
 
