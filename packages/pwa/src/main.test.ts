@@ -7,7 +7,7 @@
  * The full init() flow requires a live DOM + SW and is covered by Playwright e2e.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 // Since PwaPlayer methods are private, we test the logic by reimplementing
 // the pure functions here. This is a practical approach for a class with
@@ -209,7 +209,7 @@ describe('getMediaIds', () => {
 
 describe('IC routing', () => {
   // Minimal mock of the IC router logic
-  function routeIC(path: string, search: string, body: string | null): { status: number; body: string } {
+  function routeIC(path: string, search: string, _body: string | null): { status: number; body: string } {
     switch (path) {
       case '/info':
         return { status: 200, body: JSON.stringify({ playerType: 'pwa' }) };
