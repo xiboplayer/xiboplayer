@@ -48,6 +48,7 @@ import { EventEmitter, createLogger, applyCmsLogLevel, openIDB } from '@xiboplay
 import { calculateTimeline, parseLayoutFile } from '@xiboplayer/schedule';
 import { CacheAnalyzer } from '@xiboplayer/cache';
 import { DataConnectorManager } from './data-connectors.js';
+import { LayoutBlacklist } from './layout-blacklist.js';
 import { CORE_EVENTS as E } from './events.js';
 
 const log = createLogger('PlayerCore');
@@ -145,8 +146,7 @@ export class PlayerCore extends EventEmitter {
     this._faultReportingSeconds = 60; // Default: check for faults every 60s
 
     // Unsafe layout blacklist: layoutId → { failures: number, blacklisted: boolean, reason: string }
-    this._layoutBlacklist = new Map();
-    this._blacklistThreshold = 3; // Consecutive failures before blacklisting
+    this._layoutBlacklist = new LayoutBlacklist(3);
 
     // Status tracking for NotifyStatus enrichment
     this._lastLayoutChangeTime = null; // ISO timestamp of last layout switch
@@ -1492,74 +1492,33 @@ export class PlayerCore extends EventEmitter {
    */
   reportLayoutFailure(layoutId, reason) {
     const id = Number(layoutId);
-    const entry = this._layoutBlacklist.get(id) || { failures: 0, blacklisted: false, reason: '' };
-    entry.failures++;
-    entry.reason = reason;
-
     this._statusCode = 3; // Error — layout failed to render
 
-    if (!entry.blacklisted && entry.failures >= this._blacklistThreshold) {
-      entry.blacklisted = true;
-      log.warn(`Layout ${id} blacklisted after ${entry.failures} consecutive failures: ${reason}`);
-      this.emit('layout-blacklisted', { layoutId: id, reason, failures: entry.failures });
-
-      // Report to CMS (non-blocking)
+    const { blacklisted, failures } = this._layoutBlacklist.recordFailure(id, reason);
+    if (blacklisted && failures === 3) {
+      // Newly blacklisted (threshold just reached)
+      this.emit('layout-blacklisted', { layoutId: id, reason, failures });
       this.blackList(id, 'layout', reason);
-    } else if (!entry.blacklisted) {
-      log.info(`Layout ${id} failure ${entry.failures}/${this._blacklistThreshold}: ${reason}`);
     }
-
-    this._layoutBlacklist.set(id, entry);
   }
 
-  /**
-   * Report a successful layout render. Resets the failure counter for
-   * this layout, removing it from the blacklist if it was blacklisted.
-   *
-   * @param {number} layoutId - The layout that rendered successfully
-   */
   reportLayoutSuccess(layoutId) {
-    const id = Number(layoutId);
-    if (this._layoutBlacklist.has(id)) {
-      const was = this._layoutBlacklist.get(id);
-      this._layoutBlacklist.delete(id);
-      if (was.blacklisted) {
-        log.info(`Layout ${id} removed from blacklist (rendered successfully)`);
-        this.emit('layout-unblacklisted', { layoutId: id });
-      }
+    const wasBlacklisted = this._layoutBlacklist.recordSuccess(Number(layoutId));
+    if (wasBlacklisted) {
+      this.emit('layout-unblacklisted', { layoutId: Number(layoutId) });
     }
   }
 
-  /**
-   * Check if a layout is currently blacklisted.
-   * @param {number} layoutId
-   * @returns {boolean}
-   */
   isLayoutBlacklisted(layoutId) {
-    const entry = this._layoutBlacklist.get(Number(layoutId));
-    return entry?.blacklisted === true;
+    return this._layoutBlacklist.isBlacklisted(layoutId);
   }
 
-  /**
-   * Get all currently blacklisted layout IDs.
-   * @returns {number[]}
-   */
   getBlacklistedLayouts() {
-    const result = [];
-    for (const [id, entry] of this._layoutBlacklist) {
-      if (entry.blacklisted) result.push(id);
-    }
-    return result;
+    return this._layoutBlacklist.getBlacklistedIds();
   }
 
-  /**
-   * Reset the blacklist. Called when RequiredFiles changes (CMS may
-   * have fixed broken layouts).
-   */
   resetBlacklist() {
-    if (this._layoutBlacklist.size > 0) {
-      log.info(`Blacklist reset (${this._layoutBlacklist.size} entries cleared)`);
-      this._layoutBlacklist.clear();
+    if (this._layoutBlacklist.reset() > 0) {
       this.emit('blacklist-reset');
     }
   }
