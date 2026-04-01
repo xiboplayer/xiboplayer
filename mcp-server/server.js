@@ -25,7 +25,7 @@ const __dirname = dirname(__filename);
 const SDK_ROOT = resolve(__dirname, '..');
 
 // Sibling repos (configurable via env)
-const PWA_ROOT = process.env.XIBO_PWA_ROOT || resolve(SDK_ROOT, '../xiboplayer-pwa');
+const PWA_ROOT = process.env.XIBO_PWA_ROOT || resolve(SDK_ROOT, 'packages/pwa');
 const ELECTRON_ROOT = process.env.XIBO_ELECTRON_ROOT || resolve(SDK_ROOT, '../xiboplayer-electron');
 const CHROMIUM_ROOT = process.env.XIBO_CHROMIUM_ROOT || resolve(SDK_ROOT, '../xiboplayer-chromium');
 
@@ -207,7 +207,7 @@ async function loadIndex() {
   await indexSDKPackages();
 
   // Player repos
-  await indexPlayerRepo(PWA_ROOT, 'xiboplayer-pwa', [
+  await indexPlayerRepo(PWA_ROOT, 'pwa', [
     'src/main.ts', 'public/sw-pwa.js',
   ]);
   await indexPlayerRepo(ELECTRON_ROOT, 'xiboplayer-electron', [
