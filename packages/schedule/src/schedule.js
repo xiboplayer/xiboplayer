@@ -459,11 +459,11 @@ export class ScheduleManager {
     }
 
     // Find maximum priority across all items (campaigns and layouts)
-    let maxPriority = Math.max(...activeItems.map(item => item.priority));
+    const maxPriority = Math.max(...activeItems.map(item => item.priority));
     _log('[Schedule] Max priority:', maxPriority, 'from', activeItems.length, 'active items');
 
     // Collect all layouts from items with max priority
-    let allLayouts = [];
+    const allLayouts = [];
     for (const item of activeItems) {
       if (item.priority === maxPriority) {
         _log('[Schedule] Including priority', item.priority, 'layouts:', item.layouts.map(l => l.file));

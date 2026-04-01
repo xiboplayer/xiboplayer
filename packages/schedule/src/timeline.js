@@ -198,7 +198,7 @@ export function calculateTimeline(queue, queuePosition, options = {}) {
     const entry = queue[pos];
     // Use live-corrected duration (from video metadata, etc.) if available,
     // otherwise fall back to the queue's baked-in duration
-    let dur = (durations && durations.get(entry.layoutId)) || entry.duration;
+    const dur = (durations && durations.get(entry.layoutId)) || entry.duration;
 
     const endMs = currentTime.getTime() + dur * 1000;
 

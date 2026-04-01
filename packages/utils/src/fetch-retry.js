@@ -106,7 +106,7 @@ export async function fetchWithRetry(url, options = {}, retryOptions = {}) {
     }
 
     if (attempt < maxRetries) {
-      const delay = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
+      const delay = Math.min(baseDelayMs * 2 ** attempt, maxDelayMs);
       const jitter = delay * (0.5 + Math.random() * 0.5); // 50-100% of delay
       log.debug(`Retry ${attempt + 1}/${maxRetries} in ${Math.round(jitter)}ms:`, String(url).slice(0, 80));
       await new Promise(resolve => setTimeout(resolve, jitter));
