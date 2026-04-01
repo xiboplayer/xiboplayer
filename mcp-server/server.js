@@ -19,6 +19,7 @@ import { readFile } from 'fs/promises';
 import { join, dirname, resolve, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
+import { CICD_TOOLS } from './tools/cicd.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -420,6 +421,12 @@ async function main() {
           required: ['symbol'],
         },
       },
+      // CI/CD tools (workflow runs, releases, version drift, PRs)
+      ...CICD_TOOLS.map(t => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      })),
     ],
   }));
 
@@ -483,8 +490,15 @@ async function main() {
         return { content: [{ type: 'text', text }] };
       }
 
-      default:
+      default: {
+        // Check CI/CD tools
+        const cicdTool = CICD_TOOLS.find(t => t.name === name);
+        if (cicdTool) {
+          const text = await cicdTool.handler(args || {});
+          return { content: [{ type: 'text', text }] };
+        }
         throw new Error(`Unknown tool: ${name}`);
+      }
     }
   });
 
