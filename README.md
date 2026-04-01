@@ -60,7 +60,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving. Cache-through accepts `X-Cms-Download-Url` for XMDS-only CMSes
 - **Protocol auto-detection** — probes REST API at startup, auto-selects REST or SOAP transport
 - **Persistent layout durations** — cached in IndexedDB for correct timeline on restart
-- **1614 tests** across 49 test suites
+- **1656 tests** across 50 test suites
 
 ## Packages
 
@@ -177,7 +177,8 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1402 tests across 36 suites)
+pnpm test              # run all tests (1656 tests across 50 suites)
+pnpm lint              # Biome linter
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
