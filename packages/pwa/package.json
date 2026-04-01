@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/pwa",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "description": "Lightweight PWA Xibo Player with RendererLite",
   "type": "module",
   "files": [
