@@ -9,9 +9,12 @@
     "build:pwa": "pnpm --filter @xiboplayer/pwa build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome lint",
+    "lint:fix": "biome lint --fix"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
     "@vitest/coverage-v8": "^4.1.2",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^28.1.0",
