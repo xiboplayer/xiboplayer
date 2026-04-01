@@ -11,7 +11,6 @@
  * the iframe redirects to index.html, which we intercept to reload.
  */
 
-// @ts-expect-error - JavaScript module
 import { createLogger, config } from '@xiboplayer/utils';
 
 const log = createLogger('SetupOverlay');

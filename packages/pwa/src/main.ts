@@ -2519,7 +2519,6 @@ class PwaPlayer {
 
     try {
       const track = stream.getVideoTracks()[0];
-      // @ts-expect-error — ImageCapture is available in Chromium
       const imageCapture = new (window as any).ImageCapture(track);
       const bitmap = await imageCapture.grabFrame();
 
