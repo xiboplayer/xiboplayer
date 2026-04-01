@@ -15,7 +15,7 @@ async function check() {
   
   console.log('\nResponse type:', typeof response);
   console.log('Is array?', Array.isArray(response));
-  console.log('Has data property?', response.hasOwnProperty('data'));
+  console.log('Has data property?', Object.hasOwn(response, 'data'));
   
   if (response.data) {
     console.log('\ndata type:', typeof response.data);

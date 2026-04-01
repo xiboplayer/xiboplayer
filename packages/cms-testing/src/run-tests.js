@@ -32,7 +32,7 @@ async function runTests() {
     groups.forEach(g => console.log(`   - ${g.displayGroup} (ID: ${g.displayGroupId})`));
 
     const testGroupName = process.env.TEST_DISPLAY_GROUP || 'Test Displays';
-    let testGroup = groups.find(g => g.displayGroup === testGroupName);
+    const testGroup = groups.find(g => g.displayGroup === testGroupName);
 
     if (!testGroup) {
       console.log(`\n⚠️  Display group "${testGroupName}" not found.`);

@@ -2303,7 +2303,7 @@ export class RendererLite {
       }
     };
     video.addEventListener('ended', onEnded);
-    let videoSrc = storedAs ? this._mediaFileUrl(storedAs) : '';
+    const videoSrc = storedAs ? this._mediaFileUrl(storedAs) : '';
 
     // HLS/DASH streaming support
     const isHlsStream = videoSrc.includes('.m3u8');
@@ -2607,7 +2607,7 @@ export class RendererLite {
     }
 
     // Direct URL from storedAs filename
-    let pdfUrl = widget.options.uri
+    const pdfUrl = widget.options.uri
       ? this._mediaFileUrl(widget.options.uri)
       : '';
 

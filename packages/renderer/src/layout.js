@@ -124,7 +124,7 @@ export class LayoutTranslator {
                          'currencies', 'stocks', 'twitter', 'global', 'embedded', 'text', 'ticker'];
     if (widgetTypes.some(w => type.includes(w))) {
       // Try to get widget HTML with retry logic for kiosk reliability
-      let retries = 3;
+      const retries = 3;
       let lastError = null;
 
       for (let attempt = 1; attempt <= retries; attempt++) {
@@ -472,7 +472,7 @@ ${mediaJS}
     let stopFn = 'null';
 
     switch (media.type) {
-      case 'image':
+      case 'image': {
         // Use absolute URL within service worker scope
         const imageSrc = `${window.location.origin}${PLAYER_API}/media/${media.options.uri}`;
         startFn = `() => {
@@ -494,8 +494,9 @@ ${mediaJS}
         }
       }`;
         break;
+      }
 
-      case 'video':
+      case 'video': {
         // All videos use cache URL pattern
         // Background-downloaded videos will auto-reload when cache completes
         const videoSrc = `${window.location.origin}${PLAYER_API}/media/${media.options.uri}`;
@@ -566,6 +567,7 @@ ${mediaJS}
         }
       }`;
         break;
+      }
 
       case 'text':
       case 'ticker':
@@ -580,7 +582,7 @@ ${mediaJS}
         }
         // Fall through to default (handles missing widgetCacheKey as unsupported)
 
-      case 'audio':
+      case 'audio': {
         const audioSrc = `${window.location.origin}${PLAYER_API}/media/${media.options.uri}`;
         const audioId = `audio_${regionId}_${media.id}`;
         const audioLoop = media.options.loop === '1';
@@ -695,8 +697,9 @@ ${mediaJS}
         }
       }`;
         break;
+      }
 
-      case 'pdf':
+      case 'pdf': {
         const pdfSrc = `${window.location.origin}${PLAYER_API}/media/${media.options.uri}`;
         const pdfContainerId = `pdf_${regionId}_${media.id}`;
         const pdfDuration = duration; // Total duration for entire PDF
@@ -883,8 +886,9 @@ ${mediaJS}
         }
       }`;
         break;
+      }
 
-      case 'webpage':
+      case 'webpage': {
         const url = decodeURIComponent(media.options.uri || '');
         startFn = `() => {
         const region = document.getElementById('region_${regionId}');
@@ -906,6 +910,7 @@ ${mediaJS}
         };
       }`;
         break;
+      }
 
       default:
         // Widgets (clock, calendar, weather, etc.) - use cache URL pattern in /player/ scope for SW

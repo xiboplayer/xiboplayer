@@ -198,7 +198,7 @@ export class DataConnectorManager extends EventEmitter {
       // Circuit breaker: slow down polling after repeated failures
       if (entry.failures >= CIRCUIT_BREAKER_THRESHOLD && entry.timer) {
         const baseMs = (config.updateInterval || 300) * 1000;
-        const backoffMs = Math.min(baseMs * Math.pow(2, entry.failures - CIRCUIT_BREAKER_THRESHOLD + 1), MAX_BACKOFF_MS);
+        const backoffMs = Math.min(baseMs * 2 ** (entry.failures - CIRCUIT_BREAKER_THRESHOLD + 1), MAX_BACKOFF_MS);
         clearInterval(entry.timer);
         entry.timer = setTimeout(() => {
           this.fetchData(entry).catch(() => {});
