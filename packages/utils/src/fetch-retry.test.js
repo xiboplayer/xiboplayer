@@ -213,4 +213,72 @@ describe('fetchWithRetry', () => {
     expect(response.ok).toBe(true);
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
+
+  it('should succeed after 503 twice then 200', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 503, statusText: 'Service Unavailable' })
+      .mockResolvedValueOnce({ ok: false, status: 503, statusText: 'Service Unavailable' })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 3, baseDelayMs: 100 });
+
+    // Advance through both retry delays (100ms, 200ms with jitter)
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(200);
+
+    const response = await promise;
+    expect(response.ok).toBe(true);
+    expect(response.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('should throw after max retries when fetch always fails with network error', async () => {
+    mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 2, baseDelayMs: 100 });
+    const handled = promise.catch(() => {});
+
+    // Advance through retry delays
+    for (let i = 0; i < 5; i++) {
+      await vi.advanceTimersByTimeAsync(500);
+    }
+
+    await expect(promise).rejects.toThrow('Failed to fetch');
+    await handled;
+    expect(mockFetch).toHaveBeenCalledTimes(3); // 1 original + 2 retries
+  });
+
+  it('should retry on network TypeError', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 2, baseDelayMs: 100 });
+
+    await vi.advanceTimersByTimeAsync(200);
+
+    const response = await promise;
+    expect(response.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('should respect Retry-After header on 429 before succeeding', async () => {
+    const headers429 = { get: (name) => name === 'Retry-After' ? '2' : null };
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 429, statusText: 'Too Many Requests', headers: headers429 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const promise = fetchWithRetry('https://example.com', {}, { maxRetries: 2, baseDelayMs: 100 });
+
+    // After 500ms, should still be waiting (Retry-After is 2s)
+    await vi.advanceTimersByTimeAsync(500);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // After 2s total, should have retried
+    await vi.advanceTimersByTimeAsync(2000);
+
+    const response = await promise;
+    expect(response.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });
