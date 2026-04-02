@@ -1,0 +1,51 @@
+# CMS integration test stack
+# Usage: docker compose -f docker-compose.test.yml up -d --wait
+#
+# Provides a full Xibo CMS with MariaDB and XMR for integration testing.
+# Used by CI (nightly) and local development.
+
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: xibo_cms
+      MARIADB_USER: cms
+      MARIADB_PASSWORD: cms
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    tmpfs:
+      - /var/lib/mysql
+
+  cms:
+    image: xibosignage/xibo-cms:release-4.1
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_USER: cms
+      MYSQL_PASSWORD: cms
+      MYSQL_DATABASE: xibo_cms
+      MYSQL_ROOT_PASSWORD: root
+      CMS_SERVER_NAME: localhost
+      XMR_HOST: xmr
+      CMS_DEV_MODE: "true"
+      CMS_QUICK_CHART_URL: ""
+    ports:
+      - "18080:80"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/api/about"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  xmr:
+    image: xibosignage/xibo-xmr:release-0.10
+    environment:
+      XMR_PRIVATE_ADDRESS: tcp://0.0.0.0:5555
+      XMR_PUBLIC_ADDRESS: tcp://xmr:9505
