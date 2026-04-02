@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.7.12 (2026-04-02)
+
+### Build
+
+- **Split Vite builds** — App and Service Worker now build independently. SW gets its own chunk graph, fixing `window/document is not defined` errors in worker context.
+- **Major dependency upgrades** — vite 8, typescript 6, jsdom 29, pdfjs-dist 5, @vitest/ui 4, @types/node 25.
+- **PDF worker updated** to 5.6.205 (matches pdfjs-dist 5).
 
 ### Code Quality
 
@@ -24,6 +30,7 @@
 ### Bug Fixes
 
 - **EventEmitter error boundary** — `emit()` now wraps each listener in try/catch, preventing a throwing listener from breaking the delivery chain.
+- **Removed unused imports and obsolete ts-expect-error directives** after TypeScript 6 upgrade.
 
 ### Testing
 
