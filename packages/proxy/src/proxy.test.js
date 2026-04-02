@@ -3,6 +3,7 @@
 // @vitest-environment node
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createProxyApp } from './proxy.js';
+import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -274,5 +275,87 @@ describe('POST /config — runtime config updates', () => {
     expect(saved.cmsKey).toBe('existing-key');     // preserved
     expect(saved.displayName).toBe('Existing Display');  // preserved
     expect(saved.apiClientId).toBe('new-client');   // added
+  });
+});
+
+describe('XMDS proxy forwarding', () => {
+  let fakeCmsServer;
+  let fakeCmsPort;
+
+  // Spin up a fake CMS that mimics /xmds.php
+  beforeAll(async () => {
+    const cms = express();
+    cms.use(express.text({ type: 'text/xml', limit: '1mb' }));
+    cms.all('/xmds.php', (req, res) => {
+      res.setHeader('Content-Type', 'text/xml; charset=utf-8');
+      res.send(`<soap:Envelope><soap:Body><Echo>${req.body || 'GET'}</Echo></soap:Body></soap:Envelope>`);
+    });
+    await new Promise((resolve) => {
+      fakeCmsServer = cms.listen(0, 'localhost', () => {
+        fakeCmsPort = fakeCmsServer.address().port;
+        resolve();
+      });
+    });
+  });
+
+  afterAll(() => {
+    if (fakeCmsServer) fakeCmsServer.close();
+  });
+
+  it('forwards request body to CMS and returns CMS response', async () => {
+    const app = makeApp();
+    const soapBody = '<RegisterDisplay xmlns="urn:xmds"><hardwareKey>abc</hardwareKey></RegisterDisplay>';
+
+    const res = await new Promise((resolve) => {
+      const server = app.listen(0, 'localhost', () => {
+        const port = server.address().port;
+        realFetch(`http://localhost:${port}/xmds-proxy?cms=http://localhost:${fakeCmsPort}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+          body: soapBody,
+        })
+          .then(async (r) => {
+            const body = await r.text();
+            server.close();
+            resolve({ status: r.status, body });
+          })
+          .catch((err) => { server.close(); resolve({ status: 0, body: err.message }); });
+      });
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toContain('<Echo>');
+    expect(res.body).toContain('RegisterDisplay');
+  });
+
+  it('returns 400 when cms query parameter is missing', async () => {
+    const app = makeApp();
+    const res = await request(app, 'POST', '/xmds-proxy');
+    expect(res.status).toBe(400);
+    expect(res.body).toContain('Missing cms parameter');
+  });
+
+  it('returns error when CMS is unreachable', async () => {
+    const app = makeApp();
+    const res = await new Promise((resolve) => {
+      const server = app.listen(0, 'localhost', () => {
+        const port = server.address().port;
+        // Port 1 is almost certainly not listening
+        realFetch(`http://localhost:${port}/xmds-proxy?cms=http://localhost:1`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+          body: '<test/>',
+        })
+          .then(async (r) => {
+            const body = await r.text();
+            server.close();
+            resolve({ status: r.status, body });
+          })
+          .catch((err) => { server.close(); resolve({ status: 0, body: err.message }); });
+      });
+    });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toContain('Proxy error');
   });
 });
