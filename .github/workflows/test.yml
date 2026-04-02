@@ -5,8 +5,23 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '17 3 * * *'  # nightly at 03:17 UTC
   workflow_dispatch:
 
 jobs:
-  test:
+  unit:
     uses: xibo-players/.github/.github/workflows/test.yml@main
+    with:
+      lint-command: 'pnpm lint'
+      typecheck: true
+
+  integration:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: unit
+    uses: xibo-players/.github/.github/workflows/integration-test.yml@main
+    with:
+      cms-url: 'https://xibo-dev.superpantalles.com'
+    secrets:
+      CMS_CLIENT_ID: ${{ secrets.CMS_CLIENT_ID }}
+      CMS_CLIENT_SECRET: ${{ secrets.CMS_CLIENT_SECRET }}
