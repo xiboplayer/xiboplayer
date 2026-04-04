@@ -29,8 +29,8 @@ export class EventEmitter {
    */
   once(event, callback) {
     const wrapper = (...args) => {
-      callback(...args);
       this.off(event, wrapper);
+      callback(...args);
     };
     this.on(event, wrapper);
   }
