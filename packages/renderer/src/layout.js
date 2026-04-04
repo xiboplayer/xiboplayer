@@ -10,6 +10,18 @@ import { createLogger, isDebug, PLAYER_API } from '@xiboplayer/utils';
 
 const log = createLogger('Layout');
 
+// ── Safe interpolation helpers for HTML generation ─────────────────────────
+// Use these instead of raw ${value} in template literals to prevent XSS.
+// Our LayoutTranslator generates complete HTML documents as strings (unlike
+// upstream Xibo players that use DOM APIs). This gives us pre-rendering and
+// cross-context support (Node.js, arexibo, service worker) but requires
+// manual sanitization at every interpolation point.
+const SAFE_CSS_COLOR = /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.,\s%]+\)|[a-zA-Z]{1,20}|transparent|inherit)$/;
+export const safeCssColor = (v) => SAFE_CSS_COLOR.test(v) ? v : '#000000';
+export const safeJsString = (v) => JSON.stringify(v);
+export const safeHtmlAttr = (v) => String(v).replace(/[&"'<>]/g, c =>
+  ({ '&': '&amp;', '"': '&quot;', "'": '&#39;', '<': '&lt;', '>': '&gt;' }[c]));
+
 export class LayoutTranslator {
   constructor(xmds) {
     this.xmds = xmds;
@@ -29,7 +41,7 @@ export class LayoutTranslator {
 
     const width = parseInt(layoutEl.getAttribute('width') || '1920');
     const height = parseInt(layoutEl.getAttribute('height') || '1080');
-    const bgcolor = layoutEl.getAttribute('bgcolor') || '#000000';
+    const bgcolor = safeCssColor(layoutEl.getAttribute('bgcolor') || '#000000');
 
     const regions = [];
     for (const regionEl of doc.querySelectorAll('region')) {
@@ -416,7 +428,7 @@ ${mediaJS}
         if (!iframe) {
           iframe = document.createElement('iframe');
           iframe.id = '${iframeId}';
-          iframe.src = '${widgetUrl}';
+          iframe.src = ${safeJsString(widgetUrl)};
           iframe.style.width = '100%';
           iframe.style.height = '100%';
           iframe.style.border = 'none';
@@ -479,7 +491,7 @@ ${mediaJS}
         const region = document.getElementById('region_${regionId}');
         const img = document.createElement('img');
         img.className = 'media';
-        img.src = '${imageSrc}';
+        img.src = ${safeJsString(imageSrc)};
         img.style.opacity = '0';
         region.innerHTML = '';
         region.appendChild(img);
@@ -506,8 +518,8 @@ ${mediaJS}
         const region = document.getElementById('region_${regionId}');
         const video = document.createElement('video');
         video.className = 'media';
-        video.src = '${videoSrc}';
-        video.dataset.filename = '${videoFilename}';
+        video.src = ${safeJsString(videoSrc)};
+        video.dataset.filename = ${safeJsString(videoFilename)};
         video.autoplay = true;
         video.muted = ${media.options.mute === '1' ? 'true' : 'false'};
         video.loop = false;
@@ -518,7 +530,7 @@ ${mediaJS}
 
         // Retry loading if cache completes while video is playing
         const retryOnCache = (event) => {
-          if (event.detail.filename === '${videoFilename}' && video.error) {
+          if (event.detail.filename === ${safeJsString(videoFilename)} && video.error) {
             console.log('[Video] Cache complete, reloading:', '${videoFilename}');
             video.load();
             video.play();
@@ -595,7 +607,7 @@ ${mediaJS}
         const audio = document.createElement('audio');
         audio.id = '${audioId}';
         audio.className = 'media';
-        audio.src = '${audioSrc}';
+        audio.src = ${safeJsString(audioSrc)};
         audio.autoplay = true;
         audio.loop = ${audioLoop};
         audio.volume = ${audioVolume};
@@ -734,7 +746,7 @@ ${mediaJS}
 
         // Render PDF with multi-page support
         try {
-          const loadingTask = pdfjsLib.getDocument('${pdfSrc}');
+          const loadingTask = pdfjsLib.getDocument(${safeJsString(pdfSrc)});
           const pdf = await loadingTask.promise;
           const totalPages = pdf.numPages;
 
@@ -893,7 +905,7 @@ ${mediaJS}
         startFn = `() => {
         const region = document.getElementById('region_${regionId}');
         const iframe = document.createElement('iframe');
-        iframe.src = '${url}';
+        iframe.src = ${safeJsString(url)};
         iframe.style.opacity = '0';
         region.innerHTML = '';
         region.appendChild(iframe);
