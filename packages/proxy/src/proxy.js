@@ -22,6 +22,7 @@ import { createLogger, registerLogSink, PLAYER_API, setPlayerApi, computeCmsId }
 import { ContentStore } from './content-store.js';
 import { attachSyncRelay } from './sync-relay.js';
 import { getLanIp, advertiseSyncService, discoverSyncLead } from './discovery.js';
+import { getHardwareConfig } from './hardware.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
 
@@ -223,6 +224,14 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
 
     res.json({ ok: true });
+  });
+
+  // ─── GET /system/hardware — GPU detection + memory tuning ────
+  // Used by Chromium's launch-kiosk.sh to get GPU flags and memory config
+  // from the shared Node.js module instead of duplicating in bash.
+  app.get('/system/hardware', (_req, res) => {
+    const config = getHardwareConfig({ gpuPreference: _req.query.gpu });
+    res.json(config);
   });
 
   // ─── GET /system/lan-ip — return this machine's LAN IPv4 ────
