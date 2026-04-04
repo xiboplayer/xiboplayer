@@ -29,7 +29,10 @@ export class LayoutTranslator {
 
     const width = parseInt(layoutEl.getAttribute('width') || '1920');
     const height = parseInt(layoutEl.getAttribute('height') || '1080');
-    const bgcolor = layoutEl.getAttribute('bgcolor') || '#000000';
+    const rawBgcolor = layoutEl.getAttribute('bgcolor') || '#000000';
+    // Sanitize bgcolor to prevent CSS injection (XSS via </style><script>)
+    const SAFE_CSS_COLOR = /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.,\s%]+\)|[a-zA-Z]{1,20}|transparent|inherit)$/;
+    const bgcolor = SAFE_CSS_COLOR.test(rawBgcolor) ? rawBgcolor : '#000000';
 
     const regions = [];
     for (const regionEl of doc.querySelectorAll('region')) {
@@ -893,7 +896,7 @@ ${mediaJS}
         startFn = `() => {
         const region = document.getElementById('region_${regionId}');
         const iframe = document.createElement('iframe');
-        iframe.src = '${url}';
+        iframe.src = ${JSON.stringify(url)};
         iframe.style.opacity = '0';
         region.innerHTML = '';
         region.appendChild(iframe);
