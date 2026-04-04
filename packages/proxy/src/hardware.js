@@ -72,11 +72,9 @@ export function selectGPU(gpus, preference) {
     const displayGPUs = gpus.filter(g => g.hasDisplay);
     const renderOnly = gpus.filter(g => !g.hasDisplay);
     if (displayGPUs.length > 0 && renderOnly.length > 0) {
-      displayGPUs.sort((a, b) => b.rank - a.rank);
-      return displayGPUs[0];
+      return [...displayGPUs].sort((a, b) => b.rank - a.rank)[0];
     }
-    gpus.sort((a, b) => b.rank - a.rank);
-    return gpus[0] || null;
+    return [...gpus].sort((a, b) => b.rank - a.rank)[0] || null;
   }
   if (preference.startsWith('/dev/dri/')) {
     return gpus.find(g => g.renderNode === preference) || null;
@@ -106,4 +104,46 @@ export function getMemoryTuning() {
   }
 
   return { totalRAM_GB, cpuCount, maxOldSpaceMB, rasterThreads };
+}
+
+/**
+ * Generate Chromium/Electron GPU and memory flags.
+ * This is the single source of truth — both Electron and Chromium should use this.
+ *
+ * @param {object} [options]
+ * @param {string} [options.gpuPreference='auto'] - GPU selection preference
+ * @returns {{gpu: object|null, memory: object, flags: string[], env: object}}
+ */
+export function getHardwareConfig(options = {}) {
+  const gpus = detectGPUs();
+  const gpu = gpus.length > 0 ? selectGPU(gpus, options.gpuPreference) : null;
+  const memory = getMemoryTuning();
+
+  const flags = [
+    '--ignore-gpu-blocklist',
+    '--enable-gpu-rasterization',
+    '--enable-zero-copy',
+    `--num-raster-threads=${memory.rasterThreads}`,
+    `--js-flags=--max-old-space-size=${memory.maxOldSpaceMB}`,
+    '--enable-features=CanvasOopRasterization,VaapiVideoDecoder,VaapiVideoEncoder',
+    '--disable-gpu-watchdog',
+    '--disable-background-timer-throttling',
+  ];
+
+  const env = {};
+
+  if (gpu) {
+    flags.push(`--render-node-override=${gpu.renderNode}`);
+    if (gpu.vaDriver) {
+      env.LIBVA_DRIVER_NAME = gpu.vaDriver;
+    }
+  }
+
+  return {
+    gpus,
+    gpu,
+    memory,
+    flags,
+    env,
+  };
 }
