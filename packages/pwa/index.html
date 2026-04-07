@@ -146,13 +146,19 @@
 
     if (!hasUrlConfig && !hasStoredConfig) {
       console.log('[Player] No valid config, redirecting to setup...');
-      window.location.href = './setup.html' + window.location.search;
+      window.location.replace('./setup.html' + window.location.search);
+      // Prevent main.ts from loading during redirect
+      window.__XIBO_REDIRECTING = true;
     } else {
       console.log('[Player] Configuration valid, loading player...');
     }
   </script>
 
-  <!-- Main player script -->
-  <script type="module" src="/src/main.ts"></script>
+  <!-- Main player script — skipped if redirecting to setup -->
+  <script type="module">
+    if (!window.__XIBO_REDIRECTING) {
+      import('/src/main.ts');
+    }
+  </script>
 </body>
 </html>
