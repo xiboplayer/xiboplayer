@@ -400,16 +400,6 @@ class PwaPlayer {
         } catch (_) { /* pure PWA — no Electron API */ }
       }
 
-      // No CMS URL → unconfigured. Show setup screen and wait — don't start
-      // collection cycles with an empty URL (causes registration loop).
-      if (!config.cmsUrl) {
-        log.warn('No CMS URL configured — showing setup screen');
-        this.setupOverlay = new SetupOverlay();
-        this.setupOverlay.show();
-        this.updateStatus('Waiting for CMS configuration...', 'info');
-        return;
-      }
-
       // Transport selection:
       //   transport: "rest"   → forced REST API
       //   transport: "xmds"   → forced SOAP
@@ -2876,8 +2866,8 @@ class PwaPlayer {
    * Cleanup
    */
   cleanup() {
-    this.core.cleanup();
-    this.renderer.cleanup();
+    this.core?.cleanup();
+    this.renderer?.cleanup();
 
     if (this._screenshotInterval) {
       clearInterval(this._screenshotInterval);
@@ -2930,9 +2920,6 @@ function startPlayer() {
   const player = new PwaPlayer();
   player.init().catch(error => {
     log.error('Failed to initialize:', error);
-    // First boot with bad config — redirect to setup so user can fix it
-    log.warn('Redirecting to setup screen...');
-    window.location.href = './setup.html';
   });
   window.addEventListener('beforeunload', () => {
     player.cleanup();
