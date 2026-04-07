@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/proxy",
-  "version": "0.7.15",
+  "version": "0.7.16",
   "description": "CORS proxy and static server for xiboplayer (serves PWA + proxies CMS)",
   "type": "module",
   "main": "./src/index.js",

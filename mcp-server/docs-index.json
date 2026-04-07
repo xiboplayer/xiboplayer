@@ -1,0 +1,2141 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-02-28T20:53:31.794Z",
+  "statistics": {
+    "packages": 16,
+    "sourceFiles": 83,
+    "symbols": 238,
+    "readmes": 4,
+    "players": 3
+  },
+  "packages": [
+    {
+      "name": "@xiboplayer/xmr",
+      "shortName": "xmr",
+      "version": "0.5.18",
+      "description": "XMR WebSocket client for real-time Xibo CMS commands",
+      "dependencies": [
+        "@xiboplayer/utils",
+        "@xibosignage/xibo-communication-framework"
+      ],
+      "sourceFiles": 4,
+      "sourceLines": 559,
+      "jsdocCount": 15,
+      "exports": [
+        "XmrWrapper",
+        "createSpy",
+        "mockXmr",
+        "createMockPlayer",
+        "createMockConfig",
+        "VERSION"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/xmr"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/xmds",
+      "shortName": "xmds",
+      "version": "0.5.18",
+      "description": "XMDS SOAP client for Xibo CMS communication",
+      "dependencies": [
+        "@xiboplayer/utils"
+      ],
+      "sourceFiles": 5,
+      "sourceLines": 1195,
+      "jsdocCount": 42,
+      "exports": [
+        "XmdsClient",
+        "parseScheduleResponse",
+        "RestClient",
+        "VERSION"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/xmds"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Methods"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/utils",
+      "shortName": "utils",
+      "version": "0.5.18",
+      "description": "Shared utilities for xiboplayer packages",
+      "dependencies": [
+        "@xiboplayer/crypto"
+      ],
+      "sourceFiles": 7,
+      "sourceLines": 2410,
+      "jsdocCount": 152,
+      "exports": [
+        "createLogger",
+        "setLogLevel",
+        "getLogLevel",
+        "isDebug",
+        "applyCmsLogLevel",
+        "mapCmsLogLevel",
+        "registerLogSink",
+        "unregisterLogSink",
+        "LOG_LEVELS",
+        "VERSION",
+        "EventEmitter",
+        "config",
+        "fetchWithRetry",
+        "CmsApiClient",
+        "CmsApiError",
+        "Config"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/utils"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Exports"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/sync",
+      "shortName": "sync",
+      "version": "0.5.18",
+      "description": "Multi-display synchronization for xiboplayer",
+      "dependencies": [
+        "@xiboplayer/utils"
+      ],
+      "sourceFiles": 2,
+      "sourceLines": 515,
+      "jsdocCount": 19,
+      "exports": [
+        "SyncManager",
+        "VERSION"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/sync"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/sw",
+      "shortName": "sw",
+      "version": "0.5.18",
+      "description": "Service Worker toolkit for chunk streaming and offline caching",
+      "dependencies": [
+        "@xiboplayer/cache",
+        "@xiboplayer/utils"
+      ],
+      "sourceFiles": 6,
+      "sourceLines": 1079,
+      "jsdocCount": 34,
+      "exports": [
+        "extractMediaIdsFromXlf",
+        "BASE",
+        "formatBytes",
+        "parseRangeHeader",
+        "createMediaHeaders",
+        "createErrorResponse",
+        "CacheKey",
+        "HTTP_STATUS",
+        "TIMEOUTS",
+        "getChunkBoundaries",
+        "getChunksForRange",
+        "extractRangeFromChunks",
+        "RequestHandler",
+        "MessageHandler",
+        "calculateChunkConfig"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/sw"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Features"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/stats",
+      "shortName": "stats",
+      "version": "0.5.18",
+      "description": "Proof of play tracking, stats reporting, and CMS logging",
+      "dependencies": [
+        "@xiboplayer/utils"
+      ],
+      "sourceFiles": 4,
+      "sourceLines": 1486,
+      "jsdocCount": 43,
+      "exports": [
+        "StatsCollector",
+        "formatStats",
+        "LogReporter",
+        "formatLogs",
+        "formatFaults",
+        "VERSION"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/stats"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/settings",
+      "shortName": "settings",
+      "version": "0.5.18",
+      "description": "CMS settings management and application for xiboplayer",
+      "dependencies": [
+        "@xiboplayer/utils"
+      ],
+      "sourceFiles": 3,
+      "sourceLines": 396,
+      "jsdocCount": 15,
+      "exports": [
+        "DisplaySettings",
+        "VERSION"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/settings"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/schedule",
+      "shortName": "schedule",
+      "version": "0.5.18",
+      "description": "Complete scheduling solution: campaigns, dayparting, interrupts, and overlays",
+      "dependencies": [
+        "@xiboplayer/utils"
+      ],
+      "sourceFiles": 7,
+      "sourceLines": 1947,
+      "jsdocCount": 77,
+      "exports": [
+        "parseLayoutDuration",
+        "calculateTimeline",
+        "buildScheduleQueue",
+        "ScheduleManager",
+        "scheduleManager",
+        "OverlayScheduler",
+        "overlayScheduler",
+        "InterruptScheduler",
+        "interruptScheduler",
+        "VERSION",
+        "evaluateCriteria"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/schedule"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/renderer",
+      "shortName": "renderer",
+      "version": "0.5.18",
+      "description": "RendererLite - Fast, efficient XLF layout rendering engine",
+      "dependencies": [
+        "@xiboplayer/cache",
+        "@xiboplayer/utils",
+        "nanoevents",
+        "pdfjs-dist"
+      ],
+      "sourceFiles": 5,
+      "sourceLines": 4626,
+      "jsdocCount": 99,
+      "exports": [
+        "RendererLite",
+        "LayoutTranslator",
+        "LayoutPool",
+        "VERSION"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/renderer"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Widget Types"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/pwa",
+      "shortName": "pwa",
+      "version": "0.5.18",
+      "description": "Lightweight PWA xiboplayer with RendererLite",
+      "dependencies": [
+        "@xiboplayer/cache",
+        "@xiboplayer/core",
+        "@xiboplayer/crypto",
+        "@xiboplayer/renderer",
+        "@xiboplayer/schedule",
+        "@xiboplayer/settings",
+        "@xiboplayer/stats",
+        "@xiboplayer/sw",
+        "@xiboplayer/sync",
+        "@xiboplayer/utils",
+        "@xiboplayer/xmds",
+        "@xiboplayer/xmr",
+        "html2canvas",
+        "nanoevents",
+        "xml2js"
+      ],
+      "sourceFiles": 4,
+      "sourceLines": 2949,
+      "jsdocCount": 41,
+      "exports": [
+        "TimelineOverlay",
+        "isTimelineVisible",
+        "SetupOverlay",
+        "DownloadOverlay",
+        "getDefaultOverlayConfig"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "xiboplayer PWA"
+        },
+        {
+          "level": 2,
+          "text": "CMS Communication"
+        },
+        {
+          "level": 2,
+          "text": "Features"
+        },
+        {
+          "level": 2,
+          "text": "Keyboard Shortcuts"
+        },
+        {
+          "level": 2,
+          "text": "Auto-authorize via CMS API (optional)"
+        },
+        {
+          "level": 3,
+          "text": "How it works"
+        },
+        {
+          "level": 3,
+          "text": "CMS setup"
+        },
+        {
+          "level": 3,
+          "text": "Interactive setup"
+        },
+        {
+          "level": 3,
+          "text": "Provisioning via config.json"
+        },
+        {
+          "level": 2,
+          "text": "Debug Overlays"
+        },
+        {
+          "level": 3,
+          "text": "Timeline Overlay (`T`)"
+        },
+        {
+          "level": 3,
+          "text": "Download Overlay (`D`)"
+        },
+        {
+          "level": 3,
+          "text": "Video Controls (`V`)"
+        },
+        {
+          "level": 2,
+          "text": "Service Worker Architecture"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Development"
+        },
+        {
+          "level": 3,
+          "text": "Prerequisites"
+        },
+        {
+          "level": 3,
+          "text": "Setup"
+        },
+        {
+          "level": 3,
+          "text": "Build"
+        },
+        {
+          "level": 3,
+          "text": "Dev server"
+        },
+        {
+          "level": 3,
+          "text": "Link SDK for local development"
+        },
+        {
+          "level": 2,
+          "text": "Testing"
+        },
+        {
+          "level": 3,
+          "text": "Electron (recommended for development)"
+        },
+        {
+          "level": 3,
+          "text": "Chromium kiosk"
+        },
+        {
+          "level": 3,
+          "text": "Playwright E2E"
+        },
+        {
+          "level": 2,
+          "text": "License"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/proxy",
+      "shortName": "proxy",
+      "version": "0.5.18",
+      "description": "CORS proxy and static server for xiboplayer (serves PWA + proxies CMS)",
+      "dependencies": [
+        "@xiboplayer/utils",
+        "express",
+        "cors"
+      ],
+      "sourceFiles": 3,
+      "sourceLines": 1123,
+      "jsdocCount": 27,
+      "exports": [
+        "createProxyApp",
+        "startServer",
+        "ContentStore"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/proxy"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 3,
+          "text": "As a library"
+        },
+        {
+          "level": 3,
+          "text": "As a CLI"
+        },
+        {
+          "level": 2,
+          "text": "API Reference"
+        },
+        {
+          "level": 3,
+          "text": "`createProxyApp({ pwaPath, appVersion })`"
+        },
+        {
+          "level": 3,
+          "text": "`startServer({ port, pwaPath, appVersion })`"
+        },
+        {
+          "level": 2,
+          "text": "Proxy Routes"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/player",
+      "shortName": "player",
+      "version": "0.5.18",
+      "description": "Meta package - installs all xiboplayer packages",
+      "dependencies": [
+        "@xiboplayer/core",
+        "@xiboplayer/renderer",
+        "@xiboplayer/cache",
+        "@xiboplayer/schedule",
+        "@xiboplayer/xmds",
+        "@xiboplayer/xmr",
+        "@xiboplayer/sw",
+        "@xiboplayer/utils"
+      ],
+      "sourceFiles": 1,
+      "sourceLines": 10,
+      "jsdocCount": 0,
+      "exports": [
+        "PlayerCore",
+        "RendererLite",
+        "LayoutTranslator",
+        "CacheManager",
+        "StoreClient",
+        "DownloadClient",
+        "DownloadManager",
+        "ScheduleManager",
+        "XmdsClient",
+        "XmrWrapper",
+        "registerServiceWorker",
+        "unregisterServiceWorker",
+        "createLogger",
+        "EventEmitter",
+        "Config"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/player Documentation"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Includes"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/crypto",
+      "shortName": "crypto",
+      "version": "0.5.18",
+      "description": "RSA key management for xiboplayer XMR registration",
+      "dependencies": [],
+      "sourceFiles": 2,
+      "sourceLines": 78,
+      "jsdocCount": 4,
+      "exports": [
+        "arrayBufferToPem",
+        "isValidPemKey",
+        "generateRsaKeyPair"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/crypto"
+        },
+        {
+          "level": 2,
+          "text": "API"
+        },
+        {
+          "level": 3,
+          "text": "`generateRsaKeyPair()`"
+        },
+        {
+          "level": 3,
+          "text": "`isValidPemKey(pem)`"
+        },
+        {
+          "level": 2,
+          "text": "Design"
+        },
+        {
+          "level": 2,
+          "text": "Usage in the SDK"
+        },
+        {
+          "level": 2,
+          "text": "License"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/core",
+      "shortName": "core",
+      "version": "0.5.18",
+      "description": "xiboplayer core orchestration and lifecycle management",
+      "dependencies": [
+        "@xiboplayer/utils",
+        "@xibosignage/xibo-communication-framework",
+        "nanoevents"
+      ],
+      "sourceFiles": 6,
+      "sourceLines": 2319,
+      "jsdocCount": 88,
+      "exports": [
+        "mockFetch",
+        "mockServiceWorker",
+        "mockCacheManager",
+        "createTestBlob",
+        "createSpy",
+        "mockMessageChannel",
+        "resetMocks",
+        "PlayerState",
+        "PlayerCore",
+        "VERSION",
+        "DataConnectorManager"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/core"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Key Events"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/cms-testing",
+      "shortName": "cms-testing",
+      "version": "0.5.18",
+      "description": "Automated testing for Xibo CMS integration with player",
+      "dependencies": [
+        "@xiboplayer/utils",
+        "node-fetch",
+        "dotenv"
+      ],
+      "sourceFiles": 15,
+      "sourceLines": 1832,
+      "jsdocCount": 45,
+      "exports": [
+        "XiboCmsClient",
+        "CmsTestHelper",
+        "createTestHelper"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "Xibo CMS Testing Package"
+        },
+        {
+          "level": 2,
+          "text": "Features"
+        },
+        {
+          "level": 2,
+          "text": "Setup"
+        },
+        {
+          "level": 3,
+          "text": "1. Install Dependencies"
+        },
+        {
+          "level": 3,
+          "text": "2. Configure OAuth Credentials"
+        },
+        {
+          "level": 3,
+          "text": "3. Create Environment File"
+        },
+        {
+          "level": 3,
+          "text": "4. Create Test Display Group"
+        },
+        {
+          "level": 3,
+          "text": "5. Create Test Layouts (Manual Method - Recommended)"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 3,
+          "text": "Run All Tests"
+        },
+        {
+          "level": 1,
+          "text": "or from workspace root:"
+        },
+        {
+          "level": 3,
+          "text": "Individual Test Scripts"
+        },
+        {
+          "level": 1,
+          "text": "Create test layouts programmatically (advanced)"
+        },
+        {
+          "level": 1,
+          "text": "Create test campaigns"
+        },
+        {
+          "level": 1,
+          "text": "Create test schedules"
+        },
+        {
+          "level": 1,
+          "text": "Verify player is displaying content"
+        },
+        {
+          "level": 1,
+          "text": "Clean up all test content"
+        },
+        {
+          "level": 2,
+          "text": "Manual Verification"
+        },
+        {
+          "level": 2,
+          "text": "API Client Usage"
+        },
+        {
+          "level": 2,
+          "text": "Test Scenarios"
+        },
+        {
+          "level": 3,
+          "text": "Scenario 1: Campaign with Multiple Layouts"
+        },
+        {
+          "level": 3,
+          "text": "Scenario 2: Dayparting (Recurring Schedules)"
+        },
+        {
+          "level": 3,
+          "text": "Scenario 3: Priority Resolution"
+        },
+        {
+          "level": 3,
+          "text": "Scenario 4: Layout Transitions"
+        },
+        {
+          "level": 2,
+          "text": "Troubleshooting"
+        },
+        {
+          "level": 3,
+          "text": "Authentication Fails"
+        },
+        {
+          "level": 3,
+          "text": "Display Group Not Found"
+        },
+        {
+          "level": 3,
+          "text": "No Test Layouts"
+        },
+        {
+          "level": 3,
+          "text": "Schedule Not Appearing on Player"
+        },
+        {
+          "level": 2,
+          "text": "Architecture"
+        },
+        {
+          "level": 2,
+          "text": "Xibo CMS API Reference"
+        },
+        {
+          "level": 2,
+          "text": "Contributing"
+        },
+        {
+          "level": 2,
+          "text": "License"
+        }
+      ]
+    },
+    {
+      "name": "@xiboplayer/cache",
+      "shortName": "cache",
+      "version": "0.5.18",
+      "description": "Offline caching and download management with parallel chunk downloads",
+      "dependencies": [
+        "@xiboplayer/utils",
+        "spark-md5"
+      ],
+      "sourceFiles": 9,
+      "sourceLines": 2061,
+      "jsdocCount": 59,
+      "exports": [
+        "mockFetch",
+        "mockChunkedFetch",
+        "createTestBlob",
+        "createSpy",
+        "StoreClient",
+        "VERSION",
+        "CacheManager",
+        "cacheManager",
+        "DownloadClient",
+        "DownloadManager",
+        "FileDownload",
+        "LayoutTaskBuilder",
+        "isUrlExpired",
+        "toProxyUrl",
+        "setCmsOrigin",
+        "CacheAnalyzer",
+        "cacheWidgetHtml",
+        "PRIORITY",
+        "BARRIER",
+        "DownloadTask",
+        "DownloadQueue",
+        "formatBytes"
+      ],
+      "hasReadme": true,
+      "readmeHeadings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/cache"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Exports"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ]
+    }
+  ],
+  "players": [
+    {
+      "name": "xiboplayer-pwa",
+      "sdkPackages": [
+        "core",
+        "renderer",
+        "schedule",
+        "xmds",
+        "xmr",
+        "cache",
+        "stats",
+        "settings",
+        "utils"
+      ],
+      "sourceFiles": [
+        "src/main.ts",
+        "public/sw-pwa.js"
+      ],
+      "sourceLines": 0,
+      "hasReadme": false
+    },
+    {
+      "name": "xiboplayer-electron",
+      "sdkPackages": [
+        "proxy"
+      ],
+      "sourceFiles": [
+        "src/main.js",
+        "src/preload.js"
+      ],
+      "sourceLines": 985,
+      "hasReadme": true
+    },
+    {
+      "name": "xiboplayer-chromium",
+      "sdkPackages": [
+        "proxy"
+      ],
+      "sourceFiles": [
+        "server/server.js"
+      ],
+      "sourceLines": 0,
+      "hasReadme": true
+    }
+  ],
+  "readmes": [
+    {
+      "path": "packages/xmr/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/xmr"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 1230
+    },
+    {
+      "path": "packages/xmds/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/xmds"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Methods"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 1822
+    },
+    {
+      "path": "packages/utils/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/utils"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Exports"
+        }
+      ],
+      "size": 1353
+    },
+    {
+      "path": "packages/sync/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/sync"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        }
+      ],
+      "size": 1034
+    },
+    {
+      "path": "packages/sw/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/sw"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Features"
+        }
+      ],
+      "size": 1405
+    },
+    {
+      "path": "packages/stats/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/stats"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 927
+    },
+    {
+      "path": "packages/settings/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/settings"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 1031
+    },
+    {
+      "path": "packages/schedule/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/schedule"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 1233
+    },
+    {
+      "path": "packages/renderer/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/renderer"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Widget Types"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 2168
+    },
+    {
+      "path": "packages/pwa/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "xiboplayer PWA"
+        },
+        {
+          "level": 2,
+          "text": "CMS Communication"
+        },
+        {
+          "level": 2,
+          "text": "Features"
+        },
+        {
+          "level": 2,
+          "text": "Keyboard Shortcuts"
+        },
+        {
+          "level": 2,
+          "text": "Auto-authorize via CMS API (optional)"
+        },
+        {
+          "level": 3,
+          "text": "How it works"
+        },
+        {
+          "level": 3,
+          "text": "CMS setup"
+        },
+        {
+          "level": 3,
+          "text": "Interactive setup"
+        },
+        {
+          "level": 3,
+          "text": "Provisioning via config.json"
+        },
+        {
+          "level": 2,
+          "text": "Debug Overlays"
+        },
+        {
+          "level": 3,
+          "text": "Timeline Overlay (`T`)"
+        },
+        {
+          "level": 3,
+          "text": "Download Overlay (`D`)"
+        },
+        {
+          "level": 3,
+          "text": "Video Controls (`V`)"
+        },
+        {
+          "level": 2,
+          "text": "Service Worker Architecture"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Development"
+        },
+        {
+          "level": 3,
+          "text": "Prerequisites"
+        },
+        {
+          "level": 3,
+          "text": "Setup"
+        },
+        {
+          "level": 3,
+          "text": "Build"
+        },
+        {
+          "level": 3,
+          "text": "Dev server"
+        },
+        {
+          "level": 3,
+          "text": "Link SDK for local development"
+        },
+        {
+          "level": 2,
+          "text": "Testing"
+        },
+        {
+          "level": 3,
+          "text": "Electron (recommended for development)"
+        },
+        {
+          "level": 3,
+          "text": "Chromium kiosk"
+        },
+        {
+          "level": 3,
+          "text": "Playwright E2E"
+        },
+        {
+          "level": 2,
+          "text": "License"
+        }
+      ],
+      "size": 8676
+    },
+    {
+      "path": "packages/proxy/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/proxy"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 3,
+          "text": "As a library"
+        },
+        {
+          "level": 3,
+          "text": "As a CLI"
+        },
+        {
+          "level": 2,
+          "text": "API Reference"
+        },
+        {
+          "level": 3,
+          "text": "`createProxyApp({ pwaPath, appVersion })`"
+        },
+        {
+          "level": 3,
+          "text": "`startServer({ port, pwaPath, appVersion })`"
+        },
+        {
+          "level": 2,
+          "text": "Proxy Routes"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 2487
+    },
+    {
+      "path": "packages/player/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/player Documentation"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Includes"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        }
+      ],
+      "size": 733
+    },
+    {
+      "path": "packages/crypto/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/crypto"
+        },
+        {
+          "level": 2,
+          "text": "API"
+        },
+        {
+          "level": 3,
+          "text": "`generateRsaKeyPair()`"
+        },
+        {
+          "level": 3,
+          "text": "`isValidPemKey(pem)`"
+        },
+        {
+          "level": 2,
+          "text": "Design"
+        },
+        {
+          "level": 2,
+          "text": "Usage in the SDK"
+        },
+        {
+          "level": 2,
+          "text": "License"
+        }
+      ],
+      "size": 1544
+    },
+    {
+      "path": "packages/core/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/core"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Key Events"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 1807
+    },
+    {
+      "path": "packages/cms-testing/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "Xibo CMS Testing Package"
+        },
+        {
+          "level": 2,
+          "text": "Features"
+        },
+        {
+          "level": 2,
+          "text": "Setup"
+        },
+        {
+          "level": 3,
+          "text": "1. Install Dependencies"
+        },
+        {
+          "level": 3,
+          "text": "2. Configure OAuth Credentials"
+        },
+        {
+          "level": 3,
+          "text": "3. Create Environment File"
+        },
+        {
+          "level": 3,
+          "text": "4. Create Test Display Group"
+        },
+        {
+          "level": 3,
+          "text": "5. Create Test Layouts (Manual Method - Recommended)"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 3,
+          "text": "Run All Tests"
+        },
+        {
+          "level": 1,
+          "text": "or from workspace root:"
+        },
+        {
+          "level": 3,
+          "text": "Individual Test Scripts"
+        },
+        {
+          "level": 1,
+          "text": "Create test layouts programmatically (advanced)"
+        },
+        {
+          "level": 1,
+          "text": "Create test campaigns"
+        },
+        {
+          "level": 1,
+          "text": "Create test schedules"
+        },
+        {
+          "level": 1,
+          "text": "Verify player is displaying content"
+        },
+        {
+          "level": 1,
+          "text": "Clean up all test content"
+        },
+        {
+          "level": 2,
+          "text": "Manual Verification"
+        },
+        {
+          "level": 2,
+          "text": "API Client Usage"
+        },
+        {
+          "level": 2,
+          "text": "Test Scenarios"
+        },
+        {
+          "level": 3,
+          "text": "Scenario 1: Campaign with Multiple Layouts"
+        },
+        {
+          "level": 3,
+          "text": "Scenario 2: Dayparting (Recurring Schedules)"
+        },
+        {
+          "level": 3,
+          "text": "Scenario 3: Priority Resolution"
+        },
+        {
+          "level": 3,
+          "text": "Scenario 4: Layout Transitions"
+        },
+        {
+          "level": 2,
+          "text": "Troubleshooting"
+        },
+        {
+          "level": 3,
+          "text": "Authentication Fails"
+        },
+        {
+          "level": 3,
+          "text": "Display Group Not Found"
+        },
+        {
+          "level": 3,
+          "text": "No Test Layouts"
+        },
+        {
+          "level": 3,
+          "text": "Schedule Not Appearing on Player"
+        },
+        {
+          "level": 2,
+          "text": "Architecture"
+        },
+        {
+          "level": 2,
+          "text": "Xibo CMS API Reference"
+        },
+        {
+          "level": 2,
+          "text": "Contributing"
+        },
+        {
+          "level": 2,
+          "text": "License"
+        }
+      ],
+      "size": 7428
+    },
+    {
+      "path": "packages/cache/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "@xiboplayer/cache"
+        },
+        {
+          "level": 2,
+          "text": "Overview"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 2,
+          "text": "Exports"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 2418
+    },
+    {
+      "path": "README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "xiboplayer SDK"
+        },
+        {
+          "level": 2,
+          "text": "Features"
+        },
+        {
+          "level": 2,
+          "text": "Packages"
+        },
+        {
+          "level": 2,
+          "text": "Quick start"
+        },
+        {
+          "level": 2,
+          "text": "Architecture"
+        },
+        {
+          "level": 2,
+          "text": "CMS communication"
+        },
+        {
+          "level": 2,
+          "text": "Rendering"
+        },
+        {
+          "level": 2,
+          "text": "Players built with this SDK"
+        },
+        {
+          "level": 2,
+          "text": "Development"
+        },
+        {
+          "level": 3,
+          "text": "Prerequisites"
+        },
+        {
+          "level": 3,
+          "text": "Setup"
+        },
+        {
+          "level": 3,
+          "text": "Testing"
+        },
+        {
+          "level": 3,
+          "text": "Workspace structure"
+        },
+        {
+          "level": 2,
+          "text": "License"
+        }
+      ],
+      "size": 13265
+    },
+    {
+      "path": "xiboplayer-electron/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "xiboplayer - Electron Kiosk Wrapper"
+        },
+        {
+          "level": 2,
+          "text": "Features"
+        },
+        {
+          "level": 3,
+          "text": "Kiosk Mode"
+        },
+        {
+          "level": 3,
+          "text": "System Integration"
+        },
+        {
+          "level": 3,
+          "text": "CMS Communication"
+        },
+        {
+          "level": 3,
+          "text": "Local HTTP Server"
+        },
+        {
+          "level": 3,
+          "text": "Logging"
+        },
+        {
+          "level": 3,
+          "text": "Configuration"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 3,
+          "text": "From RPM (Fedora/RHEL)"
+        },
+        {
+          "level": 2,
+          "text": "Configuration"
+        },
+        {
+          "level": 3,
+          "text": "Config file — `config.json` (recommended for provisioning)"
+        },
+        {
+          "level": 3,
+          "text": "Setup screen (interactive)"
+        },
+        {
+          "level": 3,
+          "text": "Auto-authorize via CMS API (optional)"
+        },
+        {
+          "level": 3,
+          "text": "Command-line arguments"
+        },
+        {
+          "level": 3,
+          "text": "Config priority"
+        },
+        {
+          "level": 3,
+          "text": "Paths"
+        },
+        {
+          "level": 3,
+          "text": "Log Levels"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 3,
+          "text": "Starting the Player"
+        },
+        {
+          "level": 1,
+          "text": "Run from command line"
+        },
+        {
+          "level": 1,
+          "text": "Or launch from applications menu"
+        },
+        {
+          "level": 1,
+          "text": "Applications → AudioVideo → xiboplayer"
+        },
+        {
+          "level": 3,
+          "text": "Auto-Start on Boot"
+        },
+        {
+          "level": 3,
+          "text": "Keyboard Shortcuts"
+        },
+        {
+          "level": 3,
+          "text": "System Tray Menu"
+        },
+        {
+          "level": 2,
+          "text": "Multiple Displays"
+        },
+        {
+          "level": 1,
+          "text": "Instance \"lobby\" — default port 8765"
+        },
+        {
+          "level": 1,
+          "text": "Instance \"cafeteria\" — port 8766"
+        },
+        {
+          "level": 3,
+          "text": "Setup"
+        },
+        {
+          "level": 1,
+          "text": "Edit: ExecStart=/usr/bin/xiboplayer-electron --instance=lobby"
+        },
+        {
+          "level": 2,
+          "text": "Building from Source"
+        },
+        {
+          "level": 2,
+          "text": "Development"
+        },
+        {
+          "level": 3,
+          "text": "Run in Development Mode"
+        },
+        {
+          "level": 3,
+          "text": "Debug Output"
+        },
+        {
+          "level": 2,
+          "text": "Architecture"
+        },
+        {
+          "level": 3,
+          "text": "Main Process (src/main.js)"
+        },
+        {
+          "level": 3,
+          "text": "Renderer Process"
+        },
+        {
+          "level": 3,
+          "text": "Preload Script (src/preload.js)"
+        },
+        {
+          "level": 3,
+          "text": "Express Server"
+        },
+        {
+          "level": 2,
+          "text": "Security"
+        },
+        {
+          "level": 3,
+          "text": "Sandboxing"
+        },
+        {
+          "level": 3,
+          "text": "Content Security Policy"
+        },
+        {
+          "level": 3,
+          "text": "GPU Hardware Acceleration"
+        },
+        {
+          "level": 3,
+          "text": "Permissions"
+        },
+        {
+          "level": 2,
+          "text": "Reconfiguring the Player"
+        },
+        {
+          "level": 1,
+          "text": "Wipe all config and restart — shows setup screen"
+        },
+        {
+          "level": 2,
+          "text": "Troubleshooting"
+        },
+        {
+          "level": 3,
+          "text": "Player won't start"
+        },
+        {
+          "level": 1,
+          "text": "Check if port is available"
+        },
+        {
+          "level": 1,
+          "text": "Try different port"
+        },
+        {
+          "level": 1,
+          "text": "Check logs"
+        },
+        {
+          "level": 3,
+          "text": "Black screen"
+        },
+        {
+          "level": 1,
+          "text": "Check PWA files exist"
+        },
+        {
+          "level": 1,
+          "text": "Reinstall package"
+        },
+        {
+          "level": 3,
+          "text": "CORS errors"
+        },
+        {
+          "level": 3,
+          "text": "Service won't auto-start"
+        },
+        {
+          "level": 1,
+          "text": "Enable lingering (user service without login)"
+        },
+        {
+          "level": 1,
+          "text": "Check service status"
+        },
+        {
+          "level": 1,
+          "text": "View full logs"
+        },
+        {
+          "level": 3,
+          "text": "Can't exit kiosk mode"
+        },
+        {
+          "level": 2,
+          "text": "Uninstallation"
+        },
+        {
+          "level": 3,
+          "text": "RPM"
+        },
+        {
+          "level": 3,
+          "text": "Remove Configuration"
+        },
+        {
+          "level": 2,
+          "text": "Support"
+        },
+        {
+          "level": 2,
+          "text": "Credits"
+        },
+        {
+          "level": 2,
+          "text": "License"
+        }
+      ],
+      "size": 12870
+    },
+    {
+      "path": "xiboplayer-chromium/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "xiboplayer — Chromium Kiosk (Self-contained)"
+        },
+        {
+          "level": 2,
+          "text": "What It Does"
+        },
+        {
+          "level": 2,
+          "text": "Architecture"
+        },
+        {
+          "level": 2,
+          "text": "Installation"
+        },
+        {
+          "level": 3,
+          "text": "From the package repository (recommended)"
+        },
+        {
+          "level": 3,
+          "text": "From local build"
+        },
+        {
+          "level": 2,
+          "text": "Configuration"
+        },
+        {
+          "level": 3,
+          "text": "CMS config — `config.json` (recommended for provisioning)"
+        },
+        {
+          "level": 3,
+          "text": "Auto-authorize via CMS API (optional)"
+        },
+        {
+          "level": 3,
+          "text": "Display and kiosk settings"
+        },
+        {
+          "level": 3,
+          "text": "Keyboard and mouse controls"
+        },
+        {
+          "level": 2,
+          "text": "Usage"
+        },
+        {
+          "level": 1,
+          "text": "First run — creates config file"
+        },
+        {
+          "level": 1,
+          "text": "Edit config"
+        },
+        {
+          "level": 1,
+          "text": "Run manually"
+        },
+        {
+          "level": 1,
+          "text": "Enable auto-start on login"
+        },
+        {
+          "level": 1,
+          "text": "Check status / logs"
+        },
+        {
+          "level": 2,
+          "text": "Multiple Displays"
+        },
+        {
+          "level": 1,
+          "text": "Instance \"lobby\" — port 8766 (default)"
+        },
+        {
+          "level": 1,
+          "text": "Instance \"cafeteria\" — port 8767"
+        },
+        {
+          "level": 3,
+          "text": "Setup"
+        },
+        {
+          "level": 1,
+          "text": "Copy and customize the service file"
+        },
+        {
+          "level": 1,
+          "text": "Edit: ExecStart=/usr/bin/xiboplayer --instance=lobby"
+        },
+        {
+          "level": 2,
+          "text": "Building"
+        },
+        {
+          "level": 3,
+          "text": "RPM"
+        },
+        {
+          "level": 3,
+          "text": "DEB"
+        },
+        {
+          "level": 2,
+          "text": "Dependencies"
+        }
+      ],
+      "size": 7406
+    }
+  ]
+}

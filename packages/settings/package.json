@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/settings",
-  "version": "0.7.15",
+  "version": "0.7.16",
   "description": "CMS settings management and application for xiboplayer",
   "type": "module",
   "main": "./src/index.js",
