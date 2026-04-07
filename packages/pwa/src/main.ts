@@ -400,6 +400,16 @@ class PwaPlayer {
         } catch (_) { /* pure PWA — no Electron API */ }
       }
 
+      // No CMS URL → unconfigured. Show setup screen and wait — don't start
+      // collection cycles with an empty URL (causes registration loop).
+      if (!config.cmsUrl) {
+        log.warn('No CMS URL configured — showing setup screen');
+        this.setupOverlay = new SetupOverlay();
+        this.setupOverlay.show();
+        this.updateStatus('Waiting for CMS configuration...', 'info');
+        return;
+      }
+
       // Transport selection:
       //   transport: "rest"   → forced REST API
       //   transport: "xmds"   → forced SOAP
