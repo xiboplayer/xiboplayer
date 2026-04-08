@@ -1070,15 +1070,56 @@ describe('CmsApiClient', () => {
   describe('Library Extensions', () => {
     beforeEach(() => stubAuth());
 
-    it('uploadMediaUrl() should POST with url and name', async () => {
-      mockFetch.mockResolvedValue(jsonResponse({ mediaId: 60 }));
+    it('uploadMediaUrl() should POST to /library/uploadUrl with url, type, optionalName', async () => {
+      // Xibo's Library::uploadFromUrl returns { id, data: <media> } on success
+      mockFetch.mockResolvedValue(jsonResponse({ id: 60, data: { mediaId: 60 } }));
 
-      const result = await api.uploadMediaUrl('https://example.com/image.jpg', 'Test Image');
+      const result = await api.uploadMediaUrl(
+        'https://example.com/image.jpg',
+        'image',
+        { optionalName: 'Test Image' },
+      );
+
+      // Must hit /library/uploadUrl, NOT /library — this is the bug fixed
+      // in xibo-players/xiboplayer#332. POST /library is the multipart
+      // file-upload handler and returns 500 for URL imports.
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(String(url)).toContain('/api/library/uploadUrl');
+      expect(opts.method).toBe('POST');
+      expect(opts.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+      expect(opts.body.get('url')).toBe('https://example.com/image.jpg');
+      expect(opts.body.get('type')).toBe('image');
+      expect(opts.body.get('optionalName')).toBe('Test Image');
+      expect(result.id).toBe(60);
+    });
+
+    it('uploadMediaUrl() should pass through extra options (folderId, extension, expires)', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ id: 61 }));
+
+      await api.uploadMediaUrl('https://example.com/clip.mp4', 'video', {
+        optionalName: 'Promo clip',
+        folderId: 3,
+        extension: 'mp4',
+        enableStat: 'Inherit',
+      });
 
       const [, opts] = mockFetch.mock.calls[0];
-      expect(opts.body.get('url')).toBe('https://example.com/image.jpg');
-      expect(opts.body.get('name')).toBe('Test Image');
-      expect(result.mediaId).toBe(60);
+      expect(opts.body.get('type')).toBe('video');
+      expect(opts.body.get('folderId')).toBe('3');
+      expect(opts.body.get('extension')).toBe('mp4');
+      expect(opts.body.get('enableStat')).toBe('Inherit');
+    });
+
+    it('uploadMediaUrl() works with just url + type (no options)', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ id: 62 }));
+
+      await api.uploadMediaUrl('https://example.com/bg.png', 'image');
+
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.body.get('url')).toBe('https://example.com/bg.png');
+      expect(opts.body.get('type')).toBe('image');
+      // optionalName is not set when no options provided
+      expect(opts.body.get('optionalName')).toBeNull();
     });
 
     it('copyMedia() should POST to /library/copy/{id}', async () => {
