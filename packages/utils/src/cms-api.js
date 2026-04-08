@@ -992,8 +992,42 @@ export class CmsApiClient {
    * @param {string} name - Name for the media item
    * @returns {Promise<Object>}
    */
-  async uploadMediaUrl(url, name) {
-    return this.post('/library', { url, name, type: 'uri' });
+  /**
+   * Upload media to the Library from a publicly reachable URL.
+   *
+   * The CMS fetches the file server-side via MediaFactory::queueDownload —
+   * no local download or multipart upload needed. This is the ideal path
+   * for importing assets from a CDN or object store (e.g. Cloudflare R2)
+   * into the Xibo Library.
+   *
+   * Targets `POST /library/uploadUrl` (Library::uploadFromUrl in the CMS)
+   * which requires form-urlencoded fields. **Not** `POST /library`, which
+   * is the multipart file-upload handler and rejects URL imports with HTTP
+   * 500. This bug was reported in xibo-players/xiboplayer#332.
+   *
+   * @param {string} url - Publicly reachable URL of the media
+   * @param {string} type - Xibo module type: "image", "video", "audio", "genericfile", etc.
+   * @param {Object} [options]
+   * @param {string} [options.optionalName] - Library display name. If omitted,
+   *   Xibo derives the name from the URL's filename.
+   * @param {string} [options.extension] - Override file extension (otherwise
+   *   auto-detected from the HTTP Content-Type header).
+   * @param {number} [options.folderId] - Target library folder ID.
+   * @param {string} [options.enableStat] - 'On' | 'Off' | 'Inherit'.
+   * @param {string} [options.expires] - Expiry date in `Y-m-d H:i:s` format.
+   * @returns {Promise<{id: number, data: Object}>} Xibo's upload response.
+   *   `id` is the new mediaId; `data` is the full media object.
+   *
+   * @example
+   *   const result = await api.uploadMediaUrl(
+   *     'https://media.xiboplayer.org/templates/welcome-lobby/welcome-1.jpg',
+   *     'image',
+   *     { optionalName: 'welcome-lobby · welcome-1.jpg' },
+   *   );
+   *   console.log(result.id); // → new mediaId
+   */
+  async uploadMediaUrl(url, type, options = {}) {
+    return this.post('/library/uploadUrl', { url, type, ...options });
   }
 
   /**
