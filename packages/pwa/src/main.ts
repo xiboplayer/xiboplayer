@@ -413,11 +413,28 @@ class PwaPlayer {
         || cfgTransport
         || 'auto';
 
-      // Use ProtocolDetector for auto-detection with re-probe support
+      // Use ProtocolDetector for auto-detection with re-probe support.
+      // The detector's first probe uses a generous timeout (10s default)
+      // to tolerate cold CMS start-ups — an initial 5-6s TLS+PHP-FPM
+      // warm-up used to trip the old 3s timeout and permanently lock
+      // the player into XMDS fallback for the rest of the session.
       this.protocolDetector = new ProtocolDetector(config.cmsUrl, RestClient, XmdsClient);
       const forceProtocol = (transport === 'auto') ? undefined : transport;
-      const { client } = await this.protocolDetector.detect(config, forceProtocol);
+      const { client, protocol } = await this.protocolDetector.detect(config, forceProtocol);
       this.xmds = client;
+
+      // If we fell back to XMDS, start a background auto-reprobe loop.
+      // When REST recovers (e.g. CMS restart, network fix), the detector
+      // swaps the live client pointer here and we're transparently back
+      // on REST without needing to restart the player.
+      // Skipped for explicitly forced protocols — if the operator asked
+      // for XMDS, stay on XMDS.
+      if (protocol === 'xmds' && forceProtocol === undefined) {
+        this.protocolDetector.startAutoReprobe(config, (newClient: any) => {
+          this.xmds = newClient;
+          log.info('[Protocol] Promoted from XMDS back to REST — live client swapped');
+        });
+      }
 
       // Initialize stats collector (namespaced by CMS ID)
       const cmsId = config.activeCmsId;
