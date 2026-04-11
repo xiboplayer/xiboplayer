@@ -151,6 +151,90 @@ export const Transitions = {
   },
 
   /**
+   * Apply slide-in transition (layout-level #337).
+   *
+   * Identical in shape to flyIn but keeps opacity at 1 throughout —
+   * slides are pure positional animations for layout-to-layout
+   * transitions where both layouts are fully rendered and the effect
+   * is a carousel-style push/pull.
+   */
+  slideIn(element, duration, direction, width, height) {
+    const dirMap = {
+      N: { x: 0, y: -height },
+      NE: { x: width, y: -height },
+      E: { x: width, y: 0 },
+      SE: { x: width, y: height },
+      S: { x: 0, y: height },
+      SW: { x: -width, y: height },
+      W: { x: -width, y: 0 },
+      NW: { x: -width, y: -height }
+    };
+    const offset = dirMap[direction] || dirMap.E;
+    return element.animate(
+      [
+        { transform: `translate(${offset.x}px, ${offset.y}px)` },
+        { transform: 'translate(0, 0)' }
+      ],
+      { duration, easing: 'ease-out', fill: 'forwards' }
+    );
+  },
+
+  /**
+   * Apply slide-out transition (layout-level #337).
+   *
+   * Pushes the outgoing layout off in the given direction.
+   */
+  slideOut(element, duration, direction, width, height) {
+    const dirMap = {
+      N: { x: 0, y: -height },
+      NE: { x: width, y: -height },
+      E: { x: width, y: 0 },
+      SE: { x: width, y: height },
+      S: { x: 0, y: height },
+      SW: { x: -width, y: height },
+      W: { x: -width, y: 0 },
+      NW: { x: -width, y: -height }
+    };
+    const offset = dirMap[direction] || dirMap.W;
+    return element.animate(
+      [
+        { transform: 'translate(0, 0)' },
+        { transform: `translate(${offset.x}px, ${offset.y}px)` }
+      ],
+      { duration, easing: 'ease-in', fill: 'forwards' }
+    );
+  },
+
+  /**
+   * Apply wipe-in transition (layout-level #337).
+   *
+   * Reveals the incoming layout by progressively shrinking a
+   * clip-path inset from one edge. The `direction` picks which edge
+   * is the "start" of the reveal — E means "wipe reveals starting
+   * from the left edge moving east", matching the barWipe convention.
+   */
+  wipeIn(element, duration, direction) {
+    // inset(<top> <right> <bottom> <left>) — 100% on an edge hides
+    // everything past that edge, 0% on an edge reveals everything.
+    const insetByDirection = {
+      E:  { from: 'inset(0 100% 0 0)',  to: 'inset(0 0 0 0)' },
+      W:  { from: 'inset(0 0 0 100%)',  to: 'inset(0 0 0 0)' },
+      S:  { from: 'inset(0 0 100% 0)',  to: 'inset(0 0 0 0)' },
+      N:  { from: 'inset(100% 0 0 0)',  to: 'inset(0 0 0 0)' },
+      // Diagonals: wipe from the named corner to its opposite
+      SE: { from: 'inset(0 100% 100% 0)', to: 'inset(0 0 0 0)' },
+      SW: { from: 'inset(0 0 100% 100%)', to: 'inset(0 0 0 0)' },
+      NE: { from: 'inset(100% 100% 0 0)', to: 'inset(0 0 0 0)' },
+      NW: { from: 'inset(100% 0 0 100%)', to: 'inset(0 0 0 0)' }
+    };
+    const clip = insetByDirection[direction] || insetByDirection.E;
+    return element.animate(
+      [{ clipPath: clip.from }, { clipPath: clip.to }],
+      { duration, easing: 'ease-out', fill: 'forwards' }
+    );
+  },
+
+  /**
    * Apply transition based on type
    */
   apply(element, transitionConfig, isIn, regionWidth, regionHeight) {
@@ -177,6 +261,14 @@ export const Transitions = {
         return isIn ? this.flyIn(element, duration, direction, regionWidth, regionHeight) : null;
       case 'flyout':
         return isIn ? null : this.flyOut(element, duration, direction, regionWidth, regionHeight);
+      case 'slide':
+        return isIn
+          ? this.slideIn(element, duration, direction, regionWidth, regionHeight)
+          : this.slideOut(element, duration, direction, regionWidth, regionHeight);
+      case 'wipe':
+        // Wipe is a reveal-only effect — the outgoing layout isn't
+        // animated, the incoming one "uncovers" itself on top.
+        return isIn ? this.wipeIn(element, duration, direction) : null;
       default:
         return null;
     }
@@ -250,6 +342,14 @@ export class RendererLite {
     this.layoutPool = new LayoutPool(2);
     this.preloadTimer = null;
     this._preloadRetryTimer = null;
+
+    // Layout-to-layout transition default (#337). Applied when the
+    // incoming layout has no per-layout layoutTransitionIn override.
+    // Setting type to 'instant' preserves the pre-#337 hard-cut
+    // behaviour byte-for-byte.
+    this.layoutTransition = this._normalizeLayoutTransition(
+      options.layoutTransition
+    );
 
     // Setup container styles
     this.setupContainer();
@@ -394,6 +494,47 @@ export class RendererLite {
   }
 
   /**
+   * Normalize a layout transition spec from constructor options.
+   *
+   * Accepts either a partial object, null, or undefined, and returns a
+   * canonical shape: {type, duration, direction}. Defaults to the
+   * backwards-compatible `instant` type so existing callers see no
+   * behavioural change.
+   *
+   * @param {Object|null|undefined} spec
+   * @returns {{type: string, duration: number, direction: string|undefined}}
+   */
+  _normalizeLayoutTransition(spec) {
+    const type = spec?.type || 'instant';
+    const duration = Number.isFinite(spec?.duration) ? spec.duration : 500;
+    const direction = spec?.direction || undefined;
+    return { type, duration, direction };
+  }
+
+  /**
+   * Resolve the effective layout transition spec for an incoming
+   * layout. Per-layout overrides (from parseXlf) beat the
+   * renderer-wide default; unspecified fields fall back to the
+   * default's values.
+   *
+   * @param {Object} incomingLayout - parsed layout object
+   * @returns {{type: string, duration: number, direction: string|undefined}}
+   */
+  _resolveLayoutTransition(incomingLayout) {
+    const layoutOverride = incomingLayout?.layoutTransitionIn;
+    if (!layoutOverride || !layoutOverride.type) {
+      return this.layoutTransition;
+    }
+    return {
+      type: layoutOverride.type,
+      duration: Number.isFinite(layoutOverride.duration)
+        ? layoutOverride.duration
+        : this.layoutTransition.duration,
+      direction: layoutOverride.direction || this.layoutTransition.direction,
+    };
+  }
+
+  /**
    * Parse XLF XML to layout object
    * @param {string} xlfXml - XLF XML content
    * @returns {Object} Parsed layout
@@ -408,6 +549,24 @@ export class RendererLite {
     }
 
     const layoutDurationAttr = layoutEl.getAttribute('duration');
+
+    // Layout-to-layout transitions (#337). When present, these attributes
+    // describe the visual effect to apply when this layout becomes the
+    // active one. The "In" suffix mirrors the transIn/transOut
+    // convention on <media> widgets. Absent = use the renderer's
+    // configured default (or "instant" if no default is set).
+    //
+    // Supported types: instant (default, hard cut), fade, slide, wipe.
+    // Direction (slide + wipe) uses the same 8-way compass as widget fly:
+    // N, NE, E, SE, S, SW, W, NW.
+    const layoutTransitionInType = layoutEl.getAttribute('layoutTransitionIn');
+    const layoutTransitionInDurationAttr = layoutEl.getAttribute(
+      'layoutTransitionInDuration'
+    );
+    const layoutTransitionInDirection = layoutEl.getAttribute(
+      'layoutTransitionInDirection'
+    );
+
     const layout = {
       schemaVersion: parseInt(layoutEl.getAttribute('schemaVersion') || '1'),
       width: parseInt(layoutEl.getAttribute('width') || '1920'),
@@ -417,6 +576,15 @@ export class RendererLite {
       background: layoutEl.getAttribute('background') || null, // Background image fileId
       enableStat: layoutEl.getAttribute('enableStat') !== '0', // absent or "1" = enabled
       actions: this.parseActions(layoutEl),
+      layoutTransitionIn: layoutTransitionInType
+        ? {
+            type: layoutTransitionInType,
+            duration: layoutTransitionInDurationAttr
+              ? parseInt(layoutTransitionInDurationAttr)
+              : undefined,
+            direction: layoutTransitionInDirection || undefined,
+          }
+        : null,
       regions: []
     };
 
@@ -3013,9 +3181,15 @@ export class RendererLite {
   }
 
   /**
-   * Swap to a preloaded layout from the pool (instant transition).
-   * Hides the current layout container and shows the preloaded one,
-   * then starts widget cycling and layout timer.
+   * Swap to a preloaded layout from the pool.
+   *
+   * Dispatches on the resolved layout transition spec:
+   * - `instant` (default)   → hard cut via _swapToPreloadedLayoutInstant
+   * - `fade|slide|wipe|...` → cross-fade overlap via
+   *   _swapToPreloadedLayoutWithTransition
+   *
+   * Per-layout overrides (from the XLF `layoutTransitionIn` attribute)
+   * beat the renderer's configured default. See #337.
    *
    * @param {number} layoutId - Layout ID to swap to
    */
@@ -3026,6 +3200,27 @@ export class RendererLite {
       return;
     }
 
+    const spec = this._resolveLayoutTransition(preloaded.layout);
+
+    if (spec.type === 'instant') {
+      return this._swapToPreloadedLayoutInstant(layoutId, preloaded);
+    }
+    return this._swapToPreloadedLayoutWithTransition(layoutId, preloaded, spec);
+  }
+
+  /**
+   * Instant swap path — the pre-#337 fast swap that hard-cuts from
+   * old to new with zero animation overhead. This is the default and
+   * covers the common "no transition configured" case.
+   *
+   * Kept as a dedicated method (rather than a branch) so the
+   * transition path can extract shared helpers without destabilising
+   * the fast path's behaviour.
+   *
+   * @param {number} layoutId
+   * @param {Object} preloaded - pool entry from layoutPool.get(layoutId)
+   */
+  async _swapToPreloadedLayoutInstant(layoutId, preloaded) {
     // ── Tear down old layout ──
     this.removeActionListeners();
     this._clearLayoutTimers();
@@ -3080,8 +3275,181 @@ export class RendererLite {
     this.regions.clear();
 
     // ── Activate preloaded layout ──
+    this._activatePreloadedLayout(layoutId, preloaded, oldLayoutId, alreadyEmittedEnd);
+
+    this.log.info(`Swapped to preloaded layout ${layoutId} (instant transition)`);
+    this._logResourceStats(layoutId);
+  }
+
+  /**
+   * Transition swap path — cross-fade / slide / wipe between layouts
+   * using the LayoutPool's overlap architecture (#337).
+   *
+   * The preloaded wrapper already lives inside `this.container` at
+   * zIndex=-1 (hidden). For the transition we:
+   *
+   *   1. Stop old widgets with the OLD layoutId still set (so their
+   *      widgetEnd events carry the correct layoutId).
+   *   2. Raise the new wrapper above the old (zIndex=1).
+   *   3. Update renderer state to the new layout and start its
+   *      widgets — they play over the top of the still-visible old
+   *      content during the transition window.
+   *   4. Kick off the incoming animation on the new wrapper and,
+   *      for fade/slide, a matching outgoing animation on the old
+   *      container. `wipe` is reveal-only — the old container
+   *      disappears instantly when the incoming wipe completes.
+   *   5. On the incoming animation's onfinish, tear down the old
+   *      layout the same way the instant path would have done
+   *      synchronously.
+   *
+   * Notes:
+   *   - Audio from the old layout keeps playing during the overlap.
+   *     Authors who want silent transitions should use `instant` or
+   *     mute the last audio widget on the outgoing layout.
+   *   - `layoutEnd` for the old layout is emitted up-front (same
+   *     point as the instant path, right after currentLayoutId
+   *     updates) so stats accounting isn't gated on the animation
+   *     clock. The DOM/media cleanup still waits for onfinish.
+   *
+   * @param {number} layoutId
+   * @param {Object} preloaded - pool entry from layoutPool.get(layoutId)
+   * @param {{type:string,duration:number,direction?:string}} spec
+   */
+  async _swapToPreloadedLayoutWithTransition(layoutId, preloaded, spec) {
+    this.removeActionListeners();
+    this._clearLayoutTimers();
+
+    const oldLayoutId = this.currentLayoutId;
+    const alreadyEmittedEnd = this.layoutEndEmitted;
+    this.layoutEndEmitted = false;
+
+    // Capture old state before we mutate `this.regions` so the
+    // deferred teardown in onfinish can still reach it.
+    const oldRegions = this.regions;
+    const oldIsPooled =
+      oldLayoutId !== null && this.layoutPool.has(oldLayoutId);
+    const oldContainer = oldIsPooled
+      ? this.layoutPool.get(oldLayoutId).container
+      : null;
+
+    // Phase 1 — stop old widgets while currentLayoutId still points
+    // at the old layout (widgetEnd events fire with the correct id).
+    this._clearRegionTimers(oldRegions);
+    this._stopAllRegionWidgets(oldRegions, this._stopWidgetBound);
+
+    // Clear old state AFTER widgets have emitted. The DOM is still
+    // alive and will be removed by _teardownOldLayoutAfterTransition
+    // once the animation finishes.
+    this.currentLayout = null;
+    this.currentLayoutId = null;
+    this.regions = new Map();
+
+    // Phase 2 — raise the preloaded wrapper above the old content.
+    // The preload path appends wrappers at zIndex=-1 hidden; the
+    // instant path sets them to zIndex=0 on activation. For the
+    // overlap transition we use zIndex=1 so the new layout visibly
+    // paints on top, and restore it to 0 at the end of the animation
+    // (matches the steady-state convention of the instant path).
     preloaded.container.style.visibility = 'visible';
-    preloaded.container.style.zIndex = '0';
+    preloaded.container.style.zIndex = '1';
+    // Start the incoming layout at the animation's "from" state:
+    // opacity 0 for fade, translated off-screen for slide, fully
+    // clipped for wipe. The Transitions.apply() call will drive the
+    // animation from there.
+    if (spec.type === 'fade') {
+      preloaded.container.style.opacity = '0';
+    }
+
+    // Phase 3 — activate new layout state + start its widgets.
+    this._activatePreloadedLayout(layoutId, preloaded, oldLayoutId, alreadyEmittedEnd);
+
+    // Phase 4 — kick off the animations. The incoming animation drives
+    // the teardown timing in its onfinish; the outgoing one runs in
+    // parallel purely for visual effect.
+    const layoutWidth = preloaded.layout.width;
+    const layoutHeight = preloaded.layout.height;
+
+    const incoming = Transitions.apply(
+      preloaded.container,
+      spec,
+      true,
+      layoutWidth,
+      layoutHeight
+    );
+    let outgoing = null;
+    if (oldContainer && (spec.type === 'fade' || spec.type === 'slide')) {
+      outgoing = Transitions.apply(
+        oldContainer,
+        spec,
+        false,
+        layoutWidth,
+        layoutHeight
+      );
+    }
+
+    const finalizeTeardown = () => {
+      // Restore the preloaded wrapper to the same zIndex the instant
+      // path leaves it at, so any subsequent swap finds the DOM in a
+      // consistent state.
+      preloaded.container.style.zIndex = '0';
+      preloaded.container.style.opacity = '';
+
+      this._teardownOldLayoutAfterTransition(
+        oldLayoutId,
+        oldRegions,
+        oldIsPooled
+      );
+
+      // Cancel any still-running outgoing animation in case the
+      // incoming finished first (different durations) — prevents the
+      // old container from becoming visible again mid-cleanup.
+      if (outgoing) {
+        try { outgoing.cancel(); } catch (_) { /* no-op */ }
+      }
+
+      this.log.info(
+        `Swapped to preloaded layout ${layoutId} (${spec.type} transition, ${spec.duration}ms)`
+      );
+      this._logResourceStats(layoutId);
+    };
+
+    if (incoming) {
+      incoming.onfinish = finalizeTeardown;
+      // Safety net: if onfinish never fires (browser bug, tab
+      // backgrounded, etc.), force cleanup after duration + 50%.
+      // This matches the pre-#337 worst case where cleanup was
+      // synchronous — we'd rather cut abruptly than leak DOM.
+      setTimeout(finalizeTeardown, Math.ceil(spec.duration * 1.5));
+    } else {
+      // Browser doesn't support the requested transition type —
+      // fall back to an instant cleanup so nothing leaks.
+      finalizeTeardown();
+    }
+  }
+
+  /**
+   * Shared "activate preloaded layout" block. Extracted from the
+   * instant path so both swap paths produce identical state after
+   * activation (state updates, event emission, background copy,
+   * scale, widget start). See _swapToPreloadedLayoutInstant for the
+   * historical inline version — this is a straight cut-and-lift,
+   * not a rewrite.
+   *
+   * Preconditions: the old layout's widgets have been stopped and
+   * the old state has been cleared from this.currentLayout / this.regions.
+   *
+   * @param {number} layoutId
+   * @param {Object} preloaded - pool entry
+   * @param {number|null} oldLayoutId - id of the layout we're leaving
+   * @param {boolean} alreadyEmittedEnd - whether layoutEnd was already emitted for the old layout
+   */
+  _activatePreloadedLayout(layoutId, preloaded, oldLayoutId, alreadyEmittedEnd) {
+    preloaded.container.style.visibility = 'visible';
+    // The transition path raises zIndex to 1 during the animation and
+    // restores it to 0 in finalizeTeardown — don't clobber that here.
+    if (preloaded.container.style.zIndex !== '1') {
+      preloaded.container.style.zIndex = '0';
+    }
 
     // Update renderer state to the preloaded layout
     this.layoutPool.setHot(layoutId);
@@ -3137,9 +3505,50 @@ export class RendererLite {
     if (!this.preloadTimer) {
       this._scheduleNextLayoutPreload(preloaded.layout);
     }
+  }
 
-    this.log.info(`Swapped to preloaded layout ${layoutId} (instant transition)`);
-    this._logResourceStats(layoutId);
+  /**
+   * Tear down the old layout after a transition animation finishes.
+   *
+   * Mirrors the synchronous teardown in _swapToPreloadedLayoutInstant
+   * but runs from an animation's onfinish callback (or the safety
+   * timeout) so the DOM, videos, and blob URLs live long enough for
+   * the visual transition to complete.
+   *
+   * @param {number|null} oldLayoutId
+   * @param {Map} oldRegions - the this.regions captured before swap
+   * @param {boolean} oldIsPooled - whether the old layout was in the pool
+   */
+  _teardownOldLayoutAfterTransition(oldLayoutId, oldRegions, oldIsPooled) {
+    if (oldIsPooled && oldLayoutId !== null) {
+      // Old layout was preloaded — evict from pool (removes wrapper).
+      this.layoutPool.evict(oldLayoutId);
+      return;
+    }
+
+    // Old layout was rendered normally — manual cleanup.
+    for (const [, region] of oldRegions) {
+      // Release video/audio resources before removing from DOM
+      LayoutPool.releaseMediaElements(region.element);
+      // Apply region exit transition if configured, then remove
+      if (region.config?.exitTransition) {
+        const animation = Transitions.apply(
+          region.element, region.config.exitTransition, false,
+          region.width, region.height
+        );
+        if (animation) {
+          const el = region.element;
+          animation.onfinish = () => el.remove();
+        } else {
+          region.element.remove();
+        }
+      } else {
+        region.element.remove();
+      }
+    }
+    if (oldLayoutId) {
+      this.revokeBlobUrlsForLayout(oldLayoutId);
+    }
   }
 
   /**
