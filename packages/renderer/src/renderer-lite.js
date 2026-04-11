@@ -3310,6 +3310,12 @@ export class RendererLite {
    *     point as the instant path, right after currentLayoutId
    *     updates) so stats accounting isn't gated on the animation
    *     clock. The DOM/media cleanup still waits for onfinish.
+   *   - Multi-display sync (#337 DoD): no sync-manager changes are
+   *     needed. `onLayoutShow` fires on every display at the same
+   *     moment via the lead's `showAt` contract, each display
+   *     applies its choreography stagger, and the transition spec
+   *     comes from the layout XLF (same on every display) so all
+   *     displays start and finish the transition in lock-step.
    *
    * @param {number} layoutId
    * @param {Object} preloaded - pool entry from layoutPool.get(layoutId)
