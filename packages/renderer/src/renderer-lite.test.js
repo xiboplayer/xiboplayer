@@ -1092,7 +1092,9 @@ describe('RendererLite', () => {
     });
 
     it('should return null for unknown transition type', () => {
-      const result = Transitions.apply(element, { type: 'slide' }, true, 1920, 1080);
+      // 'slide' became a known type in #337 (layout transitions), so
+      // use a value the apply() switch truly does not handle.
+      const result = Transitions.apply(element, { type: 'notARealTransition' }, true, 1920, 1080);
       expect(result).toBeNull();
     });
 

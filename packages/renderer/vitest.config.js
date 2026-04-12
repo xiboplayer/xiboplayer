@@ -3,7 +3,12 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'jsdom',
-    globals: true
+    globals: true,
+    // Share the monorepo-root setup file so running tests for this
+    // package alone (pnpm --filter @xiboplayer/renderer test) gets the
+    // same jsdom polyfills (Element.prototype.animate, HTMLMediaElement
+    // shims, etc.) as the root-level pnpm test.
+    setupFiles: ['../../vitest.setup.js']
   },
   resolve: {
     alias: {

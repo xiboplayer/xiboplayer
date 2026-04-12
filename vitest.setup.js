@@ -30,6 +30,31 @@ global.HTMLCanvasElement = class HTMLCanvasElement {
   }
 };
 
+// Polyfill Element.prototype.animate for jsdom. jsdom does not
+// implement the Web Animations API, so any production code under
+// test that calls element.animate() directly (e.g. layout
+// transitions — slideIn / slideOut / wipeIn in renderer-lite.js)
+// throws "TypeError: element.animate is not a function".
+// Individual describe blocks that capture keyframes/timing still
+// assign their own vi.fn() mock to a specific element instance —
+// that override shadows this prototype polyfill and keeps working.
+if (typeof Element !== 'undefined' && !Element.prototype.animate) {
+  Element.prototype.animate = function animate() {
+    return {
+      cancel: () => {},
+      finish: () => {},
+      play: () => {},
+      pause: () => {},
+      reverse: () => {},
+      onfinish: null,
+      oncancel: null,
+      playState: 'running',
+      finished: Promise.resolve(),
+      effect: null,
+    };
+  };
+}
+
 // Stub HTMLMediaElement methods and properties not implemented in jsdom
 // (prevents "Not implemented" errors during renderer cleanup and enables
 // video duration detection tests that rely on loadedmetadata events)
