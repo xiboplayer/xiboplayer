@@ -145,9 +145,9 @@ export class SetupOverlay {
     this.gateCard.innerHTML = `
       <div style="text-align: center; margin-bottom: 32px;">
         <div style="font-size: 36px; font-weight: 700; color: #fff; letter-spacing: -0.5px;">
-          <span style="color: #0097D8;">xibo</span> player
+          <span style="color: #0097D8;">xibo</span>player
         </div>
-        <div style="font-size: 14px; color: #888; margin-top: 4px;">PWA Digital Signage</div>
+        <div style="font-size: 14px; color: #888; margin-top: 4px;">Open source digital signage</div>
       </div>
       <div style="font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 8px; text-align: center;">
         Reconfigure Display
