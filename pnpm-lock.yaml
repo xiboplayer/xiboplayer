@@ -175,6 +175,12 @@ importers:
       '@xiboplayer/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@xiboplayer/datasource':
+        specifier: workspace:*
+        version: link:../datasource
+      '@xiboplayer/expr':
+        specifier: workspace:*
+        version: link:../expr
       '@xiboplayer/renderer':
         specifier: workspace:*
         version: link:../renderer

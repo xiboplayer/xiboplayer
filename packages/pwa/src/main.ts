@@ -12,6 +12,7 @@ import { StoreClient, DownloadManager, BARRIER } from '@xiboplayer/cache';
 import { PlayerCore, CORE_EVENTS as E } from '@xiboplayer/core';
 import { parseLayoutDuration, parseLayoutFile } from '@xiboplayer/schedule';
 import { createLogger, registerLogSink, PLAYER_API } from '@xiboplayer/utils';
+import { DatasourceClient, attachHostBridge } from '@xiboplayer/datasource';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
 import { TimelineOverlay, isTimelineVisible } from './timeline-overlay.js';
 import { SetupOverlay } from './setup-overlay.js';
@@ -81,6 +82,8 @@ class PwaPlayer {
   private _fileIdToSaveAs: Map<string, string> = new Map(); // Numeric file ID → storedAs filename
   private _cachedMediaKeys: Set<string> = new Set(); // saveAs keys confirmed cached (avoids HEAD 404s)
   private protocolDetector: any = null; // CMS protocol auto-detector
+  private datasourceClient: DatasourceClient | null = null; // Shared xp:datasource cache (#235 G9)
+  private _datasourceBridge: { destroy(): void; stats(): { subscribers: number } } | null = null;
 
   async init() {
     log.info('Initializing player with RendererLite + PlayerCore...');
@@ -182,6 +185,7 @@ class PwaPlayer {
     this.setupRendererEventHandlers();
     this.setupInteractiveControl();
     this.setupDataConnectorNotify();
+    this.setupDatasourceBridge();
     this.setupRemoteControls();
 
     // Setup UI
@@ -1144,6 +1148,50 @@ class PwaPlayer {
         } catch { /* cross-origin iframe, ignore */ }
       }
     });
+  }
+
+  /**
+   * Install a shared DatasourceClient and expose it to widget iframes via
+   * postMessage. See packages/datasource for protocol details.
+   *
+   * Solves #235 gap G9:
+   *   - Deduplicates fetches: N widgets on the same URL share one poller.
+   *   - Caches with TTL so repeated subscriptions within the refresh window
+   *     are instant.
+   *   - Persists last-known-good to localStorage so cold boots show
+   *     yesterday's data instead of a blank while the network warms up.
+   *   - Bridges over postMessage so cross-origin widget iframes (or blob:
+   *     URL iframes) can subscribe without direct window.xpDatasource
+   *     access.
+   *
+   * The client is also exposed on window.xpDatasource for same-origin
+   * widget HTML that prefers direct access.
+   */
+  private setupDatasourceBridge() {
+    // Single shared client for the whole player session. Respects the
+    // browser's network + storage; safe to reuse across layouts.
+    this.datasourceClient = new DatasourceClient({
+      // 30s default matches xp:refresh=30 (ADA convention)
+      defaultRefreshMs: 30_000,
+      // 10s fetch timeout prevents a dead tenant API from stalling the bridge
+      fetchTimeoutMs: 10_000,
+    });
+    this._datasourceBridge = attachHostBridge(this.datasourceClient, window);
+
+    // Same-origin escape hatch: widgets hosted on a same-origin blob: URL
+    // (default path for translator output) can access the client directly
+    // without the postMessage round-trip.
+    try {
+      (window as any).xpDatasource = this.datasourceClient;
+    } catch { /* ignore — read-only window in sandboxed contexts */ }
+
+    // Network online → force-refresh all cached URLs so stale LKG values
+    // are replaced promptly when connectivity returns.
+    window.addEventListener('online', () => {
+      this.datasourceClient?.refresh().catch(() => {});
+    });
+
+    log.info('xp:datasource bridge installed (shared cache + postMessage)');
   }
 
   /**
@@ -2990,6 +3038,16 @@ class PwaPlayer {
     if (this._iframeObserver) {
       this._iframeObserver.disconnect();
       this._iframeObserver = null;
+    }
+
+    // Tear down xp:datasource shared cache + bridge
+    if (this._datasourceBridge) {
+      this._datasourceBridge.destroy();
+      this._datasourceBridge = null;
+    }
+    if (this.datasourceClient) {
+      this.datasourceClient.stop();
+      this.datasourceClient = null;
     }
 
     // Remove SW message listeners

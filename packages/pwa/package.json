@@ -17,6 +17,8 @@
     "@xiboplayer/cache": "workspace:*",
     "@xiboplayer/core": "workspace:*",
     "@xiboplayer/crypto": "workspace:*",
+    "@xiboplayer/datasource": "workspace:*",
+    "@xiboplayer/expr": "workspace:*",
     "@xiboplayer/renderer": "workspace:*",
     "@xiboplayer/schedule": "workspace:*",
     "@xiboplayer/settings": "workspace:*",
