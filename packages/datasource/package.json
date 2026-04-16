@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/datasource",
-  "version": "0.7.21",
+  "version": "0.7.22",
   "description": "Shared data-source cache with dedup, TTL, offline fallback + localStorage persistence for ADA xp:datasource widgets (#235 G9)",
   "type": "module",
   "main": "./src/index.js",
