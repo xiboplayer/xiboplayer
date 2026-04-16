@@ -1,0 +1,37 @@
+{
+  "name": "@xiboplayer/expr",
+  "version": "0.7.21",
+  "description": "XPath 1.0 subset evaluator + xp:state runtime store for SMIL State (Track B)",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./expr": "./src/expr.js",
+    "./avt": "./src/avt.js",
+    "./state": "./src/state.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.2"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "smil",
+    "xpath",
+    "expression",
+    "state"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xibo-players/xiboplayer.git",
+    "directory": "packages/expr"
+  },
+  "homepage": "https://xiboplayer.org"
+}
