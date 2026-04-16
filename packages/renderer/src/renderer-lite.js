@@ -567,6 +567,22 @@ export class RendererLite {
       'layoutTransitionInDirection'
     );
 
+    // Parse layout-level <tags><tag>…</tag></tags>. Used by the sync
+    // bridge (roadmap #236) to read markers such as
+    // `xp-sync-group:NAME` that the xiboplayer-smil-tools translator
+    // emits when the source SMIL carries `xp:sync-group="…"`.
+    // Only direct children of <layout> are considered — nested <tag>
+    // elements inside <media><actions> etc. are ignored.
+    const tags = [];
+    for (const child of layoutEl.children) {
+      if (child.tagName !== 'tags') continue;
+      for (const tagEl of child.children) {
+        if (tagEl.tagName !== 'tag') continue;
+        const text = (tagEl.textContent || '').trim();
+        if (text) tags.push(text);
+      }
+    }
+
     const layout = {
       schemaVersion: parseInt(layoutEl.getAttribute('schemaVersion') || '1'),
       width: parseInt(layoutEl.getAttribute('width') || '1920'),
@@ -576,6 +592,7 @@ export class RendererLite {
       background: layoutEl.getAttribute('background') || null, // Background image fileId
       enableStat: layoutEl.getAttribute('enableStat') !== '0', // absent or "1" = enabled
       actions: this.parseActions(layoutEl),
+      tags, // Layout-level tags (e.g. "xp-sync-group:lobby-wall")
       layoutTransitionIn: layoutTransitionInType
         ? {
             type: layoutTransitionInType,
@@ -3606,6 +3623,23 @@ export class RendererLite {
    */
   getCurrentLayoutId() {
     return this.currentLayoutId;
+  }
+
+  /**
+   * Get the parsed <tags> array for the currently-showing layout.
+   *
+   * Layout-level tags are flat strings parsed from
+   * `<layout><tags><tag>…</tag></tags></layout>`. The sync bridge
+   * (roadmap #236) reads these to detect `xp-sync-group:NAME` markers
+   * emitted by the xiboplayer-smil-tools translator.
+   *
+   * @returns {string[]} Tags on the current layout, or `[]` when no
+   *   layout is showing or the layout carries no tags.
+   */
+  getCurrentLayoutTags() {
+    if (!this.currentLayout || !Array.isArray(this.currentLayout.tags)) return [];
+    // Return a defensive copy so callers can't mutate renderer state.
+    return this.currentLayout.tags.slice();
   }
 
   /**

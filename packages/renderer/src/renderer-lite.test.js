@@ -282,6 +282,86 @@ describe('RendererLite', () => {
     });
   });
 
+  describe('Layout tag parsing (#236 sync bridge)', () => {
+    it('should parse <tags><tag>…</tag></tags> on layout into tags array', () => {
+      const xlf = `
+        <layout width="1920" height="1080" duration="30">
+          <region id="r1"><media id="m1" type="image" duration="10"/></region>
+          <tags>
+            <tag>smil-imported</tag>
+            <tag>xp-sync-group:lobby-wall</tag>
+          </tags>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.tags).toEqual(['smil-imported', 'xp-sync-group:lobby-wall']);
+    });
+
+    it('should default tags to empty array when <tags> absent', () => {
+      const xlf = `<layout><region id="r1"></region></layout>`;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.tags).toEqual([]);
+    });
+
+    it('should ignore nested <tag> inside media actions etc.', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10">
+              <options>
+                <actions>
+                  <tag>not-a-layout-tag</tag>
+                </actions>
+              </options>
+            </media>
+          </region>
+          <tags><tag>xp-sync-group:atrium</tag></tags>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.tags).toEqual(['xp-sync-group:atrium']);
+    });
+
+    it('should trim whitespace and skip empty <tag> elements', () => {
+      const xlf = `
+        <layout>
+          <region id="r1"></region>
+          <tags>
+            <tag>  xp-sync-group:lobby  </tag>
+            <tag></tag>
+            <tag>   </tag>
+          </tags>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.tags).toEqual(['xp-sync-group:lobby']);
+    });
+
+    it('getCurrentLayoutTags returns [] when no layout is showing', () => {
+      expect(renderer.getCurrentLayoutTags()).toEqual([]);
+    });
+
+    it('getCurrentLayoutTags returns a defensive copy of current layout tags', () => {
+      // Seed current layout via parseXlf, simulate set by renderLayout
+      const xlf = `
+        <layout>
+          <region id="r1"></region>
+          <tags><tag>xp-sync-group:lobby-wall</tag><tag>smil-imported</tag></tags>
+        </layout>
+      `;
+      renderer.currentLayout = renderer.parseXlf(xlf);
+
+      const copy = renderer.getCurrentLayoutTags();
+      expect(copy).toEqual(['xp-sync-group:lobby-wall', 'smil-imported']);
+      // Mutating the copy must not affect the renderer's state
+      copy.push('mutated');
+      expect(renderer.getCurrentLayoutTags()).toEqual([
+        'xp-sync-group:lobby-wall',
+        'smil-imported',
+      ]);
+    });
+  });
+
   describe('enableStat parsing', () => {
     it('should parse enableStat="1" as true on layout', () => {
       const xlf = `
