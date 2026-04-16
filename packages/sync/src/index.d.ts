@@ -106,6 +106,7 @@ export class SyncManager {
     onStatsAck?: (targetDisplayId: string) => void;
     onLogsAck?: (targetDisplayId: string) => void;
     onGroupUpdate?: (totalDisplays: number, topology: Record<string, DisplayTopology>) => void;
+    onSyncGroupChanged?: (newGroup: string | null, previousGroup: string | null) => void;
   });
 
   displayId: string;
@@ -116,6 +117,7 @@ export class SyncManager {
 
   start(): void;
   stop(): void;
+  setSyncGroup(groupName: string | null): boolean;
   requestLayoutChange(layoutId: string | number): Promise<void>;
   requestVideoStart(layoutId: string | number, regionId: string): Promise<void>;
   reportReady(layoutId: string | number): void;

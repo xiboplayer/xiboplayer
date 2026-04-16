@@ -59,6 +59,7 @@ export class SyncManager {
    * @param {Function} [options.onLogsReport] - (Lead) Called when follower sends logs
    * @param {Function} [options.onStatsAck] - (Follower) Called when lead confirms stats submission
    * @param {Function} [options.onLogsAck] - (Follower) Called when lead confirms logs submission
+   * @param {Function} [options.onSyncGroupChanged] - Called when the active sync group changes (bridge from layout tags)
    */
   constructor(options) {
     this.displayId = options.displayId;
@@ -76,6 +77,7 @@ export class SyncManager {
     this.onStatsAck = options.onStatsAck || null;
     this.onLogsAck = options.onLogsAck || null;
     this.onGroupUpdate = options.onGroupUpdate || null;
+    this.onSyncGroupChanged = options.onSyncGroupChanged || null;
 
     // State
     this.transport = options.transport || null;
@@ -151,6 +153,76 @@ export class SyncManager {
 
     this.followers.clear();
     this._log.info('Stopped');
+  }
+
+  /**
+   * Change the active sync group at runtime.
+   *
+   * Design A bridge (see roadmap #236): the PWA calls this when it
+   * observes `<tag>xp-sync-group:NAME</tag>` on the incoming layout.
+   * Tears down the current transport, clears pending ready state,
+   * updates `syncConfig.syncGroup`, and — if the manager was already
+   * started — rebuilds the transport so the new group is joined.
+   *
+   * No-op when `groupName` matches the current group (avoids churn on
+   * redundant layout tags).
+   *
+   * @param {string|null} groupName - Target sync group, or null to leave any group
+   * @returns {boolean} true if the group actually changed, false otherwise
+   * @fires SyncManager#syncgroup-changed via onSyncGroupChanged callback
+   */
+  setSyncGroup(groupName) {
+    const normalized = groupName == null ? null : String(groupName);
+    const current = this.syncConfig.syncGroup == null ? null : String(this.syncConfig.syncGroup);
+
+    if (normalized === current) {
+      this._log.debug(`setSyncGroup no-op (already ${current ?? '<none>'})`);
+      return false;
+    }
+
+    this._log.info(`setSyncGroup: ${current ?? '<none>'} → ${normalized ?? '<none>'}`);
+
+    const wasStarted = this._started;
+
+    // Tear down transport + pending state so no cross-group messages leak.
+    if (wasStarted) {
+      this.stop();
+    } else if (this.transport) {
+      // Manager wasn't started (e.g. injected transport, never start()-ed)
+      // but we still want a clean slate.
+      try { this.transport.close(); } catch (_) { /* best-effort */ }
+      this.transport = null;
+    }
+
+    // Update config. If the caller passed a fully-formed relay URL, we
+    // intentionally do NOT touch it — start() will rebuild from the
+    // updated syncGroup if the caller wants that (PWA does this in
+    // main.ts via the SYNC_CONFIG event path). Here we just update the
+    // group so a subsequent start() picks up the new value.
+    this.syncConfig = { ...this.syncConfig, syncGroup: normalized };
+
+    // Clear pending ready state (any in-flight layout-change is stale
+    // now that the cohort has changed).
+    this._pendingLayoutId = null;
+    if (this._readyResolve) {
+      // Drop the outstanding wait — the new group has no followers yet.
+      this._readyResolve = null;
+    }
+
+    // Rebuild transport if we were running before.
+    if (wasStarted) {
+      this.start();
+    }
+
+    if (this.onSyncGroupChanged) {
+      try {
+        this.onSyncGroupChanged(normalized, current);
+      } catch (e) {
+        this._log.error('onSyncGroupChanged callback threw:', e);
+      }
+    }
+
+    return true;
   }
 
   // ── Lead API ──────────────────────────────────────────────────────

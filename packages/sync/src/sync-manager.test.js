@@ -430,6 +430,113 @@ describe('SyncManager', () => {
     });
   });
 
+  describe('setSyncGroup (layout-tag bridge)', () => {
+    it('returns false and no-ops when the group name matches the current group', () => {
+      const onSyncGroupChanged = vi.fn();
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: { ...makeSyncConfig(true), syncGroup: 'lobby' },
+        onSyncGroupChanged,
+      });
+
+      const changed = lead.setSyncGroup('lobby');
+
+      expect(changed).toBe(false);
+      expect(onSyncGroupChanged).not.toHaveBeenCalled();
+      expect(lead.syncConfig.syncGroup).toBe('lobby');
+    });
+
+    it('returns true, updates syncConfig, and fires callback when group changes', () => {
+      const onSyncGroupChanged = vi.fn();
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: { ...makeSyncConfig(true), syncGroup: 'lobby' },
+        onSyncGroupChanged,
+      });
+
+      const changed = lead.setSyncGroup('atrium');
+
+      expect(changed).toBe(true);
+      expect(lead.syncConfig.syncGroup).toBe('atrium');
+      expect(onSyncGroupChanged).toHaveBeenCalledWith('atrium', 'lobby');
+    });
+
+    it('tears down + rebuilds transport when started (BroadcastChannel fallback)', () => {
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: { ...makeSyncConfig(true), syncGroup: 'lobby' },
+      });
+      lead.start();
+      expect(lead.getStatus().started).toBe(true);
+      const transportBefore = lead.transport;
+
+      const changed = lead.setSyncGroup('atrium');
+
+      expect(changed).toBe(true);
+      expect(lead.getStatus().started).toBe(true);
+      // A fresh transport was built
+      expect(lead.transport).not.toBe(transportBefore);
+      expect(lead.syncConfig.syncGroup).toBe('atrium');
+    });
+
+    it('leaves manager stopped when it was not started', () => {
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: { ...makeSyncConfig(true), syncGroup: 'lobby' },
+      });
+      // Do NOT call start()
+      const changed = lead.setSyncGroup('atrium');
+
+      expect(changed).toBe(true);
+      expect(lead.getStatus().started).toBe(false);
+      expect(lead.syncConfig.syncGroup).toBe('atrium');
+    });
+
+    it('clears pending layout-change state on group change', () => {
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: { ...makeSyncConfig(true), syncGroup: 'lobby' },
+      });
+      lead.start();
+      lead._pendingLayoutId = '42';
+      lead._readyResolve = () => {};
+
+      lead.setSyncGroup('atrium');
+
+      expect(lead._pendingLayoutId).toBeNull();
+      expect(lead._readyResolve).toBeNull();
+    });
+
+    it('accepts null to leave any group', () => {
+      const onSyncGroupChanged = vi.fn();
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: { ...makeSyncConfig(true), syncGroup: 'lobby' },
+        onSyncGroupChanged,
+      });
+
+      const changed = lead.setSyncGroup(null);
+
+      expect(changed).toBe(true);
+      expect(lead.syncConfig.syncGroup).toBeNull();
+      expect(onSyncGroupChanged).toHaveBeenCalledWith(null, 'lobby');
+    });
+
+    it('swallows callback errors (does not break transport rebuild)', () => {
+      const onSyncGroupChanged = vi.fn(() => { throw new Error('boom'); });
+      lead = new SyncManager({
+        displayId: 'pwa-lead',
+        syncConfig: { ...makeSyncConfig(true), syncGroup: 'lobby' },
+        onSyncGroupChanged,
+      });
+      lead.start();
+
+      expect(() => lead.setSyncGroup('atrium')).not.toThrow();
+      expect(lead.syncConfig.syncGroup).toBe('atrium');
+      expect(lead.getStatus().started).toBe(true);
+    });
+  });
+
   describe('Edge Cases', () => {
     it('follower should not process requestLayoutChange', async () => {
       follower1 = new SyncManager({
