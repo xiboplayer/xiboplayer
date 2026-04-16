@@ -44,6 +44,7 @@
 import { EventEmitter } from '@xiboplayer/utils';
 import { createLogger, isDebug, PLAYER_API } from '@xiboplayer/utils';
 import { parseLayoutDuration } from '@xiboplayer/schedule';
+import { asBool, ExprOutOfScope, evalExpr } from '@xiboplayer/expr';
 import { LayoutPool } from './layout-pool.js';
 
 /**
@@ -337,6 +338,13 @@ export class RendererLite {
 
     // Widget lifecycle tracking — ensures symmetric start/stop
     this._startedWidgets = new Set(); // "regionId:widgetIndex" keys
+
+    // SMIL State Track B — runtime xp:state store. Null until the host
+    // application (PWA / Electron / etc.) injects a store via
+    // setStateStore(). When present, widgets with xpIf= are evaluated
+    // at _showWidget time and hidden on a false result.
+    this._stateStore = null;
+    this._stateUnsubscribe = null;
 
     // Layout preload pool (2-layout pool for instant transitions)
     this.layoutPool = new LayoutPool(2);
@@ -813,6 +821,17 @@ export class RendererLite {
     // Render mode: 'native' (player renders directly) or 'html' (use GetResource)
     const render = mediaEl.getAttribute('render') || null;
 
+    // SMIL State Track B pass-through attributes (plan 240).
+    // xpIf is the runtime guard expression — evaluated at show time
+    // against the injected XpStateStore. xpDayPart / xpDatasource /
+    // xpJsonpath / xpMatch are captured for completeness (same-shape
+    // gates, handled by other subsystems). See xp-translation-matrix.md.
+    const xpIf = mediaEl.getAttribute('xpIf') || null;
+    const xpDayPart = mediaEl.getAttribute('xpDayPart') || null;
+    const xpDatasource = mediaEl.getAttribute('xpDatasource') || null;
+    const xpJsonpath = mediaEl.getAttribute('xpJsonpath') || null;
+    const xpMatch = mediaEl.getAttribute('xpMatch') || null;
+
     return {
       type,
       duration,
@@ -834,7 +853,13 @@ export class RendererLite {
       displayOrder,
       cyclePlayback,
       playCount,
-      isRandom
+      isRandom,
+      // SMIL State Track B — runtime gating attributes
+      xpIf,
+      xpDayPart,
+      xpDatasource,
+      xpJsonpath,
+      xpMatch
     };
   }
 
@@ -954,6 +979,109 @@ export class RendererLite {
       // cooldowns (maxPlaysPerHour) have time to expire.
       this._scheduleNextLayoutPreload(this.currentLayout);
     }
+  }
+
+  // ── SMIL State Track B ──────────────────────────────────────────────
+
+  /**
+   * Inject an XpStateStore for runtime `xpIf=` evaluation. The store
+   * backs `<setvalue>` / `<newvalue>` / `<delvalue>` in SMIL State and
+   * persists per its configured scope (document/session/display).
+   *
+   * Wiring is idempotent — calling twice swaps stores and unsubscribes
+   * the previous change listener. Pass `null` to disable runtime
+   * evaluation (widgets with `xpIf=` then show unconditionally, matching
+   * pre-Track-B behaviour).
+   *
+   * @param {object|null} store - instance of @xiboplayer/expr.XpStateStore
+   *   (or any duck-typed object exposing `get/has/on('change', …)`)
+   */
+  setStateStore(store) {
+    if (this._stateUnsubscribe) {
+      try { this._stateUnsubscribe(); } catch (_err) { /* best effort */ }
+      this._stateUnsubscribe = null;
+    }
+    this._stateStore = store || null;
+    if (this._stateStore && typeof this._stateStore.on === 'function') {
+      // Re-evaluate xp:if on every state change. The handler is
+      // deliberately broad — the renderer walks its current widgets
+      // and toggles visibility. More fine-grained subscriptions
+      // (change:<key>) can land in a future pass.
+      this._stateUnsubscribe = this._stateStore.on('change', () => {
+        this.reevaluateXpIf();
+      });
+    }
+  }
+
+  /**
+   * Current state store, or null if none injected.
+   * @returns {object|null}
+   */
+  getStateStore() {
+    return this._stateStore;
+  }
+
+  /**
+   * Evaluate a widget's `xpIf=` attribute against the current store.
+   * Returns true when the widget should be shown. Absent xpIf is
+   * treated as true (no runtime gating). An evaluation error
+   * (ExprOutOfScope) hides the widget — the safe default prevents
+   * broken expressions from leaking content that was meant to be
+   * conditionally suppressed.
+   *
+   * @param {object} widget - parsed widget (must carry `.xpIf`)
+   * @returns {boolean}
+   */
+  _evaluateXpIf(widget) {
+    if (!widget || !widget.xpIf) return true;
+    if (!this._stateStore) return true;  // no store → no runtime gating
+    try {
+      const v = evalExpr(widget.xpIf, this._stateStore);
+      return asBool(v);
+    } catch (err) {
+      if (err instanceof ExprOutOfScope) {
+        this.log.warn(`xpIf evaluation failed (widget ${widget.id}): ${err.message} — hiding widget`);
+      } else {
+        this.log.error(`xpIf unexpected error (widget ${widget.id}):`, err);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Re-evaluate every live widget's xpIf against the current store and
+   * toggle DOM visibility. Called automatically on store `change`
+   * events; host code can also trigger it manually after batch updates.
+   */
+  reevaluateXpIf() {
+    if (!this._stateStore) return;
+    for (const region of this.regions.values()) {
+      if (!region || !region.widgets) continue;
+      for (const widget of region.widgets) {
+        if (!widget.xpIf) continue;
+        const el = region.widgetElements?.get(widget.id);
+        if (!el) continue;
+        const visible = this._evaluateXpIf(widget);
+        // Use a data-attribute so tests + downstream code can observe
+        // without parsing CSS. The inline style toggle is what actually
+        // hides the widget; transitions are intentionally skipped for
+        // re-evaluations (no animation spam on state churn).
+        el.dataset.xpIf = visible ? 'true' : 'false';
+        if (visible) {
+          // Only un-hide the currently-active widget; do not resurrect
+          // background widgets hidden by region cycling. We detect the
+          // active widget by presence of `visibility: visible`.
+          if (el.style.visibility !== 'hidden' || el.dataset.xpIfActive === '1') {
+            el.style.visibility = 'visible';
+            el.style.opacity = '1';
+          }
+        } else {
+          el.style.visibility = 'hidden';
+          el.style.opacity = '0';
+        }
+      }
+    }
+    this.emit('xpIfReevaluated');
   }
 
   // ── Interactive Actions ──────────────────────────────────────────────
@@ -1938,9 +2066,30 @@ export class RendererLite {
           widgetEl.getAnimations?.().forEach(a => a.cancel());
           widgetEl.style.visibility = 'hidden';
           widgetEl.style.opacity = '0';
+          // Clear the active marker on widgets we're hiding — otherwise
+          // reevaluateXpIf() might resurrect them on the next state
+          // change. Only the widget being shown this cycle is active.
+          if (widgetEl.dataset) widgetEl.dataset.xpIfActive = '0';
         }
       }
     }
+
+    // SMIL State Track B — evaluate xp:if before binding the widget to
+    // the DOM timeline. When the guard is false the widget stays hidden
+    // but the region timer continues (it will advance to the next
+    // widget as if the expression had folded to false at build time).
+    if (element.dataset) element.dataset.xpIfActive = '1';
+    const xpIfVisible = this._evaluateXpIf(widget);
+    if (!xpIfVisible) {
+      this.updateMediaElement(element, widget);
+      element.getAnimations?.().forEach(a => a.cancel());
+      element.style.visibility = 'hidden';
+      element.style.opacity = '0';
+      element.dataset.xpIf = 'false';
+      this.emit('xpIfHidden', { widgetId: widget.id, regionId: region.config?.id, expr: widget.xpIf });
+      return widget;
+    }
+    if (element.dataset && widget.xpIf) element.dataset.xpIf = 'true';
 
     this.updateMediaElement(element, widget);
     element.getAnimations?.().forEach(a => a.cancel());
@@ -4123,6 +4272,15 @@ export class RendererLite {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
+
+    // Release xp:state subscription so the store can be garbage-collected
+    // independently of the renderer (Track B wiring; the store is owned
+    // by the host app, the renderer only listens).
+    if (this._stateUnsubscribe) {
+      try { this._stateUnsubscribe(); } catch (_err) { /* best effort */ }
+      this._stateUnsubscribe = null;
+    }
+    this._stateStore = null;
 
     this.container.innerHTML = '';
     this.log.info('Cleaned up');

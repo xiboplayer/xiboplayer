@@ -50,6 +50,15 @@ export class RendererLite {
   preloadLayout(xlfXml: string, layoutId: number): Promise<boolean>;
   hasPreloadedLayout(layoutId: number): boolean;
 
+  // SMIL State Track B — runtime xp:state wiring (plan 240).
+  setStateStore(store: {
+    get(path: string): unknown;
+    has?(path: string): boolean;
+    on?(event: string, handler: (...args: unknown[]) => void): () => void;
+  } | null): void;
+  getStateStore(): unknown | null;
+  reevaluateXpIf(): void;
+
   renderOverlay(xlfXml: string, layoutId: number, priority?: number): Promise<void>;
   stopOverlay(layoutId: number): void;
   stopAllOverlays(): void;
