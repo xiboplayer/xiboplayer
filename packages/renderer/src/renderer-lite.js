@@ -44,7 +44,7 @@
 import { EventEmitter } from '@xiboplayer/utils';
 import { createLogger, isDebug, PLAYER_API } from '@xiboplayer/utils';
 import { parseLayoutDuration } from '@xiboplayer/schedule';
-import { asBool, ExprOutOfScope, evalExpr } from '@xiboplayer/expr';
+import { asBool, ExprOutOfScope, evalExpr, XpStateStore, parseXpStateInit } from '@xiboplayer/expr';
 import { LayoutPool } from './layout-pool.js';
 
 /**
@@ -683,6 +683,28 @@ export class RendererLite {
       for (const child of regionEl.children) {
         if (child.tagName !== 'media') continue;
         const widget = this.parseWidget(child);
+        // SMIL State Track B — xp-state-init widgets are metadata-only.
+        // Their widget options declare the initial state the layout
+        // expects (xpStateInit as a string carrier, xpStateScope,
+        // xpLanguage, xpDefaultDatasource). They never produce a DOM
+        // element: we collect the first one per layout and let the
+        // renderLayout hook materialise the store. Any subsequent
+        // xp-state-init on the same layout wins last (warning logged).
+        if (widget.type === 'xp-state-init') {
+          if (layout.xpStateInit) {
+            this.log.warn(
+              `Multiple xp-state-init widgets on layout — using widget ${widget.id} (last one wins)`
+            );
+          }
+          layout.xpStateInit = {
+            widgetId: widget.id,
+            rawValue: widget.options.xpStateInit ?? '',
+            scope: widget.options.xpStateScope ?? 'session',
+            language: widget.options.xpLanguage ?? null,
+            defaultDatasource: widget.options.xpDefaultDatasource ?? null
+          };
+          continue;  // do NOT add to render queue
+        }
         region.widgets.push(widget);
       }
 
@@ -821,16 +843,31 @@ export class RendererLite {
     // Render mode: 'native' (player renders directly) or 'html' (use GetResource)
     const render = mediaEl.getAttribute('render') || null;
 
-    // SMIL State Track B pass-through attributes (plan 240).
+    // SMIL State Track B pass-through fields (plan 240/242).
+    //
+    // The CMS custom-module ships xp:* as widget *options* —
+    //   <options>
+    //     <option name="xpIf">a = 1</option>
+    //     …
+    //   </options>
+    // — which is how round-tripping through PUT /widget/:id stays
+    // byte-identical (see xibo-players/xibo-cms-private#1). Earlier
+    // prototypes put these on the <media> element as attributes;
+    // we still fall back to attributes so hand-rolled test XLFs and
+    // legacy translator output keep working.
+    //
     // xpIf is the runtime guard expression — evaluated at show time
     // against the injected XpStateStore. xpDayPart / xpDatasource /
-    // xpJsonpath / xpMatch are captured for completeness (same-shape
-    // gates, handled by other subsystems). See xp-translation-matrix.md.
-    const xpIf = mediaEl.getAttribute('xpIf') || null;
-    const xpDayPart = mediaEl.getAttribute('xpDayPart') || null;
-    const xpDatasource = mediaEl.getAttribute('xpDatasource') || null;
-    const xpJsonpath = mediaEl.getAttribute('xpJsonpath') || null;
-    const xpMatch = mediaEl.getAttribute('xpMatch') || null;
+    // xpJsonpath / xpMatch / xpBegin / xpEnd are captured for
+    // completeness (same-shape gates, handled by other subsystems).
+    // See xp-translation-matrix.md.
+    const xpIf = options.xpIf ?? mediaEl.getAttribute('xpIf') ?? null;
+    const xpDayPart = options.xpDayPart ?? mediaEl.getAttribute('xpDayPart') ?? null;
+    const xpDatasource = options.xpDatasource ?? mediaEl.getAttribute('xpDatasource') ?? null;
+    const xpJsonpath = options.xpJsonpath ?? mediaEl.getAttribute('xpJsonpath') ?? null;
+    const xpMatch = options.xpMatch ?? mediaEl.getAttribute('xpMatch') ?? null;
+    const xpBegin = options.xpBegin ?? mediaEl.getAttribute('xpBegin') ?? null;
+    const xpEnd = options.xpEnd ?? mediaEl.getAttribute('xpEnd') ?? null;
 
     return {
       type,
@@ -854,12 +891,15 @@ export class RendererLite {
       cyclePlayback,
       playCount,
       isRandom,
-      // SMIL State Track B — runtime gating attributes
+      // SMIL State Track B — runtime gating attributes (read from
+      // widget <options> preferentially, with attribute fallback)
       xpIf,
       xpDayPart,
       xpDatasource,
       xpJsonpath,
-      xpMatch
+      xpMatch,
+      xpBegin,
+      xpEnd
     };
   }
 
@@ -1082,6 +1122,76 @@ export class RendererLite {
       }
     }
     this.emit('xpIfReevaluated');
+  }
+
+  /**
+   * Materialise an XpStateStore from an xp-state-init widget (plan 242).
+   *
+   * xp-state-init widgets on a layout are metadata-only — they declare
+   * the initial state, scope, language, and default datasource that
+   * downstream xpIf / AVT / datasource bindings evaluate against. This
+   * method:
+   *
+   *   1. Decodes the `xpStateInit` widget option via parseXpStateInit
+   *      (handles zstd+b64 / gzip+b64 / plain JSON carriers).
+   *   2. Seeds `lang` from the `xpLanguage` option when present (so
+   *      `smil-language()` resolves correctly on the first render).
+   *   3. Constructs an XpStateStore with the declared scope.
+   *   4. Injects it via setStateStore() (which unsubscribes any prior
+   *      store and re-subscribes change listeners).
+   *
+   * If the layout has no xp-state-init widget or decoding fails, we
+   * leave any previously-injected store in place — a host application
+   * may have injected a store earlier and we must not clobber it.
+   *
+   * @param {object} layout - parsed layout (from parseXlf)
+   * @returns {XpStateStore|null} the store that was injected, or null
+   *   if no xp-state-init was present / decoding failed
+   */
+  _applyXpStateInit(layout) {
+    if (!layout || !layout.xpStateInit) return null;
+
+    const init = layout.xpStateInit;
+    if (!init.rawValue) {
+      this.log.warn(
+        `xp-state-init widget ${init.widgetId} has empty xpStateInit option — skipping`
+      );
+      return null;
+    }
+
+    let initialState;
+    try {
+      initialState = parseXpStateInit(init.rawValue);
+    } catch (err) {
+      this.log.error(
+        `xp-state-init widget ${init.widgetId} decode failed: ${err.message} — keeping existing store`
+      );
+      return null;
+    }
+
+    // Language seed — xp:language ends up in the store under the
+    // `lang` key so evalExpr's `smil-language()` built-in resolves
+    // without a separate plumbing channel.
+    if (init.language && typeof initialState === 'object' && !('lang' in initialState)) {
+      initialState.lang = init.language;
+    }
+
+    const scope = init.scope || 'session';
+    let store;
+    try {
+      store = new XpStateStore({ scope, initialState });
+    } catch (err) {
+      this.log.error(
+        `xp-state-init widget ${init.widgetId}: XpStateStore construction failed: ${err.message}`
+      );
+      return null;
+    }
+
+    this.setStateStore(store);
+    this.log.info(
+      `xp-state-init applied: widget=${init.widgetId} scope=${scope} keys=${Object.keys(initialState).length}`
+    );
+    return store;
   }
 
   // ── Interactive Actions ──────────────────────────────────────────────
@@ -1575,6 +1685,12 @@ export class RendererLite {
       const layout = this.parseXlf(xlfXml);
       this.currentLayout = layout;
       this.currentLayoutId = layoutId;
+
+      // SMIL State Track B — if the layout carries an xp-state-init
+      // widget (metadata-only, skipped from the render queue), decode
+      // its payload and materialise an XpStateStore before any widget
+      // is shown (so the first xpIf evaluation sees the seeded state).
+      this._applyXpStateInit(layout);
 
       // Calculate scale factor to fit layout into screen
       this.calculateScale(layout);
@@ -3628,6 +3744,12 @@ export class RendererLite {
     this.currentLayout = preloaded.layout;
     this.currentLayoutId = layoutId;
     this.regions = preloaded.regions;
+
+    // SMIL State Track B — apply xp-state-init on layout activation
+    // (parity with the non-preload path in renderLayout). Preloaded
+    // layouts still carry the parsed xpStateInit metadata on
+    // preloaded.layout, so we can materialise the store now.
+    this._applyXpStateInit(preloaded.layout);
 
     // Emit layoutEnd for old layout AFTER setting new currentLayoutId —
     // the listener guard in main.ts sees the new layout already playing
