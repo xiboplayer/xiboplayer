@@ -1188,6 +1188,10 @@ export class RendererLite {
     }
 
     this.setStateStore(store);
+    // TB3: wire action-trigger events to dispatch xp:setState/newState/delState
+    // commands against the store. This enables interactive kiosks (press 1 →
+    // set language, press 2 → toggle menu section, etc.).
+    this.setupXpStateDispatcher();
     this.log.info(
       `xp-state-init applied: widget=${init.widgetId} scope=${scope} keys=${Object.keys(initialState).length}`
     );
@@ -1317,6 +1321,49 @@ export class RendererLite {
       this._keydownHandler = null;
     }
     this._keyboardActions = [];
+  }
+
+  /**
+   * TB3: dispatch xp:* state commands from action-trigger events.
+   * Called once during setup; listens for commandCode prefixed with
+   * xp:setState / xp:newState / xp:delState and routes to XpStateStore.
+   *
+   * commandCode format: "xp:setState:ref:valueExpr"
+   *   e.g. "xp:setState:kiosk/language:'en'"
+   */
+  setupXpStateDispatcher() {
+    this.on('action-trigger', (event) => {
+      const store = this.getStateStore && this.getStateStore();
+      if (!store || !event.commandCode) return;
+      const code = event.commandCode;
+      if (code.startsWith('xp:setState:')) {
+        const rest = code.substring('xp:setState:'.length);
+        const colonIdx = rest.indexOf(':');
+        if (colonIdx > 0) {
+          const ref = rest.substring(0, colonIdx);
+          const value = rest.substring(colonIdx + 1);
+          store.set(ref, value);
+          this.log.info(`xp:setState ${ref} = ${value}`);
+        }
+      } else if (code.startsWith('xp:delState:')) {
+        const ref = code.substring('xp:delState:'.length);
+        if (ref) {
+          store.delete(ref);
+          this.log.info(`xp:delState ${ref}`);
+        }
+      }
+      // xp:newState is equivalent to setState (creates if missing)
+      else if (code.startsWith('xp:newState:')) {
+        const rest = code.substring('xp:newState:'.length);
+        const colonIdx = rest.indexOf(':');
+        if (colonIdx > 0) {
+          const ref = rest.substring(0, colonIdx);
+          const value = rest.substring(colonIdx + 1);
+          store.set(ref, value);
+          this.log.info(`xp:newState ${ref} = ${value}`);
+        }
+      }
+    });
   }
 
   /** Remove all action listeners (touch + keyboard) */
