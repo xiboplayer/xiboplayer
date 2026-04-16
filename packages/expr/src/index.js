@@ -15,3 +15,4 @@
 export { evalExpr, asBool, ExprOutOfScope } from './expr.js';
 export { avtSubstitute, avtSubstituteLossy, avtIdentifiers } from './avt.js';
 export { XpStateStore } from './state.js';
+export { parseXpStateInit } from './xp-state-init.js';

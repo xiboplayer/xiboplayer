@@ -8,7 +8,8 @@
     ".": "./src/index.js",
     "./expr": "./src/expr.js",
     "./avt": "./src/avt.js",
-    "./state": "./src/state.js"
+    "./state": "./src/state.js",
+    "./xp-state-init": "./src/xp-state-init.js"
   },
   "scripts": {
     "test": "vitest run",
@@ -33,5 +34,8 @@
     "url": "git+https://github.com/xibo-players/xiboplayer.git",
     "directory": "packages/expr"
   },
-  "homepage": "https://xiboplayer.org"
+  "homepage": "https://xiboplayer.org",
+  "dependencies": {
+    "fzstd": "^0.1.1"
+  }
 }
