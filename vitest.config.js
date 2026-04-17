@@ -23,7 +23,12 @@ export default defineConfig({
       'packages/cms-testing/tests/api/**',
       'packages/pwa/playwright-tests/**',
       'packages/pwa/e2e/**',
-      '**/*.integration.test.*'
+      // Integration tests (*.integration.test.*) are OPT-IN via
+      // `pnpm test:integration`, which sets VITEST_INTEGRATION=1 to
+      // include them. Default `pnpm test` stays fast by excluding them
+      // here — these tests boot real servers, open real sockets, and
+      // can take minutes in the aggregate.
+      ...(process.env.VITEST_INTEGRATION ? [] : ['**/*.integration.test.*'])
     ],
     coverage: {
       provider: 'v8',
