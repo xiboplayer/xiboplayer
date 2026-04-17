@@ -11,7 +11,11 @@ export default defineConfig({
     environmentOptions: {
       jsdom: { url: 'https://cms.example.com' }
     },
-    setupFiles: './vitest.setup.js',
+    // Absolute path: `./vitest.setup.js` would resolve relative to CWD,
+    // which breaks standalone package runs (`pnpm --filter X test` from
+    // `packages/X/`). Using the config file's own URL anchors the path
+    // to this config regardless of where vitest is invoked.
+    setupFiles: [new URL('./vitest.setup.js', import.meta.url).pathname],
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
