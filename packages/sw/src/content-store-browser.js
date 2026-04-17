@@ -166,6 +166,24 @@ export class ContentStoreBrowser {
 
   // ── Read operations ───────────────────────────────────────────────
 
+  /**
+   * Return a `ReadableStream` covering `[range.start, range.end]` of
+   * the cached content, pulling one chunk at a time rather than
+   * loading the whole blob into memory.
+   *
+   * Design per #373. Not implemented yet — throws so callers who
+   * probe ahead of the streaming rewrite surface the gap loudly.
+   *
+   * @param {string} _key
+   * @param {import('@xiboplayer/cache').ChunkRange} [_range]
+   * @returns {Promise<ReadableStream<Uint8Array>|null>}
+   */
+  async getStream(_key, _range) {
+    throw new Error(
+      'ContentStoreBrowser.getStream not implemented yet (see xibo-players/xiboplayer#373)',
+    );
+  }
+
   async getResponse(key, range) {
     const cache = await caches.open(CACHE_NAME);
     const response = await cache.match(keyToPath(key));
