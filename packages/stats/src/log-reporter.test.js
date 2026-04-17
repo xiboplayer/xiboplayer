@@ -4,13 +4,14 @@
  * Tests for LogReporter and formatLogs
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { LogReporter, formatLogs, formatFaults } from './log-reporter.js';
 
 describe('LogReporter', () => {
   let reporter;
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     reporter = new LogReporter();
     await reporter.init();
     await reporter.clearAllLogs();
@@ -21,6 +22,7 @@ describe('LogReporter', () => {
       await reporter.clearAllLogs();
       reporter.db.close();
     }
+    vi.useRealTimers();
   });
 
   describe('constructor and initialization', () => {
@@ -269,8 +271,8 @@ describe('LogReporter', () => {
       // Report first fault
       await reporter.reportFault('TEST_FAULT', 'First', 1); // 1ms cooldown
 
-      // Wait for cooldown to expire
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // Advance fake clock past cooldown (no real wait)
+      vi.setSystemTime(Date.now() + 10);
 
       await reporter.reportFault('TEST_FAULT', 'Second', 1);
 
@@ -302,9 +304,9 @@ describe('LogReporter', () => {
 
     it('should respect limit parameter', async () => {
       await reporter.reportFault('FAULT_1', 'Fault 1', 1);
-      await new Promise(r => setTimeout(r, 5));
+      vi.setSystemTime(Date.now() + 5);
       await reporter.reportFault('FAULT_2', 'Fault 2', 1);
-      await new Promise(r => setTimeout(r, 5));
+      vi.setSystemTime(Date.now() + 5);
       await reporter.reportFault('FAULT_3', 'Fault 3', 1);
 
       const faults = await reporter.getFaultsForSubmission(2);

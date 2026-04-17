@@ -4,13 +4,14 @@
  * Tests for StatsCollector and formatStats
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { StatsCollector, formatStats } from './stats-collector.js';
 
 describe('StatsCollector', () => {
   let collector;
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     collector = new StatsCollector();
     await collector.init();
     await collector.clearAllStats();
@@ -21,6 +22,7 @@ describe('StatsCollector', () => {
       await collector.clearAllStats();
       collector.db.close();
     }
+    vi.useRealTimers();
   });
 
   describe('constructor and initialization', () => {
@@ -84,8 +86,8 @@ describe('StatsCollector', () => {
     it('should end tracking a layout', async () => {
       await collector.startLayout(123, 456);
 
-      // Wait a bit to ensure duration > 0
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Advance fake clock 100ms to ensure duration > 0 (no real wait)
+      vi.setSystemTime(Date.now() + 100);
 
       await collector.endLayout(123, 456);
 
@@ -114,8 +116,8 @@ describe('StatsCollector', () => {
     it('should calculate duration correctly', async () => {
       await collector.startLayout(123, 456);
 
-      // Wait 1 second
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Advance fake clock 1 second (no real wait)
+      vi.setSystemTime(Date.now() + 1000);
 
       await collector.endLayout(123, 456);
 
@@ -160,7 +162,7 @@ describe('StatsCollector', () => {
     it('should end tracking a widget', async () => {
       await collector.startWidget(111, 123, 456);
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      vi.setSystemTime(Date.now() + 100);
 
       await collector.endWidget(111, 123, 456);
 
