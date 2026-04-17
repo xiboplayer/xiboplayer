@@ -11,30 +11,27 @@
  * The Service Worker imports this instead of the filesystem ContentStore.
  *
  * ─────────────────────────────────────────────────────────────────
- *  Practical size limit: ~50 MB per media file (this revision)
+ *  Large-media strategy (#373)
  * ─────────────────────────────────────────────────────────────────
  *
- * The current impl has two in-memory chokepoints that break for
- * large files:
+ * Chunks stay in CacheStorage forever — `assembleChunks` only verifies
+ * presence + marks complete (it does NOT concatenate). Reads go
+ * through `getStream`, which builds a `ReadableStream` that pulls one
+ * chunk at a time on demand. Memory peak during playback = one chunk
+ * size (default 50 MB), regardless of total file size. Video range
+ * requests seek-and-read into the correct chunk without loading
+ * surrounding chunks.
  *
- *   1. `assembleChunks(key)` concatenates all chunks into a single
- *      `new Blob([...])` — peak RAM ≈ 2 × file size during assembly.
- *   2. `getResponse(key, range)` reads the whole cached blob into
- *      memory to `.slice()` for range serving. Video playback issues
- *      many range requests; each one reloads the full blob.
+ * `getResponse` keeps a fast path for non-ranged whole-file reads
+ * (cache entry returned verbatim, zero wrapping) and flows everything
+ * else through `getStream`.
  *
- * Combined with per-origin CacheStorage quotas that cap individual
- * `Response` bodies (~1 GB on Safari, ~2 GB on Chrome desktop, much
- * less on mobile/WebView), this limits practical media to ~50 MB.
- *
- * Beyond that size, use one of:
- *   - Electron/Chromium kiosk deployments (fs-backed ContentStore
- *     via @xiboplayer/proxy — streams via Node, no limit).
- *   - Wait for the large-media streaming rewrite tracked in
- *     xibo-players/xiboplayer#373: keep chunks separate in
- *     CacheStorage permanently, build a `ReadableStream` that pulls
- *     chunks lazily. Memory peak becomes one chunk size regardless
- *     of total file size.
+ * Still TODO in this branch:
+ *   - navigator.storage.persist() on activate (prevent eviction
+ *     during long-running kiosk sessions)
+ *   - navigator.storage.estimate() monitoring + LRU prune hook
+ *   - integration test with a synthetic 200 MB fixture verifying
+ *     memory peak stays under one chunk size during playback
  *
  * @implements {import('@xiboplayer/cache').BrowserContentStore}
  */
@@ -168,44 +165,138 @@ export class ContentStoreBrowser {
 
   /**
    * Return a `ReadableStream` covering `[range.start, range.end]` of
-   * the cached content, pulling one chunk at a time rather than
-   * loading the whole blob into memory.
+   * the cached content, pulling one chunk at a time. Memory peak =
+   * one chunk size regardless of total file size — the whole-blob
+   * assembly that caps the legacy `getResponse` path at ~50 MB is
+   * gone.
    *
-   * Design per #373. Not implemented yet — throws so callers who
-   * probe ahead of the streaming rewrite surface the gap loudly.
+   * Returns `null` when the key is missing or has no bytes yet.
    *
-   * @param {string} _key
-   * @param {import('@xiboplayer/cache').ChunkRange} [_range]
+   * Three regimes:
+   *   - whole file stored (no chunks): re-uses the cache entry's
+   *     existing `Response.body` stream (no copy)
+   *   - chunked file (numChunks set): builds a pull-source that walks
+   *     chunks from `firstChunk` to `lastChunk`, trimming first+last
+   *     chunks to fit the exact range
+   *   - partial chunked file: errors the stream on the first missing
+   *     chunk
+   *
+   * @param {string} key
+   * @param {import('@xiboplayer/cache').ChunkRange} [range]
    * @returns {Promise<ReadableStream<Uint8Array>|null>}
    */
-  async getStream(_key, _range) {
-    throw new Error(
-      'ContentStoreBrowser.getStream not implemented yet (see xibo-players/xiboplayer#373)',
-    );
+  async getStream(key, range) {
+    const cache = await caches.open(CACHE_NAME);
+
+    // Whole-file regime — single cache entry, re-use its body stream.
+    const whole = await cache.match(keyToPath(key));
+    if (whole) {
+      if (!range || (range.start == null && range.end == null)) {
+        return whole.body;
+      }
+      // Range over a non-chunked entry: slice once. O(file size) in
+      // memory but only triggered when callers explicitly request a
+      // range on a small-media whole-file entry.
+      const blob = await whole.blob();
+      const start = range.start ?? 0;
+      const end = range.end != null ? range.end + 1 : blob.size;
+      return blob.slice(start, end).stream();
+    }
+
+    // Chunked-file regime
+    const meta = await this._getMeta(key);
+    if (!meta || !meta.numChunks) return null;
+    const chunkSize = meta.chunkSize || (50 * 1024 * 1024);
+    const total = meta.size;
+    const start = range?.start ?? 0;
+    const end = range?.end != null ? range.end + 1 : total;
+    const firstChunk = Math.floor(start / chunkSize);
+    const lastChunk = Math.floor((end - 1) / chunkSize);
+    const keyBase = keyToPath(key);
+
+    let cur = firstChunk;
+    return new ReadableStream({
+      async pull(controller) {
+        if (cur > lastChunk) {
+          controller.close();
+          return;
+        }
+        const resp = await cache.match(`${keyBase}:chunk-${cur}`);
+        if (!resp) {
+          controller.error(new Error(`Missing chunk ${cur} for ${key}`));
+          return;
+        }
+        let bytes = new Uint8Array(await resp.arrayBuffer());
+        // Trim the first emitted chunk to [start, chunk_end)
+        if (cur === firstChunk) {
+          const offset = start - firstChunk * chunkSize;
+          bytes = bytes.subarray(offset);
+        }
+        // Trim the last emitted chunk to [chunk_start, end)
+        if (cur === lastChunk) {
+          const chunkAbsStart = Math.max(cur * chunkSize, start);
+          bytes = bytes.subarray(0, end - chunkAbsStart);
+        }
+        controller.enqueue(bytes);
+        cur++;
+      },
+    });
   }
 
   async getResponse(key, range) {
     const cache = await caches.open(CACHE_NAME);
-    const response = await cache.match(keyToPath(key));
-    if (!response) return null;
+    const wholeEntry = await cache.match(keyToPath(key));
 
-    if (range && (range.start != null || range.end != null)) {
-      const blob = await response.blob();
-      const start = range.start || 0;
-      const end = range.end != null ? range.end + 1 : blob.size;
-      const slice = blob.slice(start, end);
-      const meta = await this._getMeta(key);
-      return new Response(slice, {
-        status: 206,
+    // Fast path: non-ranged whole-file — return the cached Response
+    // verbatim. The browser reads the body as a stream natively, no
+    // wrapping needed. Equivalent to the pre-#373 behaviour.
+    if (wholeEntry && !(range && (range.start != null || range.end != null))) {
+      return wholeEntry;
+    }
+
+    // Everything else (range requests, chunked files) flows through
+    // getStream() so we never load the whole blob into memory.
+    const stream = await this.getStream(key, range);
+    if (!stream) return null;
+
+    const meta = await this._getMeta(key);
+    const contentType =
+      meta?.contentType ||
+      wholeEntry?.headers.get('Content-Type') ||
+      'application/octet-stream';
+
+    // No range requested → serve whole (chunked) file as a 200
+    if (!range || (range.start == null && range.end == null)) {
+      const total = meta?.size;
+      return new Response(stream, {
+        status: 200,
         headers: {
-          'Content-Type': meta?.contentType || response.headers.get('Content-Type') || 'application/octet-stream',
-          'Content-Length': String(slice.size),
-          'Content-Range': `bytes ${start}-${end - 1}/${blob.size}`,
+          'Content-Type': contentType,
+          ...(total != null ? { 'Content-Length': String(total) } : {}),
         },
       });
     }
 
-    return response;
+    // Range requested → 206 with Content-Range
+    const total = meta?.size ?? (wholeEntry ? undefined : null);
+    if (total == null) {
+      // Unknown total — still serve the stream but without
+      // Content-Range (caller should have avoided this path).
+      return new Response(stream, {
+        status: 206,
+        headers: { 'Content-Type': contentType },
+      });
+    }
+    const start = range.start ?? 0;
+    const end = range.end != null ? range.end + 1 : total;
+    return new Response(stream, {
+      status: 206,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': String(end - start),
+        'Content-Range': `bytes ${start}-${end - 1}/${total}`,
+      },
+    });
   }
 
   async getChunkResponse(key, chunkIndex, range) {
@@ -292,49 +383,41 @@ export class ContentStoreBrowser {
     await this._putMeta(key, { ...meta, key });
   }
 
+  /**
+   * Verify every chunk is present and mark the item complete.
+   *
+   * Contrast with the filesystem `ContentStore.assembleChunks` which
+   * concatenates chunks into one whole file — the browser backend
+   * deliberately does NOT concatenate. Reads serve from chunks
+   * directly via `getStream`, so assembly would waste memory
+   * (peak 2 × file size) and duplicate storage (chunks + assembled).
+   *
+   * Returns `true` when all `numChunks` chunk entries exist in the
+   * cache, `false` otherwise. On true, metadata is updated with
+   * `complete: true` + `completedAt`, but `numChunks` is retained
+   * so reads know they're still serving from chunks.
+   */
   async assembleChunks(key) {
     const meta = await this._getMeta(key);
     if (!meta || !meta.numChunks) return false;
 
     const cache = await caches.open(CACHE_NAME);
-    const blobs = [];
-
     for (let i = 0; i < meta.numChunks; i++) {
-      const resp = await cache.match(`${keyToPath(key)}:chunk-${i}`);
-      if (!resp) {
-        log.warn(`Missing chunk ${i} for ${key}, cannot assemble`);
+      const exists = await cache.match(`${keyToPath(key)}:chunk-${i}`);
+      if (!exists) {
+        log.warn(`Missing chunk ${i} for ${key}, cannot mark complete`);
         return false;
       }
-      blobs.push(await resp.blob());
     }
 
-    // Combine all chunks into one blob
-    const assembled = new Blob(blobs, { type: meta.contentType || 'application/octet-stream' });
-
-    // Store as whole file
-    await cache.put(keyToPath(key), new Response(assembled, {
-      headers: {
-        'Content-Type': meta.contentType || 'application/octet-stream',
-        'Content-Length': String(assembled.size),
-      },
-    }));
-
-    // Update metadata
-    meta.size = assembled.size;
     meta.complete = true;
     meta.completedAt = Date.now();
-    delete meta.numChunks;
     await this._putMeta(key, { ...meta, key });
 
-    // Clean up chunk entries
-    for (let i = 0; ; i++) {
-      const chunkPath = `${keyToPath(key)}:chunk-${i}`;
-      const exists = await cache.match(chunkPath);
-      if (!exists) break;
-      await cache.delete(chunkPath);
-    }
-
-    log.info(`Assembled ${blobs.length} chunks for ${key} (${assembled.size} bytes)`);
+    log.info(
+      `All ${meta.numChunks} chunks present for ${key} ` +
+        `(${meta.size} bytes, served via getStream)`,
+    );
     return true;
   }
 
