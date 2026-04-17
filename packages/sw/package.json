@@ -6,7 +6,8 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./utils": "./src/sw-utils.js"
+    "./utils": "./src/sw-utils.js",
+    "./content-store-browser": "./src/content-store-browser.js"
   },
   "scripts": {
     "test": "vitest run",
