@@ -655,26 +655,30 @@
         submitBtn.textContent = 'Saving...';
         submitBtn.disabled = true;
 
-        // Always POST to proxy — updates in-memory config for REST auth,
-        // cache-through, and API forwarding. Works on all players.
-        const saveResp = await fetch('/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cmsUrl, cmsKey, displayName }),
-        });
-        if (!saveResp.ok) throw new Error('Failed to save config');
-
-        // Shell persistence (Electron config.json) — optional, on top of proxy
-        const electronAPI = window.electronAPI || window.parent?.electronAPI;
-        if (electronAPI?.setConfig) {
-          await electronAPI.setConfig({ cmsUrl, cmsKey, displayName });
-        }
-
-        // Also update in-memory config for the test connection below
+        // Save config to localStorage first (works everywhere)
         config.data.cmsUrl = cmsUrl;
         config.data.cmsKey = cmsKey;
         config.data.displayName = displayName;
         config.save();
+
+        // POST to proxy if available (Electron/Chromium — updates in-memory
+        // config for REST auth, cache-through, and API forwarding)
+        try {
+          const saveResp = await fetch('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cmsUrl, cmsKey, displayName }),
+          });
+          if (!saveResp.ok) console.log('[Setup] Proxy not available, using localStorage only');
+        } catch (e) {
+          console.log('[Setup] No proxy — standalone PWA mode');
+        }
+
+        // Shell persistence (Electron config.json) — optional
+        const electronAPI = window.electronAPI || window.parent?.electronAPI;
+        if (electronAPI?.setConfig) {
+          await electronAPI.setConfig({ cmsUrl, cmsKey, displayName });
+        }
 
         // Backup hardware key to IndexedDB for stability
         backupHardwareKey(config.hardwareKey);
@@ -697,11 +701,13 @@
           if (autoAuthed) {
             // Persist API client credentials so they survive restarts
             config.save();
-            await fetch('/config', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ apiClientId: config.data.apiClientId, apiClientSecret: config.data.apiClientSecret }),
-            });
+            try {
+              await fetch('/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apiClientId: config.data.apiClientId, apiClientSecret: config.data.apiClientSecret }),
+              });
+            } catch (e) { /* proxy not available — localStorage is enough */ }
             if (electronAPI?.setConfig) {
               await electronAPI.setConfig({ apiClientId: config.data.apiClientId, apiClientSecret: config.data.apiClientSecret });
             }
