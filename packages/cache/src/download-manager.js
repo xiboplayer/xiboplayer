@@ -160,6 +160,24 @@ export class DownloadTask {
       headers['X-Cms-Download-Url'] = this.fileInfo.cmsDownloadUrl;
     }
 
+    // Inject auth headers from queue (direct CMS mode — no proxy to add them)
+    const getAuthHeaders = this._parentFile?.options?.getAuthHeaders;
+    if (getAuthHeaders) {
+      try {
+        const authHeaders = await getAuthHeaders();
+        if (authHeaders) {
+          Object.assign(headers, authHeaders);
+          log.debug('[DownloadTask] Auth header injected');
+        } else {
+          log.warn('[DownloadTask] getAuthHeaders returned null');
+        }
+      } catch (e) {
+        log.warn('[DownloadTask] getAuthHeaders failed:', e.message);
+      }
+    } else {
+      log.debug('[DownloadTask] No getAuthHeaders callback (proxy mode)');
+    }
+
     const maxRetries = this._typeConfig.maxRetries;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -273,7 +291,14 @@ export class FileDownload {
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(), HEAD_TIMEOUT_MS);
         try {
-          const head = await fetch(url, { method: 'HEAD', signal: ac.signal });
+          const headOpts = { method: 'HEAD', signal: ac.signal };
+          if (this.options.getAuthHeaders) {
+            try {
+              const ah = await this.options.getAuthHeaders();
+              if (ah) headOpts.headers = ah;
+            } catch (e) { /* proceed without auth */ }
+          }
+          const head = await fetch(url, headOpts);
           if (head.ok) {
             this.totalBytes = parseInt(head.headers.get('Content-Length') || '0');
             this._contentType = head.headers.get('Content-Type') || this._contentType;
@@ -577,6 +602,7 @@ export class DownloadQueue {
     this.maxChunksPerFile = options.chunksPerFile || DEFAULT_MAX_CHUNKS_PER_FILE;
     this.calculateMD5 = options.calculateMD5;
     this.onProgress = options.onProgress;
+    this.getAuthHeaders = options.getAuthHeaders || null; // () => { Authorization: 'Bearer ...' }
 
     this.queue = [];          // DownloadTask[] — flat queue of chunk/file tasks
     this.active = new Map();  // stableKey → FileDownload
@@ -618,7 +644,8 @@ export class DownloadQueue {
     const file = new FileDownload(fileInfo, {
       chunkSize: this.chunkSize,
       calculateMD5: this.calculateMD5,
-      onProgress: this.onProgress
+      onProgress: this.onProgress,
+      getAuthHeaders: this.getAuthHeaders,
     });
 
     this.active.set(key, file);

@@ -11,7 +11,7 @@ export class StoreClient {
 }
 
 export class DownloadManager {
-  constructor(options?: { concurrency?: number; chunkSize?: number; chunksPerFile?: number });
+  constructor(options?: { concurrency?: number; chunkSize?: number; chunksPerFile?: number; getAuthHeaders?: () => Promise<Record<string, string> | null> });
   enqueue(fileInfo: any): any;
   getTask(key: string): any;
   getProgress(): Record<string, any>;
