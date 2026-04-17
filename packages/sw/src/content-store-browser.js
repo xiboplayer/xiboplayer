@@ -35,6 +35,8 @@
  *     CacheStorage permanently, build a `ReadableStream` that pulls
  *     chunks lazily. Memory peak becomes one chunk size regardless
  *     of total file size.
+ *
+ * @implements {import('@xiboplayer/cache').BrowserContentStore}
  */
 
 import { createLogger } from '@xiboplayer/utils';

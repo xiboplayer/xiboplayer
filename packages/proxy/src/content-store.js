@@ -8,6 +8,12 @@
  * restarts. Every deployment (Electron, Chromium kiosk, deployed PWA server)
  * runs the proxy, making this the single durable storage layer.
  *
+ * Implements the shared `ContentStore` protocol declared in
+ * `@xiboplayer/cache` (see `FilesystemContentStore` for the fs-specific
+ * extensions — getPath, getReadStream, getChunkReadStream, unmarkComplete,
+ * getSize). The parallel browser backend is
+ * `@xiboplayer/sw/content-store-browser`.
+ *
  * File layout (mirrors CMS URL structure):
  *   {storeDir}/
  *     ${PLAYER_API}/
@@ -18,6 +24,8 @@
  *       dependencies/fonts.css.bin      — dependency files (by filename)
  *       dependencies/Aileron.otf.bin
  *     widget/...                        — widget HTML (legacy path)
+ *
+ * @implements {import('@xiboplayer/cache').FilesystemContentStore}
  */
 
 import fs from 'fs';
