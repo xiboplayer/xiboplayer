@@ -124,6 +124,18 @@ class PwaPlayer {
       concurrency: this._chunkConfig.concurrency,
       chunkSize: this._chunkConfig.chunkSize,
       chunksPerFile: 2,
+      // In direct mode (no proxy), inject JWT auth into download requests
+      getAuthHeaders: async () => {
+        if (!this.xmds?.getToken) return null; // XMDS/SOAP mode or not initialized
+        const token = this.xmds.getToken();
+        if (token) return { Authorization: `Bearer ${token}` };
+        // Token expired or missing — re-authenticate
+        if (this.xmds._getToken) {
+          const fresh = await this.xmds._getToken();
+          if (fresh) return { Authorization: `Bearer ${fresh}` };
+        }
+        return null;
+      },
     });
     log.info('Cache clients ready — StoreClient + DownloadManager');
 
@@ -440,6 +452,24 @@ class PwaPlayer {
           this.xmds = newClient;
           log.info('[Protocol] Promoted from XMDS back to REST — live client swapped');
         });
+      }
+
+      // Browser-mode: forward the REST client's JWT token to the
+      // Service Worker so its cache-through layer can inject the
+      // `Authorization` header on CMS fetches. No-op when the client
+      // doesn't expose a token (XMDS) or when no SW is controlling.
+      if ((client as any).getToken && navigator.serviceWorker?.controller) {
+        const origAuth = (client as any)._authenticate?.bind(client);
+        if (origAuth) {
+          (client as any)._authenticate = async function(...args: any[]) {
+            const result = await origAuth(...args);
+            const token = (client as any).getToken();
+            if (token && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({ type: 'AUTH_TOKEN', token });
+            }
+            return result;
+          };
+        }
       }
 
       // Initialize stats collector (namespaced by CMS ID)

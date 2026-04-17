@@ -1,62 +1,64 @@
 /**
- * Standalone Service Worker for Xibo PWA Player
- * Thin entry point — all reusable logic lives in @xiboplayer/sw
+ * Service Worker for Xibo PWA Player
  *
- * Architecture:
- * - @xiboplayer/sw: RequestHandler, MessageHandler
- * - @xiboplayer/cache: DownloadManager, LayoutTaskBuilder
- * - @xiboplayer/proxy: ContentStore (filesystem storage — runs server-side)
- * - This file: PWA-specific wiring (lifecycle events, Interactive Control)
+ * Supports two modes:
+ * - Proxy mode (Electron/Chromium on localhost): passes through to Node.js proxy
+ * - Browser mode (PWA on CMS): cache-through via ContentStoreBrowser
  *
- * Media storage flow:
- *   CMS → proxy cache-through → ContentStore (filesystem) → proxy /store → renderer
- *   Download orchestration lives in the main thread (PwaPlayer).
+ * Mode is auto-detected from the origin hostname.
  */
 
 import { DownloadManager } from '@xiboplayer/cache/download-manager';
 import { VERSION as CACHE_VERSION } from '@xiboplayer/cache';
 import {
   RequestHandler,
+  RequestHandlerBrowser,
   MessageHandler,
   calculateChunkConfig
 } from '@xiboplayer/sw';
+import { ContentStoreBrowser } from '@xiboplayer/sw/content-store-browser';
 import { createLogger } from '@xiboplayer/utils';
 import { BASE } from '@xiboplayer/sw/utils';
 
 // ── Configuration ──────────────────────────────────────────────────────────
 const SW_VERSION = __BUILD_DATE__;
-
 const log = createLogger('SW');
+
+// Auto-detect mode: proxy (localhost) vs browser (CMS server)
+const isProxyMode = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
+log.info(`Mode: ${isProxyMode ? 'proxy' : 'browser'} (${self.location.hostname})`);
 
 // ── Device-adaptive chunk config ───────────────────────────────────────────
 const CHUNK_CONFIG = calculateChunkConfig(log);
-const CHUNK_SIZE = CHUNK_CONFIG.chunkSize;
-const CHUNK_STORAGE_THRESHOLD = CHUNK_CONFIG.threshold;
-const CONCURRENT_DOWNLOADS = CHUNK_CONFIG.concurrency;
 
-log.info('Loading modular Service Worker:', SW_VERSION);
+log.info('Loading Service Worker:', SW_VERSION);
 
 // ── Initialize shared instances ────────────────────────────────────────────
 const downloadManager = new DownloadManager({
-  concurrency: CONCURRENT_DOWNLOADS,
-  chunkSize: CHUNK_SIZE,
+  concurrency: CHUNK_CONFIG.concurrency,
+  chunkSize: CHUNK_CONFIG.chunkSize,
   chunksPerFile: 2
 });
 
-const requestHandler = new RequestHandler(downloadManager);
+let requestHandler;
+let contentStore = null;
+
+if (isProxyMode) {
+  // Proxy mode — pass through to Node.js Express server
+  requestHandler = new RequestHandler(downloadManager);
+} else {
+  // Browser mode — use CacheStorage backend
+  contentStore = new ContentStoreBrowser();
+  requestHandler = new RequestHandlerBrowser(contentStore);
+}
 
 const messageHandler = new MessageHandler(downloadManager, {
-  chunkSize: CHUNK_SIZE,
-  chunkStorageThreshold: CHUNK_STORAGE_THRESHOLD
+  chunkSize: CHUNK_CONFIG.chunkSize,
+  chunkStorageThreshold: CHUNK_CONFIG.threshold
 });
 
-// ── PWA-specific: Interactive Control handler ──────────────────────────────
+// ── Interactive Control handler ──────────────────────────────────────────
 
-/**
- * Handle Interactive Control requests from widget iframes.
- * Forwards to main thread via MessageChannel and returns the response.
- * IC library in widgets uses XHR to /player/pwa/ic/{route}.
- */
 async function handleInteractiveControl(event) {
   const url = new URL(event.request.url);
   const icPath = url.pathname.replace(BASE + '/ic', '');
@@ -66,12 +68,9 @@ async function handleInteractiveControl(event) {
 
   let body = null;
   if (method === 'POST' || method === 'PUT') {
-    try {
-      body = await event.request.text();
-    } catch (_) {}
+    try { body = await event.request.text(); } catch (_) {}
   }
 
-  // Forward to main thread via MessageChannel
   const clients = await self.clients.matchAll({ type: 'window' });
   if (clients.length === 0) {
     return new Response(JSON.stringify({ error: 'No active player' }), {
@@ -80,33 +79,19 @@ async function handleInteractiveControl(event) {
     });
   }
 
-  const client = clients[0];
-
   try {
     const response = await new Promise((resolve, reject) => {
       const channel = new MessageChannel();
       const timer = setTimeout(() => reject(new Error('IC timeout')), 5000);
-
-      channel.port1.onmessage = (msg) => {
-        clearTimeout(timer);
-        resolve(msg.data);
-      };
-
-      client.postMessage({
-        type: 'INTERACTIVE_CONTROL',
-        method,
-        path: icPath,
-        search: url.search,
-        body
+      channel.port1.onmessage = (msg) => { clearTimeout(timer); resolve(msg.data); };
+      clients[0].postMessage({
+        type: 'INTERACTIVE_CONTROL', method, path: icPath, search: url.search, body
       }, [channel.port2]);
     });
 
     return new Response(response.body || '', {
       status: response.status || 200,
-      headers: {
-        'Content-Type': response.contentType || 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      }
+      headers: { 'Content-Type': response.contentType || 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
   } catch (error) {
     log.error('IC handler error:', error);
@@ -122,7 +107,6 @@ self.addEventListener('install', (event) => {
   log.info('Installing... Version:', SW_VERSION);
   event.waitUntil(
     (async () => {
-      // Check if same version is already active — skip activation to preserve streams
       if (self.registration.active) {
         try {
           const versionCache = await caches.open('xibo-sw-version');
@@ -130,7 +114,7 @@ self.addEventListener('install', (event) => {
           if (stored) {
             const activeVersion = await stored.text();
             if (activeVersion === SW_VERSION) {
-              log.info('Same version already active, skipping activation to preserve streams');
+              log.info('Same version already active, skipping activation');
               return;
             }
             log.info('Version changed:', activeVersion, '→', SW_VERSION);
@@ -145,30 +129,27 @@ self.addEventListener('install', (event) => {
 
 // ── Lifecycle: Activate ────────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
-  log.info('Activating... Version:', SW_VERSION, '| @xiboplayer/cache:', CACHE_VERSION);
+  log.info('Activating... Version:', SW_VERSION, '| cache:', CACHE_VERSION);
   event.waitUntil(
-    // Clean up legacy Cache API caches (migration from pre-ContentStore)
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name.startsWith('xibo-') && name !== 'xibo-sw-version')
-          .map((name) => {
-            log.info('Deleting legacy cache:', name);
-            return caches.delete(name);
-          })
-      );
-    }).then(async () => {
+    (async () => {
+      // Initialize browser ContentStore if in browser mode
+      if (contentStore) {
+        await contentStore.init();
+        log.info('Browser ContentStore initialized');
+      }
+
+      // Store version
       const versionCache = await caches.open('xibo-sw-version');
       await versionCache.put('version', new Response(SW_VERSION));
-      log.info('Taking control of all clients immediately');
-      return self.clients.claim();
-    }).then(async () => {
-      log.info('Notifying all clients that fetch handler is ready');
+
+      // Take control
+      log.info('Taking control of all clients');
+      await self.clients.claim();
+
+      // Notify clients
       const clients = await self.clients.matchAll();
-      clients.forEach(client => {
-        client.postMessage({ type: 'SW_READY' });
-      });
-    })
+      clients.forEach(client => client.postMessage({ type: 'SW_READY' }));
+    })()
   );
 });
 
@@ -176,22 +157,44 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  const shouldIntercept =
-    url.pathname.startsWith(BASE + '/ic/') ||
-    url.pathname.startsWith('/player/') && (url.pathname.endsWith('.html') || url.pathname === '/player/') ||
-    (url.pathname.includes('xmds.php') && url.searchParams.has('file') && event.request.method === 'GET');
+  // Interactive Control
+  if (url.pathname.startsWith(BASE + '/ic/')) {
+    event.respondWith(handleInteractiveControl(event));
+    return;
+  }
 
-  if (shouldIntercept) {
-    if (url.pathname.startsWith(BASE + '/ic/')) {
-      event.respondWith(handleInteractiveControl(event));
-      return;
+  if (isProxyMode) {
+    // Proxy mode — only intercept XMDS and HTML
+    const shouldIntercept =
+      (url.pathname.startsWith('/player/') && (url.pathname.endsWith('.html') || url.pathname === '/player/')) ||
+      (url.pathname.includes('xmds.php') && url.searchParams.has('file') && event.request.method === 'GET');
+
+    if (shouldIntercept) {
+      event.respondWith(requestHandler.handleRequest(event));
     }
-    event.respondWith(requestHandler.handleRequest(event));
+  } else {
+    // Browser mode — intercept API requests for cache-through
+    const shouldIntercept =
+      url.pathname.startsWith('/player/api/v2/') ||
+      url.pathname.startsWith('/player/') && (url.pathname.endsWith('.html') || url.pathname === '/player/') ||
+      (url.pathname.includes('xmds.php') && url.searchParams.has('file'));
+
+    if (shouldIntercept) {
+      event.respondWith(requestHandler.handleRequest(event));
+    }
   }
 });
 
 // ── Message handler ────────────────────────────────────────────────────────
 self.addEventListener('message', (event) => {
+  // Handle auth token from main thread (browser mode)
+  if (event.data?.type === 'AUTH_TOKEN' && !isProxyMode) {
+    requestHandler.setAuthToken(event.data.token);
+    log.info('Auth token updated from main thread');
+    event.ports[0]?.postMessage({ ok: true });
+    return;
+  }
+
   event.waitUntil(
     messageHandler.handleMessage(event).then((result) => {
       event.ports[0]?.postMessage(result);
@@ -199,4 +202,4 @@ self.addEventListener('message', (event) => {
   );
 });
 
-log.info('Modular Service Worker ready');
+log.info('Service Worker ready');
