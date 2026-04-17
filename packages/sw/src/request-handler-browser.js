@@ -48,8 +48,13 @@
  * @property {string} token  - JWT bearer (no 'Bearer ' prefix)
  */
 
-import { BASE } from './sw-utils.js';
 import { createLogger, PLAYER_API } from '@xiboplayer/utils';
+import {
+  isStaticPage,
+  isXmdsFileRequest,
+  isCacheableApiPath,
+  rewriteXmdsToApiPath,
+} from './routing.js';
 
 export class RequestHandlerBrowser {
   /**
@@ -90,9 +95,7 @@ export class RequestHandlerBrowser {
     const url = new URL(event.request.url);
 
     // Static pages — always network (they change on deploy)
-    if (url.pathname === BASE + '/' ||
-        url.pathname === BASE + '/index.html' ||
-        url.pathname === BASE + '/setup.html') {
+    if (isStaticPage(url)) {
       return fetch(event.request);
     }
 
@@ -102,7 +105,7 @@ export class RequestHandlerBrowser {
     }
 
     // XMDS file downloads — cache-through
-    if (url.pathname.includes('xmds.php') && url.searchParams.has('file')) {
+    if (isXmdsFileRequest(url)) {
       return this._handleXmdsFile(event, url);
     }
 
@@ -118,17 +121,7 @@ export class RequestHandlerBrowser {
   async _handleApiRequest(event, url) {
     const path = url.pathname;
 
-    // Cacheable resource patterns
-    const cacheablePatterns = [
-      /\/media\/file\//,
-      /\/media\/\d+/,
-      /\/layouts\/\d+/,
-      /\/widgets\/\d+\/\d+\/\d+/,
-      /\/dependencies\//,
-    ];
-
-    const isCacheable = cacheablePatterns.some(p => p.test(path));
-    if (!isCacheable) {
+    if (!isCacheableApiPath(path)) {
       // Non-cacheable API calls (auth, displays, schedule, inventory) — pass with auth
       const headers = new Headers(event.request.headers);
       Object.entries(this._authHeaders()).forEach(([k, v]) => headers.set(k, v));
@@ -241,20 +234,12 @@ export class RequestHandlerBrowser {
    * Handle XMDS file downloads — same as proxy mode but cache locally.
    */
   _handleXmdsFile(event, url) {
-    const filename = url.searchParams.get('file');
-    const fileType = url.searchParams.get('type');
-    const itemId = url.searchParams.get('itemId');
+    const apiPath = rewriteXmdsToApiPath(url);
+    if (!apiPath) return fetch(event.request);
 
-    let apiPath;
-    if (fileType === 'L') {
-      apiPath = `${PLAYER_API}/layouts/${itemId}`;
-    } else if (fileType === 'P') {
-      apiPath = `${PLAYER_API}/dependencies/${filename}`;
-    } else {
-      apiPath = `${PLAYER_API}/media/file/${filename}`;
-    }
-
-    this.log.info(`XMDS redirect: ${fileType}/${filename} → ${apiPath}`);
+    this.log.info(
+      `XMDS redirect: ${url.searchParams.get('type')}/${url.searchParams.get('file')} → ${apiPath}`,
+    );
 
     // Rewrite to API path and handle via cache-through
     const newUrl = new URL(apiPath, event.request.url);

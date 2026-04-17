@@ -11,8 +11,8 @@
  * Widget HTML is served by the Express mirror route at ${PLAYER_API}/widgets/{L}/{R}/{M}.
  */
 
-import { BASE } from './sw-utils.js';
 import { createLogger, PLAYER_API } from '@xiboplayer/utils';
+import { isStaticPage, isXmdsFileRequest, rewriteXmdsToApiPath } from './routing.js';
 
 export class RequestHandler {
   /**
@@ -30,9 +30,7 @@ export class RequestHandler {
     const url = new URL(event.request.url);
 
     // Static pages — pass through to Express
-    if (url.pathname === BASE + '/' ||
-        url.pathname === BASE + '/index.html' ||
-        url.pathname === BASE + '/setup.html') {
+    if (isStaticPage(url)) {
       return fetch(event.request);
     }
 
@@ -42,7 +40,7 @@ export class RequestHandler {
     }
 
     // XMDS file downloads — route through Express cache-through
-    if (url.pathname.includes('xmds.php') && url.searchParams.has('file')) {
+    if (isXmdsFileRequest(url)) {
       return this._handleXmdsFile(event, url);
     }
 
@@ -60,19 +58,11 @@ export class RequestHandler {
    * ContentStore caching, avoiding CORS issues and enabling chunked downloads.
    */
   _handleXmdsFile(event, url) {
+    const proxyPath = rewriteXmdsToApiPath(url);
+    if (!proxyPath) return fetch(event.request);
+
+    const fileType = url.searchParams.get('type');
     const filename = url.searchParams.get('file');
-    const fileType = url.searchParams.get('type'); // L=layout, M=media, P=resource/font
-    const itemId = url.searchParams.get('itemId');
-
-    let proxyPath;
-    if (fileType === 'L') {
-      proxyPath = `${PLAYER_API}/layouts/${itemId}`;
-    } else if (fileType === 'P') {
-      proxyPath = `${PLAYER_API}/dependencies/${filename}`;
-    } else {
-      proxyPath = `${PLAYER_API}/media/file/${filename}`;
-    }
-
     this.log.info(`XMDS redirect: ${fileType}/${filename} → ${proxyPath}`);
 
     // Pass original XMDS URL so proxy can fetch from CMS on cache miss
