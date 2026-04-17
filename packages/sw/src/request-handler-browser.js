@@ -9,6 +9,43 @@
  *   3. On miss → fetch from CMS with JWT auth → cache → return
  *
  * Used when PWA runs directly on the CMS (no Node.js proxy).
+ *
+ * ─────────────────────────────────────────────────────────────────
+ *  SW ↔ main-thread protocol (browser mode only)
+ * ─────────────────────────────────────────────────────────────────
+ *
+ * The main thread owns CMS authentication (OAuth2 → JWT bearer via
+ * the REST client in `@xiboplayer/xmds`). The Service Worker must
+ * inject that same bearer on every cache-miss fetch. To avoid
+ * duplicating the auth flow in the SW, the main thread sends the
+ * current token over `navigator.serviceWorker.controller.postMessage`.
+ *
+ * Message shape (both directions use the same `type` discriminator):
+ *
+ *   {@link AuthTokenMessage}
+ *
+ * Main thread sends:
+ *   controller.postMessage({ type: 'AUTH_TOKEN', token: '<jwt>' })
+ *
+ * SW receives (in `sw-pwa.js` message handler) and calls:
+ *   requestHandler.setAuthToken(token)
+ *
+ * SW optionally acknowledges via the MessageChannel port:
+ *   event.ports[0]?.postMessage({ ok: true })
+ *
+ * Token rotation: the main thread hooks the REST client's
+ * `_authenticate` method so every fresh auth posts the new token.
+ * The SW holds the latest token in memory only (no persistence —
+ * on SW restart the main thread re-sends on first auth).
+ *
+ * Proxy-mode safety: the message handler in `sw-pwa.js` gates on
+ * `!isProxyMode` before dispatching AUTH_TOKEN so the legacy
+ * RequestHandler (which does not expose setAuthToken) never
+ * receives it.
+ *
+ * @typedef {Object} AuthTokenMessage
+ * @property {'AUTH_TOKEN'} type
+ * @property {string} token  - JWT bearer (no 'Bearer ' prefix)
  */
 
 import { BASE } from './sw-utils.js';
@@ -24,7 +61,19 @@ export class RequestHandlerBrowser {
     this._authToken = null;
   }
 
-  /** Called by message handler when main thread sends a fresh token */
+  /**
+   * Receives a JWT bearer from the main thread over the
+   * {@link AuthTokenMessage} protocol. Called by the SW message
+   * handler in `sw-pwa.js` on every `AUTH_TOKEN` postMessage.
+   *
+   * The token is held in memory only — on SW restart the main thread
+   * re-sends on its next successful auth. No persistence, no TTL
+   * tracking here: token expiry is the CMS's concern and will
+   * surface as a 401 on the next cache-miss, triggering the main
+   * thread's refresh flow.
+   *
+   * @param {string} token - JWT bearer (no 'Bearer ' prefix)
+   */
   setAuthToken(token) {
     this._authToken = token;
   }

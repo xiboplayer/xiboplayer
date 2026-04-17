@@ -455,9 +455,15 @@ class PwaPlayer {
       }
 
       // Browser-mode: forward the REST client's JWT token to the
-      // Service Worker so its cache-through layer can inject the
-      // `Authorization` header on CMS fetches. No-op when the client
-      // doesn't expose a token (XMDS) or when no SW is controlling.
+      // Service Worker so its cache-through layer (RequestHandlerBrowser)
+      // can inject the `Authorization: Bearer <jwt>` header on CMS
+      // cache-miss fetches. No-op when the client doesn't expose a
+      // token (XMDS) or when no SW is controlling (Electron wrapper).
+      //
+      // Protocol contract lives in
+      //   packages/sw/src/request-handler-browser.js (see the
+      //   `AuthTokenMessage` typedef in the top-of-file JSDoc).
+      // Message shape: `{ type: 'AUTH_TOKEN', token: string }`.
       if ((client as any).getToken && navigator.serviceWorker?.controller) {
         const origAuth = (client as any)._authenticate?.bind(client);
         if (origAuth) {

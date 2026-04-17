@@ -187,7 +187,14 @@ self.addEventListener('fetch', (event) => {
 
 // ── Message handler ────────────────────────────────────────────────────────
 self.addEventListener('message', (event) => {
-  // Handle auth token from main thread (browser mode)
+  // SW ↔ main-thread AUTH_TOKEN protocol. See the top-of-file JSDoc
+  // on RequestHandlerBrowser (packages/sw/src/request-handler-browser.js)
+  // for the full contract — shape, token lifecycle, proxy-mode gating,
+  // and acknowledgement semantics.
+  //
+  // `!isProxyMode` is the important guard: in proxy mode the legacy
+  // RequestHandler is assigned to `requestHandler` and it does NOT
+  // implement setAuthToken(). Dispatching would throw.
   if (event.data?.type === 'AUTH_TOKEN' && !isProxyMode) {
     requestHandler.setAuthToken(event.data.token);
     log.info('Auth token updated from main thread');
