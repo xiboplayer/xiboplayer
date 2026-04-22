@@ -28,7 +28,7 @@
     "@xiboplayer/xmds": "workspace:*"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.1.3",
+    "@vitest/coverage-v8": "^4.1.5",
     "@vitest/ui": "^4.1.4",
     "jsdom": "^29.0.2",
     "vite": "^8.0.8",
