@@ -142,13 +142,22 @@ export class RequestHandlerBrowser {
       }
     }
 
-    // Try cache first
+    // Try cache first. getResponse handles both whole-file and
+    // chunked regimes internally via getStream (#373), so the caller
+    // no longer needs a separate `_serveChunked` path — chunked reads
+    // flow through a lazy ReadableStream that pulls one chunk at a
+    // time. However, chunked entries need completeness verified
+    // before serving so a half-populated item doesn't error mid-stream
+    // on the first missing chunk.
     const cached = await this.contentStore.has(cacheKey);
-    if (cached.exists) {
+    let chunkedReady = !cached.chunked || !!cached.metadata?.complete;
+    if (cached.exists && cached.chunked && !chunkedReady) {
+      // Probe completeness; marks complete if all chunks are in.
+      chunkedReady = await this.contentStore.assembleChunks(cacheKey);
+    }
+    if (cached.exists && chunkedReady) {
       this.log.debug('Cache hit:', cacheKey);
-      const response = cached.chunked
-        ? await this._serveChunked(cacheKey, range, cached.metadata)
-        : await this.contentStore.getResponse(cacheKey, range);
+      const response = await this.contentStore.getResponse(cacheKey, range);
       if (response) return response;
     }
 
@@ -204,30 +213,6 @@ export class RequestHandlerBrowser {
     } catch (err) {
       this.log.warn('Failed to cache:', key, err.message);
     }
-  }
-
-  /**
-   * Serve a chunked file — find the right chunk for the requested range.
-   */
-  async _serveChunked(key, range, metadata) {
-    if (!range) {
-      // No range — try to assemble and serve whole file
-      const assembled = await this.contentStore.assembleChunks(key);
-      if (assembled) return this.contentStore.getResponse(key);
-      return null;
-    }
-
-    // For range requests on chunked files, find which chunk covers the range
-    const chunkSize = metadata?.chunkSize || (50 * 1024 * 1024);
-    const startChunk = Math.floor(range.start / chunkSize);
-    const offsetInChunk = range.start - (startChunk * chunkSize);
-
-    const chunkRange = { start: offsetInChunk };
-    if (range.end != null) {
-      chunkRange.end = range.end - (startChunk * chunkSize);
-    }
-
-    return this.contentStore.getChunkResponse(key, startChunk, chunkRange);
   }
 
   /**
