@@ -20,7 +20,7 @@
     "@xiboplayer/expr": "workspace:*",
     "@xiboplayer/schedule": "workspace:*",
     "@xiboplayer/utils": "workspace:*",
-    "pdfjs-dist": "^5.6.205"
+    "pdfjs-dist": "^5.7.284"
   },
   "devDependencies": {
     "jsdom": "^29.0.2",
