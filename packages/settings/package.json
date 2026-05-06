@@ -18,7 +18,7 @@
     "@xiboplayer/utils": "workspace:*"
   },
   "devDependencies": {
-    "jsdom": "^29.0.2",
+    "jsdom": "^29.1.1",
     "vitest": "^4.1.4"
   },
   "keywords": [
