@@ -1,0 +1,104 @@
+name: Publish to GitHub Packages
+
+# Mirrors the SDK's @xiboplayer/* packages onto GitHub Packages npm
+# (https://npm.pkg.github.com) at the version embedded in their
+# package.json files at the chosen tag.
+#
+# Why this exists:
+#   The 2026-04-10 ROADMAP.md decision and subsequent xiboplayer-smil-tools
+#   v0.6.1 publish made GitHub Packages npm the canonical private-package
+#   registry for this org. But @xiboplayer/smil-tools depends transitively
+#   on @xiboplayer/{utils,expr,renderer}, which currently live only on
+#   public npm. When a consumer (e.g. zerosignage/0cs-core) binds the
+#   @xiboplayer scope to npm.pkg.github.com via .npmrc, the transitive
+#   resolution 404s on those public-only packages.
+#
+#   Operator decision (2026-05-07): all @xiboplayer/* packages should
+#   be on GH Packages too. Public npm becomes "nice to have" rather than
+#   primary. This workflow is the one-shot publish that gets the org
+#   bootstrapped; the existing release workflow (publish.yml) will be
+#   updated separately to dual-publish on every future tag.
+#
+# Trigger:
+#   workflow_dispatch only — operator runs this once per major version
+#   bump (or once total to bootstrap). NOT auto-fired on tag push to
+#   avoid surprising drift on every release until publish.yml is
+#   updated to be dual-publish-aware.
+#
+# Idempotency:
+#   GH Packages refuses to re-publish the same name@version — the
+#   workflow will fail loudly if a version is already there. Run with
+#   a fresh tag/version when bumping.
+#
+# Visibility:
+#   Packages from this PUBLIC source repo default to PUBLIC visibility
+#   on GH Packages. That matches their public-npm visibility today.
+#   Operator can flip individual packages to private via the package's
+#   "Manage access" page if desired.
+#
+# Auth:
+#   Uses the built-in GITHUB_TOKEN with permissions.packages: write.
+#   No external secret needed for the publish path itself.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to publish (tag preferred, e.g. v0.7.23 — defaults to current main HEAD)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Publish all public packages to GH Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Empty ref → checkout the workflow's commit (default main HEAD)
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          # setup-node writes a temporary .npmrc binding @xiboplayer
+          # scope to npm.pkg.github.com using NODE_AUTH_TOKEN. Persists
+          # for the duration of this job.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@xiboplayer'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages that need it (pwa pulls in everything else)
+        # Mirrors the public-npm release flow's build step. Without this,
+        # @xiboplayer/pwa publishes without its dist/ bundle.
+        run: pnpm --filter @xiboplayer/pwa build
+
+      - name: Publish all non-private workspace packages to GH Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # `pnpm -r publish` walks every workspace package; each package's
+        # `private: true` skips it automatically (per pnpm semantics).
+        # `--access restricted` is the safe default for scoped packages
+        # on GH Packages — visibility on the package itself defaults to
+        # the source repo's visibility (public here), and operator can
+        # flip individual packages to private post-publish via the
+        # GitHub UI if needed.
+        run: pnpm -r publish --no-git-checks --access restricted
+
+      - name: Summary
+        run: |
+          echo "::notice::Published @xiboplayer/* packages to https://npm.pkg.github.com"
+          echo "::notice::Visit github.com/orgs/xiboplayer/packages?package_type=npm to verify"
