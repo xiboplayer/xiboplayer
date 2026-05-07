@@ -20,10 +20,14 @@ name: Publish to GitHub Packages
 #   updated separately to dual-publish on every future tag.
 #
 # Trigger:
-#   workflow_dispatch only — operator runs this once per major version
-#   bump (or once total to bootstrap). NOT auto-fired on tag push to
-#   avoid surprising drift on every release until publish.yml is
-#   updated to be dual-publish-aware.
+#   push.tags 'v*' (auto on every release tag, parallel with publish.yml's
+#   public-npm publish) + workflow_dispatch (manual backfill / re-publish).
+#
+#   Originally workflow_dispatch-only during bootstrapping; now that all
+#   17 SDK packages are live on GH Packages and the consumers (0cs-core,
+#   h1's deploy-smil-tools.yml) depend on them being there, we make it
+#   automatic so every future v* tag dual-publishes to public npm AND
+#   GH Packages without operator intervention.
 #
 # Idempotency:
 #   GH Packages refuses to re-publish the same name@version — the
@@ -41,6 +45,8 @@ name: Publish to GitHub Packages
 #   No external secret needed for the publish path itself.
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       ref:
