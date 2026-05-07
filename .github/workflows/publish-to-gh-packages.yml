@@ -65,8 +65,9 @@ jobs:
           fetch-depth: 1
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # Explicit version omitted — packageManager in package.json
+        # (pnpm@10.27.0) is the authoritative source. Setting version:
+        # here in addition causes ERR_PNPM_BAD_PM_VERSION.
 
       - uses: actions/setup-node@v4
         with:
