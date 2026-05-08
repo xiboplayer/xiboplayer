@@ -20,7 +20,7 @@ at the Chromium session level.
 ## Build
 
 ```bash
-git clone https://github.com/xibo-players/xiboplayer.git
+git clone https://github.com/xiboplayer/xiboplayer.git
 cd xiboplayer
 pnpm install
 pnpm --filter @xiboplayer/pwa build    # Production bundle → packages/pwa/dist/
@@ -55,7 +55,7 @@ The player should start downloading files and displaying layouts.
 
 ## Alternative: Electron (for kiosk/desktop)
 
-See [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron).
+See [xiboplayer-electron](https://github.com/xiboplayer/xiboplayer-electron).
 
 Electron can connect to any remote CMS — no same-origin restriction.
 
@@ -77,4 +77,4 @@ Electron can connect to any remote CMS — no same-origin restriction.
 ## Next Steps
 
 - See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment guide
-- See [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) for Electron/kiosk setup
+- See [xiboplayer-electron](https://github.com/xiboplayer/xiboplayer-electron) for Electron/kiosk setup

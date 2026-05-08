@@ -59,10 +59,10 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 | Default layout fallback | ✅ | — |
 | Geo-fencing (haversine + browser Geolocation) | ✅ | — |
 | Criteria evaluation (5 metrics + custom props) | ✅ | — |
-| Weather criteria | ✅ | [#73](https://github.com/xibo-players/xiboplayer/issues/73) ✓ |
-| Recurrence patterns (daily/weekly/monthly) | ✅ | [#80](https://github.com/xibo-players/xiboplayer/issues/80) ✓ (PR #90) |
-| Adspace exchange / SSP ads | ❌ | [#84](https://github.com/xibo-players/xiboplayer/issues/84) |
-| Layout interleaving (weighted SoV) | ✅ | [#78](https://github.com/xibo-players/xiboplayer/issues/78) ✓ |
+| Weather criteria | ✅ | [#73](https://github.com/xiboplayer/xiboplayer/issues/73) ✓ |
+| Recurrence patterns (daily/weekly/monthly) | ✅ | [#80](https://github.com/xiboplayer/xiboplayer/issues/80) ✓ (PR #90) |
+| Adspace exchange / SSP ads | ❌ | [#84](https://github.com/xiboplayer/xiboplayer/issues/84) |
+| Layout interleaving (weighted SoV) | ✅ | [#78](https://github.com/xiboplayer/xiboplayer/issues/78) ✓ |
 
 ### Renderer (renderer-lite vs XLR)
 
@@ -80,8 +80,8 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 | Time-gating (schedule-aware regions) | ✅ | ❌ | Our win |
 | Cycle playback (auto-replay) | ✅ | ❌ | Our win |
 | Element reuse (toggle visibility) | ✅ | ❌ | Our win — avoids DOM churn |
-| Image scaletype options | ✅ | ✅ | [#74](https://github.com/xibo-players/xiboplayer/issues/74) ✓ (PR #89) |
-| Default transition (instant toggle) | ✅ | ✅ | [#83](https://github.com/xibo-players/xiboplayer/issues/83) ✓ (already existed) |
+| Image scaletype options | ✅ | ✅ | [#74](https://github.com/xiboplayer/xiboplayer/issues/74) ✓ (PR #89) |
+| Default transition (instant toggle) | ✅ | ✅ | [#83](https://github.com/xiboplayer/xiboplayer/issues/83) ✓ (already existed) |
 | Drawer regions | ❌ | ✅ | Not planned (XLR-specific) |
 
 ### Stats and Reporting
@@ -95,8 +95,8 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 | Fault deduplication (5-min cooldown) | ✅ | — |
 | Replay-safe tracking | ✅ | — |
 | Quota-exceeded cleanup | ✅ | — |
-| Widget engagement tracking | ✅ | [#77](https://github.com/xibo-players/xiboplayer/issues/77) ✓ (already existed) |
-| BroadcastChannel transport | N/A | [#82](https://github.com/xibo-players/xiboplayer/issues/82) ✓ (not needed) |
+| Widget engagement tracking | ✅ | [#77](https://github.com/xiboplayer/xiboplayer/issues/77) ✓ (already existed) |
+| BroadcastChannel transport | N/A | [#82](https://github.com/xiboplayer/xiboplayer/issues/82) ✓ (not needed) |
 
 ## SDK vs Upstream Players
 
@@ -106,12 +106,12 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 |-----------|:---:|:----:|-----|
 | XMDS methods | 14/14 | 14/14 | — |
 | XMR handlers | 13/13 | 13/13 | — |
-| Retry-After (429) | ✅ | ✅ | [#70](https://github.com/xibo-players/xiboplayer/issues/70) ✓ (PR #86) |
-| Fault reporting agent | ✅ | ✅ | [#71](https://github.com/xibo-players/xiboplayer/issues/71) ✓ (PR #87) |
-| Unsafe layout blacklist | ✅ | ✅ | [#72](https://github.com/xibo-players/xiboplayer/issues/72) ✓ (PR #88) |
-| NotifyStatus fields | ✅ | ✅ | [#76](https://github.com/xibo-players/xiboplayer/issues/76) ✓ (PR #89) |
-| Layout interleaving | ✅ | ✅ | [#78](https://github.com/xibo-players/xiboplayer/issues/78) ✓ |
-| Download window enforcement | ✅ | ✅ | [#81](https://github.com/xibo-players/xiboplayer/issues/81) ✓ (PR #90) |
+| Retry-After (429) | ✅ | ✅ | [#70](https://github.com/xiboplayer/xiboplayer/issues/70) ✓ (PR #86) |
+| Fault reporting agent | ✅ | ✅ | [#71](https://github.com/xiboplayer/xiboplayer/issues/71) ✓ (PR #87) |
+| Unsafe layout blacklist | ✅ | ✅ | [#72](https://github.com/xiboplayer/xiboplayer/issues/72) ✓ (PR #88) |
+| NotifyStatus fields | ✅ | ✅ | [#76](https://github.com/xiboplayer/xiboplayer/issues/76) ✓ (PR #89) |
+| Layout interleaving | ✅ | ✅ | [#78](https://github.com/xiboplayer/xiboplayer/issues/78) ✓ |
+| Download window enforcement | ✅ | ✅ | [#81](https://github.com/xiboplayer/xiboplayer/issues/81) ✓ (PR #90) |
 | Shell/RS232 commands | N/A | ✅ | Browser sandbox |
 | Parallel downloads | ✅ (4 chunks) | ❌ (sequential) | Our advantage |
 | Bundle size | ~500KB | ~50MB | Our advantage |
@@ -120,9 +120,9 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 
 | Capability | SDK | Electron (upstream) | Gap |
 |-----------|:---:|:---:|-----|
-| Scheduled commands | ✅ | ✅ | [#79](https://github.com/xibo-players/xiboplayer/issues/79) ✓ (already existed) |
-| Widget duration webhooks | ✅ | ✅ | [#79](https://github.com/xibo-players/xiboplayer/issues/79) ✓ (already existed) |
-| Event stats | ✅ | ✅ | [#79](https://github.com/xibo-players/xiboplayer/issues/79) ✓ (already existed) |
+| Scheduled commands | ✅ | ✅ | [#79](https://github.com/xiboplayer/xiboplayer/issues/79) ✓ (already existed) |
+| Widget duration webhooks | ✅ | ✅ | [#79](https://github.com/xiboplayer/xiboplayer/issues/79) ✓ (already existed) |
+| Event stats | ✅ | ✅ | [#79](https://github.com/xiboplayer/xiboplayer/issues/79) ✓ (already existed) |
 | Web Crypto (RSA) | ✅ | ✅ | — |
 
 ### vs Arexibo (Rust Player)
@@ -144,31 +144,31 @@ All 15 issues resolved. 8 implemented via PRs #86–#90, 5 already existed, 2 cl
 
 | # | Issue | Resolution | PR |
 |---|-------|-----------|-----|
-| 1 | [#70](https://github.com/xibo-players/xiboplayer/issues/70) | ✅ HTTP 429 Retry-After + HTTP-date parsing | #86 |
-| 2 | [#71](https://github.com/xibo-players/xiboplayer/issues/71) | ✅ Periodic fault reporting agent (60s timer) | #87 |
-| 3 | [#72](https://github.com/xibo-players/xiboplayer/issues/72) | ✅ Layout blacklisting (threshold + auto-reset) | #88 |
+| 1 | [#70](https://github.com/xiboplayer/xiboplayer/issues/70) | ✅ HTTP 429 Retry-After + HTTP-date parsing | #86 |
+| 2 | [#71](https://github.com/xiboplayer/xiboplayer/issues/71) | ✅ Periodic fault reporting agent (60s timer) | #87 |
+| 3 | [#72](https://github.com/xiboplayer/xiboplayer/issues/72) | ✅ Layout blacklisting (threshold + auto-reset) | #88 |
 
 ### Moderate — All Resolved
 
 | # | Issue | Resolution | PR |
 |---|-------|-----------|-----|
-| 4 | [#73](https://github.com/xibo-players/xiboplayer/issues/73) | ✅ Already implemented (weather → criteria) | — |
-| 5 | [#74](https://github.com/xibo-players/xiboplayer/issues/74) | ✅ Image/video scaletype mapping | #89 |
-| 6 | [#75](https://github.com/xibo-players/xiboplayer/issues/75) | ✅ BlackList via REST transport | #89 |
-| 7 | [#76](https://github.com/xibo-players/xiboplayer/issues/76) | ✅ NotifyStatus enrichment | #89 |
-| 8 | [#77](https://github.com/xibo-players/xiboplayer/issues/77) | ✅ Already implemented (recordEvent) | — |
-| 9 | [#78](https://github.com/xibo-players/xiboplayer/issues/78) | ✅ Already implemented (interleaveLayouts) | — |
-| 10 | [#79](https://github.com/xibo-players/xiboplayer/issues/79) | ✅ Already implemented in PWA | — |
+| 4 | [#73](https://github.com/xiboplayer/xiboplayer/issues/73) | ✅ Already implemented (weather → criteria) | — |
+| 5 | [#74](https://github.com/xiboplayer/xiboplayer/issues/74) | ✅ Image/video scaletype mapping | #89 |
+| 6 | [#75](https://github.com/xiboplayer/xiboplayer/issues/75) | ✅ BlackList via REST transport | #89 |
+| 7 | [#76](https://github.com/xiboplayer/xiboplayer/issues/76) | ✅ NotifyStatus enrichment | #89 |
+| 8 | [#77](https://github.com/xiboplayer/xiboplayer/issues/77) | ✅ Already implemented (recordEvent) | — |
+| 9 | [#78](https://github.com/xiboplayer/xiboplayer/issues/78) | ✅ Already implemented (interleaveLayouts) | — |
+| 10 | [#79](https://github.com/xiboplayer/xiboplayer/issues/79) | ✅ Already implemented in PWA | — |
 
 ### Minor — 4 Resolved, 1 Remaining
 
 | # | Issue | Resolution | PR |
 |---|-------|-----------|-----|
-| 11 | [#80](https://github.com/xibo-players/xiboplayer/issues/80) | ✅ Day + Month recurrence patterns | #90 |
-| 12 | [#81](https://github.com/xibo-players/xiboplayer/issues/81) | ✅ Download window enforcement in PlayerCore | #90 |
-| 13 | [#82](https://github.com/xibo-players/xiboplayer/issues/82) | ✅ Closed — fire-and-forget pattern sufficient | — |
-| 14 | [#83](https://github.com/xibo-players/xiboplayer/issues/83) | ✅ Already implemented (instant opacity fallback) | — |
-| 15 | [#84](https://github.com/xibo-players/xiboplayer/issues/84) | ✅ Closed — CMS API undocumented/unstable; stub sufficient | — |
+| 11 | [#80](https://github.com/xiboplayer/xiboplayer/issues/80) | ✅ Day + Month recurrence patterns | #90 |
+| 12 | [#81](https://github.com/xiboplayer/xiboplayer/issues/81) | ✅ Download window enforcement in PlayerCore | #90 |
+| 13 | [#82](https://github.com/xiboplayer/xiboplayer/issues/82) | ✅ Closed — fire-and-forget pattern sufficient | — |
+| 14 | [#83](https://github.com/xiboplayer/xiboplayer/issues/83) | ✅ Already implemented (instant opacity fallback) | — |
+| 15 | [#84](https://github.com/xiboplayer/xiboplayer/issues/84) | ✅ Closed — CMS API undocumented/unstable; stub sufficient | — |
 
 ## renderer-lite Advantages
 

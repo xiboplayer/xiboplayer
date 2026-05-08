@@ -26,7 +26,7 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xibo-players/xiboplayer.git"
+    "url": "git+https://github.com/xiboplayer/xiboplayer.git"
   },
   "homepage": "https://xiboplayer.org"
 }

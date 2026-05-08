@@ -251,4 +251,4 @@ Potential improvements:
 
 - Xibo CMS Campaigns: https://xibosignage.com/docs/setup/campaigns
 - XMDS Protocol: https://github.com/xibosignage/xibo/blob/master/lib/XTR/ScheduleParser.php
-- Electron Player: https://github.com/xibo-players/xiboplayer-electron
+- Electron Player: https://github.com/xiboplayer/xiboplayer-electron

@@ -155,9 +155,9 @@ Layout features: proportional scaling with ResizeObserver, overlay support (z-in
 | Player | Platform | Install |
 |--------|----------|---------|
 | [xiboplayer-pwa](packages/pwa) | Any browser | Hosted on your CMS |
-| [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) | Fedora / Ubuntu | `dnf install xiboplayer-electron` |
-| [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Fedora / Ubuntu | `dnf install xiboplayer-chromium` |
-| [xiboplayer-kiosk](https://github.com/xibo-players/xiboplayer-kiosk) | Fedora / Ubuntu | `dnf install xiboplayer-kiosk` |
+| [xiboplayer-electron](https://github.com/xiboplayer/xiboplayer-electron) | Fedora / Ubuntu | `dnf install xiboplayer-electron` |
+| [xiboplayer-chromium](https://github.com/xiboplayer/xiboplayer-chromium) | Fedora / Ubuntu | `dnf install xiboplayer-chromium` |
+| [xiboplayer-kiosk](https://github.com/xiboplayer/xiboplayer-kiosk) | Fedora / Ubuntu | `dnf install xiboplayer-kiosk` |
 
 RPM and DEB packages are available from [dl.xiboplayer.org](https://dl.xiboplayer.org).
 
