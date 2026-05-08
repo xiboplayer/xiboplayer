@@ -300,12 +300,12 @@ Each platform is a separate repository that depends on the SDK packages via npm:
 
 | Platform | Repository | Description |
 |----------|-----------|-------------|
-| PWA | [xiboplayer-pwa](https://github.com/xibo-players/xiboplayer-pwa) | Browser-based, installable PWA |
-| Electron | [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) | Desktop kiosk wrapper with CORS handling |
-| Chromium | [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Chromium kiosk RPM for Linux |
-| Chrome | [xiboplayer-chrome](https://github.com/xibo-players/xiboplayer-chrome) | Chrome extension |
-| Android | [xiboplayer-android](https://github.com/xibo-players/xiboplayer-android) | TWA wrapper for Android |
-| webOS | [xiboplayer-webos](https://github.com/xibo-players/xiboplayer-webos) | LG webOS signage |
+| PWA | [xiboplayer-pwa](https://github.com/xiboplayer/xiboplayer-pwa) | Browser-based, installable PWA |
+| Electron | [xiboplayer-electron](https://github.com/xiboplayer/xiboplayer-electron) | Desktop kiosk wrapper with CORS handling |
+| Chromium | [xiboplayer-chromium](https://github.com/xiboplayer/xiboplayer-chromium) | Chromium kiosk RPM for Linux |
+| Chrome | [xiboplayer-chrome](https://github.com/xiboplayer/xiboplayer-chrome) | Chrome extension |
+| Android | [xiboplayer-android](https://github.com/xiboplayer/xiboplayer-android) | TWA wrapper for Android |
+| webOS | [xiboplayer-webos](https://github.com/xiboplayer/xiboplayer-webos) | LG webOS signage |
 
 ## Communication Protocols
 
