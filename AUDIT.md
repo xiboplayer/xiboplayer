@@ -1,6 +1,6 @@
 # Xiboplayer Codebase Audit — 2026-03-14
 
-Comprehensive audit across all repos: xiboplayer (monorepo), xiboplayer-chromium, xiboplayer-electron, xibo-players.github.io, xiboplayer-www.
+Comprehensive audit across all repos: xiboplayer (monorepo), xiboplayer-chromium, xiboplayer-electron, xiboplayer.github.io, xiboplayer-www.
 
 ---
 
