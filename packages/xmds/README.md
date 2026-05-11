@@ -207,4 +207,4 @@ const client = new RestClient({
 
 ---
 
-[xiboplayer.org](https://xiboplayer.org) · **Part of the [XiboPlayer SDK](https://github.com/xibo-players/xiboplayer)**
+[xiboplayer.org](https://xiboplayer.org) · **Part of the [XiboPlayer SDK](https://github.com/xiboplayer/xiboplayer)**

@@ -24,7 +24,7 @@ different host or `localhost`.
 ## Build
 
 ```bash
-git clone https://github.com/xibo-players/xiboplayer.git
+git clone https://github.com/xiboplayer/xiboplayer.git
 cd xiboplayer
 pnpm install
 pnpm --filter @xiboplayer/pwa build    # Production bundle → packages/pwa/dist/
@@ -53,7 +53,7 @@ For local or kiosk deployments where same-origin hosting isn't available,
 use the Electron wrapper. It injects CORS headers at the Chromium session
 level, allowing the PWA to connect to any remote CMS.
 
-See [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron).
+See [xiboplayer-electron](https://github.com/xiboplayer/xiboplayer-electron).
 
 ## Development
 

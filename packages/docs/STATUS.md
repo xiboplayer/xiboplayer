@@ -113,7 +113,7 @@ Code analysis of upstream Xibo player repositories confirmed:
 - **Arexibo**: 2 automated tests only (basic XMDS parsing)
 - **XiboPlayer**: 1614 tests across 49 test files, covering core, renderer, cache, schedule, xmds, xmr, stats, settings, sync, and crypto packages
 
-Features present in upstream that we do not implement: RS-232 serial (hardware limitation), PowerPoint rendering (COM automation, Windows-only), AXE/SSP ad integration (stub only), CMS tag-based schedule criteria. See [FEATURE_COMPARISON.md](https://github.com/xibo-players/xibo-players.github.io/blob/main/docs/FEATURE_COMPARISON.md) for full details.
+Features present in upstream that we do not implement: RS-232 serial (hardware limitation), PowerPoint rendering (COM automation, Windows-only), AXE/SSP ad integration (stub only), CMS tag-based schedule criteria. See [FEATURE_COMPARISON.md](https://github.com/xiboplayer/xiboplayer.github.io/blob/main/docs/FEATURE_COMPARISON.md) for full details.
 
 ## What Works
 
@@ -226,7 +226,7 @@ Features present in upstream that we do not implement: RS-232 serial (hardware l
 All 15 audit issues resolved (PRs #86–#90). 8 implemented, 5 closed as already done, 2 closed as not needed.
 
 ### Closed
-- [#84](https://github.com/xibo-players/xiboplayer/issues/84) Adspace exchange / SSP ad rotation — closed, CMS API undocumented/unstable; `isSspEnabled` stub sufficient
+- [#84](https://github.com/xiboplayer/xiboplayer/issues/84) Adspace exchange / SSP ad rotation — closed, CMS API undocumented/unstable; `isSspEnabled` stub sufficient
 
 ### Not Applicable (Browser Sandbox)
 - Shell commands (use HTTP commands instead)
