@@ -70,7 +70,7 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 1
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         # Explicit version omitted — packageManager in package.json
         # (pnpm@10.27.0) is the authoritative source. Setting version:
         # here in addition causes ERR_PNPM_BAD_PM_VERSION.
