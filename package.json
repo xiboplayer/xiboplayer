@@ -20,7 +20,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.0.2",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.6"
   },
   "author": "Pau Aliagas <linuxnow@gmail.com>",
   "license": "AGPL-3.0-or-later",
