@@ -20,7 +20,7 @@
     "@xiboplayer/crypto": "workspace:*"
   },
   "devDependencies": {
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.6"
   },
   "keywords": [
     "xibo",
