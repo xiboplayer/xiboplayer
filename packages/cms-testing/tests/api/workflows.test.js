@@ -113,10 +113,14 @@ describe('Full Workflows', () => {
     const draft = await api.getDraftLayout(layout.layoutId);
     const draftId = draft?.layoutId || layout.layoutId;
 
-    // Edit background color on the draft (backgroundzIndex is required by Xibo API)
+    // Edit background color on the draft (backgroundColor and backgroundzIndex
+    // are the fields the Xibo API docs mark required, but the controller also
+    // dereferences resolutionId unconditionally — without it the CMS 500s in
+    // ResolutionFactory::getById() before it ever reads backgroundColor).
     const updated = await api.editLayoutBackground(draftId, {
       backgroundColor: '#FF5722',
-      backgroundzIndex: 0
+      backgroundzIndex: 0,
+      resolutionId: draft?.resolutionId || helper.defaultResolutionId
     });
 
     // The edit returns the updated layout — verify the change took effect
