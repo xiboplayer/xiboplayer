@@ -90,11 +90,22 @@ if [ -z "$TOKEN" ]; then
     exit 0
   fi
 
-  # A new application has no grants; turn on client_credentials.
+  # A new application has no grants and no scopes. Turn on client_credentials,
+  # and grant the "all" scope — the CMS's edit endpoint replaces the scope set
+  # on every PUT (Applications::edit() does `scopes = []` then re-assigns only
+  # the `scope_<id>` checkboxes present in the request), so an application
+  # with none checked ends up with zero scopes: every API route requiring a
+  # scope then 403s, even though the client_credentials token itself is
+  # valid. With no scope requested at token time, the CMS hands back a token
+  # carrying every scope assigned to the client (ApplicationScopeFactory::
+  # finalizeScopes), and "all" short-circuits the per-route scope check in
+  # ApiAuthorization::process — so this one checkbox is enough for the whole
+  # surface the integration tests exercise (Resolutions, Layouts, Library,
+  # Campaigns, Displays, Schedules, ...).
   curl -sf -b "$COOKIE_JAR" -X PUT "$CMS_URL/json/application/$CLIENT_ID" \
     -H "Content-Type: application/json" \
     -H "X-XSRF-TOKEN: $CSRF" \
-    -d "{\"name\":\"$CLIENT_NAME\",\"authCode\":0,\"clientCredentials\":1,\"isConfidential\":1}" \
+    -d "{\"name\":\"$CLIENT_NAME\",\"authCode\":0,\"clientCredentials\":1,\"isConfidential\":1,\"scope_all\":1}" \
     > /dev/null || true
 
   # Hand the generated credentials to the steps that follow.
