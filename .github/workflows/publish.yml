@@ -75,6 +75,11 @@ jobs:
       # always `latest` regardless of prerelease status unless told
       # otherwise, so this has to be explicit).
       publish-command: |
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+          echo "OIDC: ACTIONS_ID_TOKEN_REQUEST_URL is present — id-token permission was granted to this job"
+        else
+          echo "OIDC: ACTIONS_ID_TOKEN_REQUEST_URL is ABSENT — id-token permission was NOT granted to this job, npm's OIDC exchange cannot even be attempted"
+        fi
         npm install -g npm@'^11'
         npm --version
         pnpm --filter @xiboplayer/pwa build
