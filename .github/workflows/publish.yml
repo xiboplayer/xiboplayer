@@ -42,20 +42,46 @@ jobs:
     uses: xiboplayer/.github/.github/workflows/publish-npm.yml@9af382cf12830bca426a1a99e4b59532ee72a711  # main
     with:
       environment: 'npm-publish'
-      # `npm install -g npm@latest` guarantees npm >= 11.5.1 (the OIDC
-      # trusted-publishing minimum) regardless of exactly which npm patch
-      # the runner's Node install bundled — pnpm's own `publish` shells out
-      # to the `npm` binary on PATH for the actual registry call, so the
-      # bundled version is what decides whether OIDC succeeds.
-      # `--dry-run` is appended only for an operator-triggered dry run (see
-      # the workflow_dispatch input above); a tag push always publishes for
-      # real, unchanged from before.
-      publish-command: >-
-        npm install -g npm@latest &&
-        npm --version &&
-        pnpm --filter @xiboplayer/pwa build &&
-        pnpm -r publish --no-git-checks --access public
-        ${{ inputs.dry-run && '--dry-run' || '' }}
+      # Registry writes go through a standalone `npm publish` per package,
+      # not `pnpm -r publish` directly: pnpm's own publish spawns a real
+      # `npm publish` but does not reach npm's OIDC trusted-publishing
+      # exchange (reproduced independently: github.com/pnpm/pnpm#9812,
+      # comment 2026-01-14 — same Node/npm versions, `pnpm publish` never
+      # completes OIDC while a standalone `npm publish` in the same job
+      # does). `pnpm pack` still does the one thing raw npm can't: rewrite
+      # `workspace:*` cross-package deps (@xiboplayer/core, /sw, /renderer,
+      # ...) to real semver before the tarball is built, so it stays in
+      # the loop for that. npm is pinned to the 11.x line, never `@latest`
+      # — 11.19.0 already clears the >=11.5.1 OIDC floor and is the major
+      # verified against OIDC upstream; an unpinned same-day major is an
+      # untested variable this path doesn't need. The dist-tag is derived
+      # from the version being published (a prerelease, e.g. 0.7.24-x.0,
+      # goes out under its own tag, never `latest` — npm's default tag is
+      # always `latest` regardless of prerelease status unless told
+      # otherwise, so this has to be explicit).
+      publish-command: |
+        npm install -g npm@'^11'
+        npm --version
+        pnpm --filter @xiboplayer/pwa build
+        PKG_VERSION="$(node -p "require('./packages/utils/package.json').version")"
+        case "$PKG_VERSION" in
+          *-*) DIST_TAG="$(node -p "'$PKG_VERSION'.split('-')[1].split('.')[0]")" ;;
+          *) DIST_TAG="latest" ;;
+        esac
+        echo "Publishing $PKG_VERSION under dist-tag $DIST_TAG"
+        pnpm -r publish --no-git-checks --access public --tag "$DIST_TAG" --dry-run --report-summary
+        DRY="${{ inputs.dry-run && '--dry-run' || '' }}"
+        PACK_DIR="$(mktemp -d)"
+        node -e "for (const p of require('./pnpm-publish-summary.json').publishedPackages) console.log(p.name)" > "$PACK_DIR/queue.txt"
+        while IFS= read -r NAME; do
+          [ -z "$NAME" ] && continue
+          echo "::group::Publishing $NAME (standalone npm, no pnpm in the process tree)"
+          pnpm --filter "$NAME" pack --pack-destination "$PACK_DIR"
+          TARBALL="$(ls -t "$PACK_DIR"/xiboplayer-*.tgz | head -1)"
+          ( cd "$PACK_DIR" && npm publish "$(basename "$TARBALL")" --tag "$DIST_TAG" --provenance --access public $DRY )
+          rm -f "$TARBALL"
+          echo "::endgroup::"
+        done < "$PACK_DIR/queue.txt"
     # No `secrets: inherit`, on purpose. The reusable workflow's NPM_TOKEN
     # input is optional and, if set, bypasses OIDC with a static token —
     # exactly the masking behavior we don't want. Omitting `secrets:`
