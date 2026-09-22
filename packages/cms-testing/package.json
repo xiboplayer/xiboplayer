@@ -19,7 +19,7 @@
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "vitest": "^4.1.11"
   },
   "keywords": [
