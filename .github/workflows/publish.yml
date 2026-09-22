@@ -4,23 +4,71 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      dry-run:
+        description: >-
+          Safe smoke test: run the build and `pnpm -r publish --dry-run`
+          only. npm skips the registry auth call on --dry-run, so this
+          does NOT exercise the OIDC trusted-publishing exchange — it only
+          proves checkout/permissions/build/environment resolution. Leave
+          true unless you are deliberately doing a real verification
+          publish (dispatch with dry-run=false against an unbumped ref to
+          get a harmless "cannot publish over existing version" once auth
+          succeeds, or against a throwaway prerelease version+dist-tag for
+          a full round trip).
+        type: boolean
+        default: true
 
 # `contents: write` is needed by the release job below (gh release create).
 # `id-token: write` is required for npm trusted publishing (OIDC exchange
-# handled by the shared publish-npm.yml workflow).
+# handled by the shared publish-npm.yml workflow) — this is the ONLY
+# auth path for this job (see the `publish` job below: no `secrets:` is
+# passed, so the reusable workflow's optional NPM_TOKEN fallback can never
+# fire from this repo).
 permissions:
   contents: write
   id-token: write
 
 jobs:
   publish:
+    # npm's trusted-publisher validation checks the CALLER workflow's repo
+    # + filename (this file, xiboplayer/xiboplayer/.github/workflows/publish.yml)
+    # and the `environment` below — NOT the reusable workflow file that
+    # actually runs `pnpm publish`. Configure each @xiboplayer/* package's
+    # npm trusted publisher as:
+    #   Repository: xiboplayer/xiboplayer
+    #   Workflow filename: publish.yml
+    #   Environment: npm-publish
     uses: xiboplayer/.github/.github/workflows/publish-npm.yml@9af382cf12830bca426a1a99e4b59532ee72a711  # main
     with:
-      publish-command: 'pnpm --filter @xiboplayer/pwa build && pnpm -r publish --no-git-checks --access public'
-    # NPM_TOKEN fallback: the npm trusted-publisher entries still name the
-    # pre-rename org (xibo-players/xiboplayer), so OIDC publishing fails with
-    # ENEEDAUTH. Drop this once they are updated on npmjs.com.
-    secrets: inherit
+      environment: 'npm-publish'
+      # `npm install -g npm@latest` guarantees npm >= 11.5.1 (the OIDC
+      # trusted-publishing minimum) regardless of exactly which npm patch
+      # the runner's Node install bundled — pnpm's own `publish` shells out
+      # to the `npm` binary on PATH for the actual registry call, so the
+      # bundled version is what decides whether OIDC succeeds.
+      # `--dry-run` is appended only for an operator-triggered dry run (see
+      # the workflow_dispatch input above); a tag push always publishes for
+      # real, unchanged from before.
+      publish-command: >-
+        npm install -g npm@latest &&
+        npm --version &&
+        pnpm --filter @xiboplayer/pwa build &&
+        pnpm -r publish --no-git-checks --access public
+        ${{ inputs.dry-run && '--dry-run' || '' }}
+    # No `secrets: inherit`, on purpose. The reusable workflow's NPM_TOKEN
+    # input is optional and, if set, bypasses OIDC with a static token —
+    # exactly the masking behavior we don't want. Omitting `secrets:`
+    # means NPM_TOKEN is never forwarded from this repo, so a trusted-
+    # publisher misconfiguration fails the job loudly (ENEEDAUTH / 404)
+    # instead of silently succeeding on a stored token.
+    #
+    # Was needed historically because the npm trusted-publisher entries
+    # for these packages still named the pre-rename org
+    # (xibo-players/xiboplayer) — see the "Repository:" line in the
+    # `publish` job comment above for the corrected entry every package
+    # needs. Do not reintroduce `secrets: inherit` as a workaround; fix
+    # the trusted-publisher entries on npmjs.com instead.
 
   # Create a GitHub Release for every tagged SDK bump. Needed so
   # `list_releases` and other tooling can see the SDK's published
