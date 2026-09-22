@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/cms-testing",
-  "version": "0.7.24",
+  "version": "0.7.24-oidc.0",
   "private": true,
   "description": "Automated testing for Xibo CMS integration with player",
   "type": "module",
