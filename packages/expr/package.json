@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/expr",
-  "version": "0.7.24",
+  "version": "0.7.24-oidc.0",
   "description": "XPath 1.0 subset evaluator + xp:state runtime store for SMIL State (Track B)",
   "type": "module",
   "main": "./src/index.js",
