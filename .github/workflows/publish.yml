@@ -39,6 +39,21 @@ jobs:
     #   Repository: xiboplayer/xiboplayer
     #   Workflow filename: publish.yml
     #   Environment: npm-publish
+    #
+    # Root cause of the 2026-09-22 ENEEDAUTH (runs 35700406452, 35703051944,
+    # confirmed even after the operator fixed all 16 trusted-publisher
+    # entries AND after switching to a standalone `npm publish`): this job's
+    # own "GITHUB_TOKEN Permissions" log group read only `Contents: read` /
+    # `Metadata: read` — no `id-token: write` — despite it being declared at
+    # the workflow level above. A job with `uses:` calling a reusable
+    # workflow does not reliably inherit top-level `permissions:`; it needs
+    # its own job-level block, same as any other job. Without a minted ID
+    # token, npm's OIDC exchange is never attempted at all (no OIDC-related
+    # npm notice appears anywhere in either failing run's log), so it falls
+    # straight through to the generic "no credentials" ENEEDAUTH.
+    permissions:
+      contents: write
+      id-token: write
     uses: xiboplayer/.github/.github/workflows/publish-npm.yml@9af382cf12830bca426a1a99e4b59532ee72a711  # main
     with:
       environment: 'npm-publish'
