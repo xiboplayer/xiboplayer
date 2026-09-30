@@ -23,7 +23,7 @@
     "bonjour-service": "^1.4.4",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "ws": "^8.21.3"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "vitest": "^4.1.11"
