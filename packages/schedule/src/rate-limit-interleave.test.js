@@ -174,4 +174,23 @@ describe('maxPlaysPerHour + default-layout interleave', () => {
       expect(queue[0]).toEqual({ layoutId: '0', duration: 45 });
     });
   });
+
+  // ─── Option A regression lock ────────────────────────────────────
+  // MEMORY Pending Issue #3 (RESOLVED 2026-04-17):
+  //   "Live path returns default only when activeItems.length === 0;
+  //    buildScheduleQueue handles the 3-of-3 rate-limited case."
+  //
+  // The live-path contract is INTENTIONAL (Option A from
+  // feedback_scheduler_max_plays_per_hour.md). Per D #8 in the overnight
+  // audit 2026-04-21, this TODO locks the decision: if anyone ever
+  // changes _getLayoutsAt() to interleave default into the live answer
+  // when SOME (not all) layouts are rate-limited, these tests must
+  // update WITH explicit rationale — do not silently relax the first
+  // test in the "live path" describe block above.
+  describe('Option A regression lock (MEMORY #3 resolved)', () => {
+    it.todo('3-of-3 rate-limited: live path returns default (documented above)');
+    it.todo('2-of-3 rate-limited: live path returns the 1 surviving, NOT default');
+    it.todo('queue path always interleaves default in the 3-of-3 case');
+    it.todo('queue path does NOT return default early when surviving layouts exist');
+  });
 });

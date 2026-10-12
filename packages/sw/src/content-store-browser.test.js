@@ -182,28 +182,41 @@ describe('ContentStoreBrowser', () => {
     expect(missing).toEqual([1]);
   });
 
-  it('assembles chunks into a whole file and cleans up chunk entries', async () => {
-    await store.putChunk('big-media', 0, new Uint8Array([1, 2, 3]).buffer,
-      { numChunks: 2, contentType: 'application/octet-stream' });
-    await store.putChunk('big-media', 1, new Uint8Array([4, 5]).buffer,
-      { numChunks: 2 });
+  it('assembles chunks by marking complete; reads stream from chunks (per #373)', async () => {
+    // New contract: assembleChunks verifies all chunks are present and
+    // marks `complete: true`. It does NOT concatenate — chunks stay in
+    // CacheStorage forever and reads go through getStream, so memory
+    // peak = one chunk size regardless of total file size.
+    await store.putChunk('big-media', 0, new Uint8Array([1, 2, 3]).buffer, {
+      numChunks: 2,
+      chunkSize: 3,      // chunk 0 is bytes 0-2, chunk 1 is bytes 3-4
+      size: 5,
+      contentType: 'application/octet-stream',
+    });
+    await store.putChunk('big-media', 1, new Uint8Array([4, 5]).buffer, {
+      numChunks: 2,
+      chunkSize: 3,
+      size: 5,
+    });
 
     const ok = await store.assembleChunks('big-media');
     expect(ok).toBe(true);
 
-    // Whole file now readable
+    // Reads go through the stream path — whole file bytes reconstruct
+    // from the separate chunk entries
     const res = await store.getResponse('big-media');
     const bytes = new Uint8Array(await res.arrayBuffer());
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
 
-    // Chunks cleaned up
-    expect(await store.hasChunk('big-media', 0)).toBe(false);
-    expect(await store.hasChunk('big-media', 1)).toBe(false);
+    // Chunks stay in cache (contrast with the old concatenate-and-cleanup)
+    expect(await store.hasChunk('big-media', 0)).toBe(true);
+    expect(await store.hasChunk('big-media', 1)).toBe(true);
 
-    // Metadata marked complete, numChunks dropped
+    // Metadata marked complete; numChunks retained so reads know to
+    // walk chunks rather than look for a whole-file entry
     const meta = await store.getMetadata('big-media');
     expect(meta.complete).toBe(true);
-    expect(meta.numChunks).toBeUndefined();
+    expect(meta.numChunks).toBe(2);
     expect(meta.size).toBe(5);
   });
 
@@ -275,5 +288,109 @@ describe('ContentStoreBrowser', () => {
     // Sanity: a normal putChunk still completes (no lock held for this one)
     await store.putChunk('ok-key', 0, data, { numChunks: 1 });
     expect(await store.hasChunk('ok-key', 0)).toBe(true);
+  });
+
+  // ── getStream (per #373) ─────────────────────────────────────────
+
+  /**
+   * Helper: drain a ReadableStream into a single Uint8Array.
+   * Mirrors what a Response body consumer would do, but lets the
+   * test assert byte-for-byte equality on the output.
+   */
+  async function drain(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const total = chunks.reduce((n, c) => n + c.length, 0);
+    const out = new Uint8Array(total);
+    let o = 0;
+    for (const c of chunks) {
+      out.set(c, o);
+      o += c.length;
+    }
+    return out;
+  }
+
+  describe('getStream', () => {
+    it('returns null when key is missing', async () => {
+      expect(await store.getStream('no-such-key')).toBeNull();
+    });
+
+    it('streams a whole-file entry without range', async () => {
+      const data = new TextEncoder().encode('abcdef').buffer;
+      await store.put('wf', data, { contentType: 'text/plain' });
+
+      const stream = await store.getStream('wf');
+      expect(stream).not.toBeNull();
+      const out = await drain(stream);
+      expect(new TextDecoder().decode(out)).toBe('abcdef');
+    });
+
+    it('streams bytes across chunks and reconstructs the whole file', async () => {
+      await store.putChunk('vid', 0, new Uint8Array([1, 2, 3]).buffer, {
+        numChunks: 3,
+        chunkSize: 3,
+        size: 8,
+      });
+      await store.putChunk('vid', 1, new Uint8Array([4, 5, 6]).buffer, {
+        numChunks: 3,
+        chunkSize: 3,
+        size: 8,
+      });
+      await store.putChunk('vid', 2, new Uint8Array([7, 8]).buffer, {
+        numChunks: 3,
+        chunkSize: 3,
+        size: 8,
+      });
+
+      const stream = await store.getStream('vid');
+      const out = await drain(stream);
+      expect(Array.from(out)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    });
+
+    it('streams a byte range that spans chunk boundaries (range covers chunks 1-2)', async () => {
+      await store.putChunk('vid', 0, new Uint8Array([1, 2, 3]).buffer, {
+        numChunks: 3, chunkSize: 3, size: 8,
+      });
+      await store.putChunk('vid', 1, new Uint8Array([4, 5, 6]).buffer, {
+        numChunks: 3, chunkSize: 3, size: 8,
+      });
+      await store.putChunk('vid', 2, new Uint8Array([7, 8]).buffer, {
+        numChunks: 3, chunkSize: 3, size: 8,
+      });
+
+      // Request bytes 4..6 (inclusive) — spans chunk 1 (bytes 3-5)
+      // trimmed to [4,5] plus chunk 2 (bytes 6-7) trimmed to [6].
+      const stream = await store.getStream('vid', { start: 4, end: 6 });
+      const out = await drain(stream);
+      expect(Array.from(out)).toEqual([5, 6, 7]);
+    });
+
+    it('streams a byte range entirely within a single chunk', async () => {
+      await store.putChunk('vid', 0, new Uint8Array([10, 20, 30, 40, 50]).buffer, {
+        numChunks: 1, chunkSize: 5, size: 5,
+      });
+
+      const stream = await store.getStream('vid', { start: 1, end: 3 });
+      const out = await drain(stream);
+      expect(Array.from(out)).toEqual([20, 30, 40]);
+    });
+
+    it('errors the stream when a chunk is missing mid-walk', async () => {
+      await store.putChunk('gappy', 0, new Uint8Array([1, 2]).buffer, {
+        numChunks: 3, chunkSize: 2, size: 6,
+      });
+      // chunk 1 missing
+      await store.putChunk('gappy', 2, new Uint8Array([5, 6]).buffer, {
+        numChunks: 3, chunkSize: 2, size: 6,
+      });
+
+      const stream = await store.getStream('gappy');
+      await expect(drain(stream)).rejects.toThrow(/Missing chunk 1/);
+    });
   });
 });
