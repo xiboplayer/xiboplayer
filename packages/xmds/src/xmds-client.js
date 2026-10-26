@@ -14,6 +14,13 @@ import { parseScheduleResponse } from './schedule-parser.js';
 
 const log = createLogger('XMDS');
 
+// Request parameters the XMDS WSDL declares as something other than xsd:string.
+// PHP's SoapServer honours the xsi:type sent on the wire, so a base64Binary
+// part tagged xsd:string is never decoded and the CMS stores the base64 text.
+const SOAP_PARAM_TYPES = {
+  screenShot: 'xsd:base64Binary',
+};
+
 export class XmdsClient {
   constructor(config) {
     this.config = config;
@@ -34,7 +41,8 @@ export class XmdsClient {
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;');
-        return `<${key} xsi:type="xsd:string">${escaped}</${key}>`;
+        const type = SOAP_PARAM_TYPES[key] || 'xsd:string';
+        return `<${key} xsi:type="${type}">${escaped}</${key}>`;
       })
       .join('\n      ');
 

@@ -322,8 +322,9 @@ describe('XmdsClient - SubmitScreenShot', () => {
     expect(body).toContain('<tns:SubmitScreenShot>');
     expect(body).toContain('<serverKey xsi:type="xsd:string">test-server-key</serverKey>');
     expect(body).toContain('<hardwareKey xsi:type="xsd:string">test-hardware-key</hardwareKey>');
-    expect(body).toContain('<screenShot xsi:type="xsd:string">');
-    expect(body).toContain(base64Image);
+    // WSDL declares screenShot as base64Binary; tagging it xsd:string makes
+    // the CMS store the base64 text instead of the decoded image
+    expect(body).toContain(`<screenShot xsi:type="xsd:base64Binary">${base64Image}</screenShot>`);
   });
 
   it('should handle large base64 images', async () => {
