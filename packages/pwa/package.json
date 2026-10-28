@@ -34,7 +34,7 @@
     "@playwright/test": "^1.64.0",
     "@types/node": "^26.6.5",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4"
+    "vite": "^8.3.5"
   },
   "author": "Pau Aliagas <linuxnow@gmail.com>",
   "license": "AGPL-3.0-or-later",
