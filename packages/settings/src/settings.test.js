@@ -255,6 +255,28 @@ describe('DisplaySettings', () => {
         vi.useRealTimers();
       });
 
+      it('should treat equal start and end (CMS default 00:00 - 00:00) as always allowed', () => {
+        settings.applySettings({
+          downloadStartWindow: '00:00',
+          downloadEndWindow: '00:00'
+        });
+
+        vi.useFakeTimers();
+        for (const hour of [0, 6, 12, 23]) {
+          vi.setSystemTime(new Date(2026, 0, 15, hour, 30, 0));
+          expect(settings.isInDownloadWindow()).toBe(true);
+        }
+
+        settings.applySettings({
+          downloadStartWindow: '14:00',
+          downloadEndWindow: '14:00'
+        });
+        vi.setSystemTime(new Date(2026, 0, 15, 9, 0, 0));
+        expect(settings.isInDownloadWindow()).toBe(true);
+
+        vi.useRealTimers();
+      });
+
       it('should handle invalid time window gracefully', () => {
         settings.applySettings({
           downloadStartWindow: 'invalid',
@@ -291,6 +313,15 @@ describe('DisplaySettings', () => {
 
     describe('getNextDownloadWindow', () => {
       it('should return null if no download window configured', () => {
+        expect(settings.getNextDownloadWindow()).toBeNull();
+      });
+
+      it('should return null when start equals end (always allowed)', () => {
+        settings.applySettings({
+          downloadStartWindow: '00:00',
+          downloadEndWindow: '00:00'
+        });
+
         expect(settings.getNextDownloadWindow()).toBeNull();
       });
 
