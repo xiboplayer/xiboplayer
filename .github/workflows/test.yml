@@ -19,7 +19,7 @@ jobs:
   integration:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: unit
-    uses: xiboplayer/.github/.github/workflows/integration-test.yml@86264d87f5dd3758fddd9dcc60bbf963213d312f  # main
+    uses: xiboplayer/.github/.github/workflows/integration-test.yml@2f9f0f369ade9accb7afb1577a61d5a38e2883fc  # main
     with:
       # Runs against the self-contained CMS in docker-compose.test.yml.
       # Pointing this at xibo-dev.superpantalles.com made the job fail with
