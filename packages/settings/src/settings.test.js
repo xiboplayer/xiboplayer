@@ -342,6 +342,33 @@ describe('DisplaySettings', () => {
     });
   });
 
+  describe('screenshot interval from CMS display profile', () => {
+    it('should disable screenshots when screenShotRequestInterval is 0 (CMS default)', () => {
+      settings.applySettings({ screenShotRequestInterval: '0' });
+
+      expect(settings.getSetting('screenshotInterval')).toBe(0);
+      expect(settings.shouldTakeScreenshot(null)).toBe(false);
+    });
+
+    it('should convert screenShotRequestInterval from minutes to seconds', () => {
+      settings.applySettings({ screenShotRequestInterval: '5' });
+
+      expect(settings.getSetting('screenshotInterval')).toBe(300);
+    });
+
+    it('should prefer screenShotRequestInterval over screenshotInterval', () => {
+      settings.applySettings({ screenShotRequestInterval: '0', screenshotInterval: '180' });
+
+      expect(settings.getSetting('screenshotInterval')).toBe(0);
+    });
+
+    it('should keep the legacy screenshotInterval (seconds) when the CMS key is absent', () => {
+      settings.applySettings({ screenshotInterval: '180' });
+
+      expect(settings.getSetting('screenshotInterval')).toBe(180);
+    });
+  });
+
   describe('screenshot', () => {
     beforeEach(() => {
       settings.applySettings({ screenshotInterval: 120 });

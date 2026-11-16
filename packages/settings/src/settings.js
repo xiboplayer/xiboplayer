@@ -126,7 +126,7 @@ export class DisplaySettings extends EventEmitter {
     // Features
     this.settings.preventSleep = this.parseBoolean(settings.preventSleep || settings.PreventSleep, true);
     this.settings.embeddedServerPort = parseInt(settings.embeddedServerPort || settings.EmbeddedServerPort || this.settings.embeddedServerPort);
-    this.settings.screenshotInterval = parseInt(settings.screenshotInterval || settings.ScreenshotInterval || this.settings.screenshotInterval);
+    this.settings.screenshotInterval = this.parseScreenshotInterval(settings);
 
     // Download windows
     this.settings.downloadStartWindow = settings.downloadStartWindow || settings.DownloadStartWindow || this.settings.downloadStartWindow;
@@ -175,6 +175,25 @@ export class DisplaySettings extends EventEmitter {
     }
 
     return interval;
+  }
+
+  /**
+   * Parse the screenshot interval.
+   * The Xibo CMS display profile sends `screenShotRequestInterval` in minutes
+   * (0 = automatic screenshots disabled, the CMS default). It takes precedence
+   * over the legacy `screenshotInterval` key (seconds).
+   * @param {Object} settings - Raw settings from CMS
+   * @returns {number} Interval in seconds (0 = disabled)
+   */
+  parseScreenshotInterval(settings) {
+    const cmsMinutes = settings.screenShotRequestInterval ?? settings.ScreenShotRequestInterval;
+    if (cmsMinutes !== undefined && cmsMinutes !== null && cmsMinutes !== '') {
+      const minutes = parseInt(cmsMinutes, 10);
+      return Number.isNaN(minutes) || minutes < 0 ? 0 : minutes * 60;
+    }
+
+    const seconds = parseInt(settings.screenshotInterval || settings.ScreenshotInterval || this.settings.screenshotInterval, 10);
+    return Number.isNaN(seconds) ? 0 : seconds;
   }
 
   /**
@@ -349,6 +368,10 @@ export class DisplaySettings extends EventEmitter {
    * @returns {boolean}
    */
   shouldTakeScreenshot(lastScreenshot) {
+    if (!(this.settings.screenshotInterval > 0)) {
+      return false;
+    }
+
     if (!lastScreenshot) {
       return true;
     }
