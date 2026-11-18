@@ -18,7 +18,7 @@
     "@xiboplayer/utils": "workspace:*"
   },
   "devDependencies": {
-    "fake-indexeddb": "^6.2.7",
+    "fake-indexeddb": "^6.2.8",
     "vitest": "^5.0.5"
   },
   "keywords": [
